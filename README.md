@@ -1,5 +1,7 @@
 # arti: A Rust Tor Implementation
 
+Don't merge this change.
+
 (I'm choosing this name for temporary purposes, but with a nod
 to the fact that temporary names sometimes stick.  Its name is
 a reference to Tor's semi-acronymic origins as "the onion
