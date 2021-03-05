@@ -24,5 +24,6 @@ members = [
     "tor-dirmgr",
     "tor-config",
     "tor-client",
+    "tor-primitive-types",
     "arti"
     ]
