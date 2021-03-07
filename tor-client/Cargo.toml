@@ -25,6 +25,7 @@ tor-linkspec = { path="../tor-linkspec", version = "*" }
 tor-config = { path="../tor-config", version = "*" }
 
 anyhow = "1.0.38"
+clap = "3.0.0-beta.2"
 config = "0.10.1"
 futures = "0.3.13"
 log = "0.4.14"
@@ -32,4 +33,3 @@ rand = "0.7.3"
 serde = { version = "1.0.124", features = ["derive"] }
 simple-logging = "2.0.2"
 thiserror = "1.0.24"
-argh = "0.1.4"

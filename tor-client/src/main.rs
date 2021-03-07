@@ -9,22 +9,22 @@ use tor_config::CfgPath;
 use tor_dirmgr::{DownloadScheduleConfig, NetDirConfig, NetworkConfig};
 
 use anyhow::Result;
-use argh::FromArgs;
+use clap::Clap;
 use log::{info, warn, LevelFilter};
 use serde::Deserialize;
 
-#[derive(FromArgs, Debug, Clone)]
+#[derive(Clap)]
 /// Make a connection to the Tor network, open a SOCKS port, and proxy
 /// traffic.
 ///
 /// This is a demo; you get no stability guarantee.
 struct Args {
     /// override the default location(s) for the configuration file
-    #[argh(option, short = 'f')]
-    rc: Vec<String>,
-    /// override a configuration option (uses toml syntax)
-    #[argh(option, short = 'c')]
+    #[clap(short, long)]
     cfg: Vec<String>,
+    /// override a configuration option (uses toml syntax)
+    #[clap(short, long)]
+    rc: Vec<String>,
 }
 
 /// Default options to use for our configuration.
@@ -82,7 +82,7 @@ impl ArtiConfig {
 }
 
 fn main() -> Result<()> {
-    let args: Args = argh::from_env();
+    let args: Args = Args::parse();
     let dflt_config = tor_config::default_config_file();
 
     let mut cfg = config::Config::new();
