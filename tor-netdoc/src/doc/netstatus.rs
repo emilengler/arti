@@ -278,7 +278,7 @@ struct CommonHeader {
     /// Declared parameters for tunable settings about how to the
     /// network should operator. Some of these adjust timeouts and
     /// whatnot; some features things on and off.
-    params: NetParams<i32>,
+    params: NetParams<std::string::String>,
     /// How long should voters wait for votes and consensuses to
     /// propagate?
     voting_delay: Option<(u32, u32)>,
@@ -513,7 +513,7 @@ impl<RS> Consensus<RS> {
     }
 
     /// Return the map of network parameters that this consensus advertises.
-    pub fn params(&self) -> &NetParams<i32> {
+    pub fn params(&self) -> &NetParams<std::string::String> {
         &self.header.hdr.params
     }
 }

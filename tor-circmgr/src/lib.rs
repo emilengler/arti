@@ -113,15 +113,17 @@ impl<'a> DirInfo<'a> {
         /// to be sure that we look at the defaults from NetParameters
         /// code.
         fn from_netparams(inp: &NetParameters) -> CircParameters {
-            use tor_netdir::params::Param;
             let mut p = CircParameters::default();
-            p.set_initial_send_window(inp.get_u16(Param::CircWindow));
-            p.set_extend_by_ed25519_id(inp.get_bool(Param::ExtendByEd25519Id));
+            //TODO The clones / lack of type safety is pretty ugly here.
+            let tor_primitive_types::CellWindowSize(window_limit) =
+                inp.circuit_window.clone().unwrap_or_default().get().into();
+            p.set_initial_send_window(window_limit);
+            p.set_extend_by_ed25519_id(inp.extend_by_ed25519_id.clone().unwrap_or_default().into());
             p
         }
 
         match self {
-            DirInfo::Fallbacks(_) => from_netparams(&NetParameters::new()),
+            DirInfo::Fallbacks(_) => from_netparams(&NetParameters::default()),
             DirInfo::Directory(d) => from_netparams(d.params()),
         }
     }

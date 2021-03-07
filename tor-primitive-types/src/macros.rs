@@ -1,6 +1,7 @@
-/// This macro implements a bounded type. The data is represented as the specified underlying type. It is impossible to construct an instance of this type outside the bounds.
-//TODO Move the default outside entirely?
+/// This module provides macros helpful for defining a bounded primitive type.
 
+/// This macro implements a bounded type. The data is represented as the specified underlying type.
+/// It is impossible to construct an instance of this type outside the underlying bounds.
 #[macro_export]
 macro_rules! bounded_type {
     {
@@ -9,8 +10,12 @@ macro_rules! bounded_type {
     } => {
 
         #[cfg(test)]
-        /// This is an automatically generated test which ensures that the bounds on the integer type make sense and that the default is within those bounds. It is possible to compile to create a type with invalid bounds, but running `cargo test` will show the failing test and type.
-        // TODO - Currently, the user has to provide a test name because macros are not allowed to generate new identifiers without using nightly. (?)
+        /// This is an automatically generated test which ensures that the bounds on the integer
+        /// type make sense and that the default is within those bounds. It is possible to compile
+        /// to create a type with invalid bounds, but running `cargo test` will show the failing
+        /// test and type. Currently, the user has to provide a test name because macros are not
+        /// allowed to generate new identifiers without using nightly.
+        /// TODO - Mark functions for inlining and branches for expectation?s
         #[test]
         fn $test_name() {
             assert!($lower <= $upper);
@@ -28,11 +33,10 @@ macro_rules! bounded_type {
             /// A lower bound for values of this type
         	const LOWER : $underlying_type = $lower;
             /// Private constructor function for this type.
-            // TODO Should be inlined?
             fn new(value: $underlying_type) -> $type_name {
                 $type_name { value }
             }
-
+            /// Public getter for the underlying type.
             pub fn get(&self) -> $underlying_type {
             	self.value
             }
@@ -50,12 +54,10 @@ macro_rules! bounded_type {
                 } else if val < $type_name::LOWER {
                     Err($crate::Error::BelowLowerBound)
                 } else {
-                    // TODO Can we annoate the expected branch?
                     Ok($type_name::new(val))
                 }
             }
             /// This private function clamps an input to the acceptable range.
-            // TODO Force inline? Mark expected branch?
             fn clamp(val: $underlying_type) -> $underlying_type {
                 if val > $type_name::UPPER {
                     $type_name::UPPER
@@ -71,7 +73,6 @@ macro_rules! bounded_type {
                 write!(f, "{}", self.value)
             }
         }
-        //TODO Do we want to use from/into or should we have a scarier name?
         impl std::convert::From<$type_name> for $underlying_type {
             fn from(val: $type_name) -> $underlying_type {
                 val.value
@@ -80,6 +81,8 @@ macro_rules! bounded_type {
     }
 }
 
+/// This macro generates a default implementation for the type and a test to ensure
+/// that the default value is within the correct bounds.
 #[macro_export]
 macro_rules! make_default_type {
     {
@@ -101,6 +104,9 @@ macro_rules! make_default_type {
     }
 }
 
+/// This macro implements From and FromStr traits to support parsing and conversion
+/// from the underlying type. It uses the saturating constructor to clamp the underlying
+/// values to be within the upper and lower bounds of the type.
 #[macro_export]
 macro_rules! make_saturating_type{
     {
@@ -122,6 +128,8 @@ macro_rules! make_saturating_type{
     }
 }
 
+/// This macro instanties a checked type which returns an error if the passed value
+/// lies outside the upper or lower bounds.
 #[macro_export]
 macro_rules! make_checked_type {
     {

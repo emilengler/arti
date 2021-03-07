@@ -12,7 +12,7 @@
 //!   relay provides particularly scarce functionality, we might choose not to
 //!   use it for other roles, or to use it less commonly for them.
 
-use crate::params::{NetParameters, Param};
+use crate::params::NetParameters;
 use tor_netdoc::doc::netstatus::{MdConsensus, MdConsensusRouterStatus, NetParams, RouterWeight};
 
 /// Helper: Calculate the function we should use to find initial relay
@@ -206,6 +206,8 @@ pub(crate) struct WeightSet {
     w: [RelayWeight; 8],
 }
 
+use std::convert::TryFrom;
+use tor_primitive_types::BandwidthWeight;
 impl WeightSet {
     /// Find the actual 64-bit weight to use for a given routerstatus when
     /// considering it for a given role.
@@ -235,7 +237,10 @@ impl WeightSet {
     /// Compute the correct WeightSet for a provided MdConsensus.
     pub(crate) fn from_consensus(consensus: &MdConsensus, params: &NetParameters) -> Self {
         let bandwidth_fn = pick_bandwidth_fn(consensus.routers().iter().map(|rs| rs.weight()));
-        let weight_scale = params.get(Param::BwWeightScale);
+        let BandwidthWeight(weight_scale) =
+            params.bw_weight_scale.clone().unwrap_or_default().get(); //TODO Escapes the type.
+        let weight_scale_int =
+            i32::try_from(weight_scale).expect("Weight scale outside expected range"); //TODO Fix, how did this code even work before?
         let total_bw = consensus
             .routers()
             .iter()
@@ -243,7 +248,7 @@ impl WeightSet {
             .sum();
         let p = consensus.bandwidth_weights();
 
-        Self::from_parts(bandwidth_fn, total_bw, weight_scale, p)
+        Self::from_parts(bandwidth_fn, total_bw, weight_scale_int, p)
     }
 
     /// Compute the correct WeightSet given a bandwidth function, a

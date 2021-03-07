@@ -41,7 +41,7 @@ pub use weight::WeightRole;
 /// A Result using the Error type from the tor-netdir crate
 pub type Result<T> = std::result::Result<T, Error>;
 
-use params::{NetParameters, Param};
+use params::NetParameters;
 
 /// Internal type: either a microdescriptor, or the digest for a
 /// microdescriptor that we want.
@@ -163,17 +163,28 @@ impl PartialNetDir {
     /// If `replacement_params` is provided, override network parameters from
     /// the consensus with those from `replacement_params`.
     pub fn new(
-        consensus: MdConsensus,
-        replacement_params: Option<&netstatus::NetParams<i32>>,
+        consensus: MDConsensus,
+        replacement_params: Option<&netstatus::NetParams<std::string::String>>,
     ) -> Self {
         let mut params = NetParameters::default();
-        params.update(consensus.params());
+        match params.update(consensus.params().iter()) {
+            Ok(()) => (),
+            Err(x) => {
+                for u in x {
+                    warn!("Unrecognized option: consensus_net_params.{}", u);
+                }
+            }
+        }
         // We have to do this now, or else changes won't be reflected in our
         // weights.
         if let Some(replacement) = replacement_params {
-            let unrecognized = params.update(replacement);
-            for u in unrecognized {
-                warn!("Unrecognized option: override_net_params.{}", u);
+            match params.update(replacement.iter()) {
+                Ok(()) => (),
+                Err(x) => {
+                    for u in x {
+                        warn!("Unrecognized option: override_net_params.{}", u);
+                    }
+                }
             }
         }
 
@@ -294,11 +305,17 @@ impl NetDir {
     }
     /// Return true if there is enough information in this NetDir to build
     /// multihop circuits.
+
     fn have_enough_paths(&self) -> bool {
         // If we can build a randomly chosen path with at least this
         // probability, we know enough information to participate
         // on the network.
-        let min_pct = self.params().get(Param::MinPathsForCircsPct);
+        let tor_primitive_types::Percentage(min_pct) = self
+            .params()
+            .min_circuit_path_threshold
+            .clone()
+            .unwrap_or_default()
+            .get(); //TODO Escapes type safety!
         let min_frac_paths = (min_pct as f64) / 100.0;
 
         // What fraction of paths can we build?

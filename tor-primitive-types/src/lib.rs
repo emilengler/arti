@@ -1,12 +1,29 @@
-extern crate derive_more;
-use derive_more::{Add, Deref, Display, Div, From, FromStr, Into, Mul};
+//! This crate defines wrappers for primitive types. For example, milliseconds or percentages
+//! which could be represented directly as a primitive such as i32, are instead their own type.
+//! This helps avoid mistakes e.g. passing seconds to a function expecting milliseconds.
+//!
+//! This crate also provides macros for defining bounded types, for example, a particular
+//! configuration parameter might be restricted to a subset of possible values. In the future,
+//! Rust plans to implement 'const generics' which would allow this to be expressed as
+//! a language feature. Instead, we use macros to generate equivalent code automatically.  
+//!  macros for defining bounded types
 
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
+
+extern crate derive_more;
+use derive_more::{Add, Display, Div, From, FromStr, Mul};
+
+/// This module provides macros for implementing bounded primitive types.
 #[macro_use]
 pub mod macros;
 
+/// These errors are returned by the checkable types (clamped types do not return errors)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
+    /// A passed value was below the lower bound for the type.
     BelowLowerBound,
+    /// A paswed value was above the lower bound for the type.
     AboveUpperBound,
 }
 
@@ -21,19 +38,32 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-#[derive(Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd)]
+/// A type to represent bandwidth weights.
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
 #[from(forward)]
 pub struct BandwidthWeight(pub u32);
 
-#[derive(Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd)]
+/// A type to represent cell window sizes.
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
 #[from(forward)]
-pub struct CellWindowSize(pub u32);
+pub struct CellWindowSize(pub u16);
 
-#[derive(Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd)]
+/// A type to represent milliseconds.
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
 #[from(forward)]
 pub struct Milliseconds(pub u32);
 
-#[derive(Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq,Eq,Ord,PartialOrd)]
+/// A type to represent percentages
+/// TODO Granularity. Floats seem more natural but then new problems.
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
 #[from(forward)]
 pub struct Percentage(pub u8);
 

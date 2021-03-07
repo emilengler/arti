@@ -38,7 +38,7 @@ pub struct NetworkConfig {
     /// A map of network parameters that we're overriding from their
     /// setttings in the consensus.
     #[serde(default)]
-    override_net_params: netstatus::NetParams<i32>,
+    override_net_params: netstatus::NetParams<std::string::String>,
 }
 
 impl Default for NetworkConfig {
@@ -268,7 +268,7 @@ impl NetDirConfig {
     }
 
     /// Return set of configured networkstatus parameter overrides.
-    pub fn override_net_params(&self) -> &netstatus::NetParams<i32> {
+    pub fn override_net_params(&self) -> &netstatus::NetParams<std::string::String> {
         &self.network.override_net_params
     }
 
