@@ -156,7 +156,7 @@ impl NetParameters {
         if !changes {
             errors.push(Box::new(Error::NoParamsToUpdate));
         }
-        if errors.len() == 0 {
+        if errors.is_empty() {
             Ok(())
         } else {
             Err(errors)
