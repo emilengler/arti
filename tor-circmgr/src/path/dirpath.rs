@@ -22,7 +22,9 @@ impl DirPathBuilder {
 
     /// Try to create and return a path corresponding to the requirements of
     /// this builder.
-    pub fn pick_path<'a, R: Rng>(&self, rng: &mut R, netdir: DirInfo<'a>) -> Result<TorPath<'a>> {
+    pub fn pick_path<'a, R: Rng,
+                     N: tor_netdir::ExitPolicyBearer + tor_linkspec::CircTarget + tor_linkspec::CircTarget + Sync
+                     >(&self, rng: &mut R, netdir: DirInfo<'a>) -> Result<TorPath<N>> {
         // TODO: this will need to learn about directory guards.
         match netdir {
             DirInfo::Fallbacks(f) => {

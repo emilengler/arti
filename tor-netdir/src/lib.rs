@@ -444,14 +444,25 @@ impl<'a> Relay<'a> {
         }
         self.md.family().contains(other.rsa_id()) && other.md.family().contains(self.rsa_id())
     }
+}
 
+/// DOCDOC
+pub trait ExitPolicyBearer {
+    /// DOCDOC
+    fn ipv4_policy(&self) -> &Arc<PortPolicy>;
+    /// DOCDOC
+    fn ipv6_policy(&self) -> &Arc<PortPolicy>;
+}
+
+impl<'a> ExitPolicyBearer for Relay<'a>
+{
     /// Return the IPv4 exit policy for this relay.
-    pub fn ipv4_policy(&self) -> &Arc<PortPolicy> {
+    fn ipv4_policy(&self) -> &Arc<PortPolicy> {
         self.md.ipv4_policy()
     }
 
     /// Return the IPv6 exit policy for this relay.
-    pub fn ipv6_policy(&self) -> &Arc<PortPolicy> {
+    fn ipv6_policy(&self) -> &Arc<PortPolicy> {
         self.md.ipv6_policy()
     }
 }

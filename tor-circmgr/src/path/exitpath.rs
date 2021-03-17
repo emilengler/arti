@@ -25,7 +25,7 @@ impl ExitPathBuilder {
 
     /// Try to create and return a path corresponding to the requirements of
     /// this builder.
-    pub fn pick_path<'a, R: Rng>(&self, rng: &mut R, netdir: DirInfo<'a>) -> Result<TorPath<'a>> {
+    pub fn pick_path<'a, R: Rng, N: tor_netdir::ExitPolicyBearer + tor_linkspec::CircTarget + tor_linkspec::CircTarget + Sync>(&self, rng: &mut R, netdir: DirInfo<'a>) -> Result<TorPath<N>> {
         // TODO: implement guards
         let netdir = match netdir {
             DirInfo::Fallbacks(_) => return Err(Error::NeedConsensus.into()),

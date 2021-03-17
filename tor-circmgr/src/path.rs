@@ -7,7 +7,7 @@ pub mod dirpath;
 pub mod exitpath;
 
 use tor_chanmgr::ChanMgr;
-use tor_netdir::{fallback::FallbackDir, Relay};
+use tor_netdir::{fallback::FallbackDir, Relay, ExitPolicyBearer};
 use tor_proto::channel::Channel;
 use tor_proto::circuit::{CircParameters, ClientCirc};
 
@@ -17,18 +17,25 @@ use std::sync::Arc;
 use crate::{Error, Result};
 
 /// A list of Tor nodes through the network.
-pub enum TorPath<'a> {
+/// R is typically a relay but it's expressed as trait bounds here for use in unittesting
+pub enum TorPath<N: tor_netdir::ExitPolicyBearer + tor_linkspec::CircTarget + tor_linkspec::CircTarget + Sync> {
     /// A single-hop path for use with a directory cache, when a relay is
     /// known.
-    OneHop(Relay<'a>), // This could just be a routerstatus.
+    OneHop(N), // This could just be a routerstatus.
     /// A single-hop path for use with a directory cache, when we don't have
     /// a consensus.
-    FallbackOneHop(&'a FallbackDir),
+    FallbackOneHop(FallbackDir),
     /// A multi-hop path, containing one or more paths.
-    Path(Vec<Relay<'a>>),
+    Path(Vec<N>),
 }
 
-impl<'a> TorPath<'a> {
+// Which parts of Relay are used in `TorPath`?
+// exit_policy() uses ipv4_policy() and ipv6_policy()
+// It's passed to get_or_launch() with trait bound tor_linkspec::ChanTarget + Sync
+// It's passed to create_firsthop_ntor with trait bound tor_linkspec::CircTarget,
+// It's passed to extend_ntor with trait bound tor_linkspec::CircTarget,
+
+impl<N: tor_netdir::ExitPolicyBearer + tor_linkspec::CircTarget + tor_linkspec::CircTarget + Sync> TorPath<N> {
     /// Internal: Get the first hop of the path as a ChanTarget.
     fn first_hop(&self) -> Result<&(dyn tor_linkspec::ChanTarget + Sync)> {
         use TorPath::*;
@@ -42,7 +49,7 @@ impl<'a> TorPath<'a> {
 
     /// Return the final relay in this path, if this is a path for use
     /// with exit circuits.
-    fn exit_relay(&self) -> Option<&Relay<'a>> {
+    fn exit_relay(&self) -> Option<&N> {
         match self {
             TorPath::Path(relays) if !relays.is_empty() => Some(&relays[relays.len() - 1]),
             _ => None,
@@ -51,9 +58,9 @@ impl<'a> TorPath<'a> {
 
     /// Return the exit policy of the final relay in this path, if this
     /// is a path for use with exit circuits.
-    pub(crate) fn exit_policy(&self) -> Option<super::ExitPolicy> {
+    pub(crate) fn exit_policy(&self) -> Option<super::ExitPolicyBearer> {
         if let Some(exit_relay) = self.exit_relay() {
-            Some(super::ExitPolicy {
+            Some(super::ExitPolicyBearer {
                 v4: exit_relay.ipv4_policy().clone(),
                 v6: exit_relay.ipv6_policy().clone(),
             })
@@ -101,4 +108,30 @@ impl<'a> TorPath<'a> {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod test {
+    struct FakeRelay;
+
+    impl ExitPolicyBearer for FakeRelay {
+        fn ipv4_policy(&self) -> &Arc<PortPolicy> {
+            ;
+        }
+
+        fn ipv6_policy(&self) -> &Arc<PortPolicy> {
+            ;
+        }
+    }
+
+    #[test]
+    fn path_exit_policy() {
+        let relay = FakeRelay();
+        let torpath = OneHop(relay);
+
+        // let torpath.exit_policy();
+        // do the test
+
+    }
+
 }

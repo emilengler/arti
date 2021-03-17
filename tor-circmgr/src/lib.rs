@@ -286,11 +286,11 @@ enum CircUsage {
 impl TargetCircUsage {
     /// Construct path for a given circuit purpose; return it and the
     /// usage that it _actually_ supports.
-    fn build_path<'a, R: Rng>(
+    fn build_path<'a, R: Rng, N: tor_netdir::ExitPolicyBearer + tor_linkspec::CircTarget + tor_linkspec::CircTarget + Sync>(
         &self,
         rng: &mut R,
         netdir: DirInfo<'a>,
-    ) -> Result<(TorPath<'a>, CircUsage)> {
+    ) -> Result<(TorPath<N>, CircUsage)> {
         match self {
             TargetCircUsage::Dir => {
                 let path = DirPathBuilder::new().pick_path(rng, netdir)?;
