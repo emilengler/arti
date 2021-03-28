@@ -52,21 +52,6 @@ pub struct BandwidthWeight(pub u32);
 #[from(forward)]
 pub struct CellWindowSize(pub u16);
 
-/// A type to represent milliseconds.
-#[derive(
-    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
-)]
-#[from(forward)]
-pub struct Milliseconds(pub u32);
-
-/// A type to represent percentages
-/// TODO Granularity. Floats seem more natural but then new problems.
-#[derive(
-    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
-)]
-#[from(forward)]
-pub struct Percentage(pub u8);
-
 #[cfg(test)]
 mod tests {
 

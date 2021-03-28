@@ -17,78 +17,105 @@
 //! range, and provides default values for any parameters that are
 //! missing.
 
+use thiserror::Error;
 use tor_primitive_types::{
-    bounded_type, make_default_type, make_saturating_type, BandwidthWeight, CellWindowSize,
-    Milliseconds, Percentage,
+    bounded_type, set_default_for_bounded_type, BandwidthWeight, CellWindowSize,
 };
+extern crate derive_more;
+use derive_more::{Add, Display, Div, From, FromStr, Mul};
 
 //TODO This could just be a u32 underlying?
-bounded_type! {BandwidthWeightFactor(BandwidthWeight,BandwidthWeight(1),BandwidthWeight(u32::MAX),test_bandwidth_weight_factor)}
-make_default_type! {BandwidthWeightFactor(BandwidthWeight(10000),test_bwf_default)}
-make_saturating_type! {BandwidthWeightFactor(BandwidthWeight)}
+bounded_type! {
+#[derive(Clone, Copy, Debug)]
+pub struct BandwidthWeightFactor(BandwidthWeight,BandwidthWeight(1),BandwidthWeight(u32::MAX))
+}
+set_default_for_bounded_type!(BandwidthWeightFactor, BandwidthWeight(10000));
 
 //TODO This could be just a u32 underlying?
-bounded_type! {CircuitWindowSizeLimit(CellWindowSize,CellWindowSize(100),CellWindowSize(1000),test_cws_bounds)}
-make_default_type! {CircuitWindowSizeLimit(CellWindowSize(1000),test_cwc_default)}
-make_saturating_type! {CircuitWindowSizeLimit(CellWindowSize)}
+bounded_type! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct CircuitWindowSizeLimit(CellWindowSize,CellWindowSize(100),CellWindowSize(1000)
+)}
+set_default_for_bounded_type!(CircuitWindowSizeLimit, CellWindowSize(1000));
 
-bounded_type! {CircuitPriorityHalflife(Milliseconds,Milliseconds(1),Milliseconds(u32::MAX),test_cphl_bounds)}
-make_default_type! {CircuitPriorityHalflife(Milliseconds(30000),test_cphl_default)}
-make_saturating_type! {CircuitPriorityHalflife(Milliseconds)}
+bounded_type! {
+    #[derive(
+        Add, Copy, Clone, Mul, Div, Debug, PartialEq, Eq, Ord, PartialOrd,
+    )]
+    pub struct IntegerBoolean(u8,0,1)
+}
 
-/// Type for whether to extend by Ed25519 identity.
-#[derive(Clone, Debug)]
-pub struct ExtendByEd25519Id(bool);
+impl From<IntegerBoolean> for bool {
+    fn from(val: IntegerBoolean) -> Self {
+        val.get() != 0
+    }
+}
 
-//TODO Make a bool parameter macro?
-// TODO Would be better to have a uniform interface e.g. with get
+/// Wraps Integer Boolean as exposes a boolean interface
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, From)]
+#[from(forward)]
+pub struct ExtendByEd25519Id(IntegerBoolean);
+
+impl From<ExtendByEd25519Id> for bool {
+    fn from(val: ExtendByEd25519Id) -> Self {
+        val.0.into()
+    }
+}
+
 impl Default for ExtendByEd25519Id {
-    fn default() -> ExtendByEd25519Id {
-        ExtendByEd25519Id(false)
+    fn default() -> Self {
+        //TODO - Lookup what the default should be.
+        ExtendByEd25519Id(IntegerBoolean::clamped_from(0))
     }
 }
 
-//TODO This currently parses true/fales rather than 0/1
-impl std::str::FromStr for ExtendByEd25519Id {
-    type Err = std::str::ParseBoolError;
-    fn from_str(val: &str) -> std::result::Result<Self, Self::Err> {
-        Ok(ExtendByEd25519Id(val.parse()?))
+impl ExtendByEd25519Id {
+    fn get(self) -> bool {
+        self.into()
     }
 }
 
-impl std::convert::From<ExtendByEd25519Id> for bool {
-    fn from(val: ExtendByEd25519Id) -> bool {
-        val.0
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
+/// A percentage as an integer (0-100)
+pub struct IntegerPercentage(u8);
+
+impl From<IntegerPercentage> for f64 {
+    fn from(val: IntegerPercentage) -> Self {
+        f64::from(val.0) / 100.0
     }
 }
 
-bounded_type! {MinCircuitPathThreshold(Percentage,Percentage(25),Percentage(95),test_mcpt_bounds)}
-make_default_type! {MinCircuitPathThreshold(Percentage(60),test_mcpt_default)}
-make_saturating_type! {MinCircuitPathThreshold(Percentage)}
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
+/// An integer number of milliseconds
+pub struct IntegerMilliseconds(u32);
 
-bounded_type! {SendMeVersion(u8,0,255,test_smv_bounds)}
-make_default_type! {SendMeVersion(0,test_smv_default)}
-make_saturating_type! {SendMeVersion(u8)}
-
-/// This structure holds recognised configuration parameters. All values are type safey
-/// and where applicable clamped to be within range.
-#[derive(Clone, Debug, Default)]
-pub struct NetParameters {
-    /// A weighting factor for bandwidth calculations
-    pub bw_weight_scale: Option<BandwidthWeightFactor>,
-    /// The maximum cell window size?
-    pub circuit_window: Option<CircuitWindowSizeLimit>,
-    /// The decay paramter for circuit priority
-    pub circuit_priority_half_life: Option<CircuitPriorityHalflife>,
-    /// Whether to perform circuit extenstions by Ed25519 ID
-    pub extend_by_ed25519_id: Option<ExtendByEd25519Id>,
-    /// The minimum threshold for circuit patch construction
-    pub min_circuit_path_threshold: Option<MinCircuitPathThreshold>,
-    /// The minimum sendme version to accept.
-    pub send_me_accept_min_version: Option<SendMeVersion>,
-    /// The minimum sendme version to transmit.
-    pub send_me_emit_min_version: Option<SendMeVersion>,
+impl From<IntegerMilliseconds> for std::time::Duration {
+    fn from(val: IntegerMilliseconds) -> Self {
+        Self::from_millis(val.0.into())
+    }
 }
+
+bounded_type! {
+    #[derive(Clone,Copy, Debug)]
+    pub struct CircuitPriorityHalflife(IntegerMilliseconds,IntegerMilliseconds(1),IntegerMilliseconds(u32::MAX))
+}
+set_default_for_bounded_type!(CircuitPriorityHalflife, IntegerMilliseconds(30000));
+
+bounded_type! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct MinCircuitPathThreshold(IntegerPercentage,IntegerPercentage(25),IntegerPercentage(95))
+}
+set_default_for_bounded_type!(MinCircuitPathThreshold, IntegerPercentage(60));
+
+bounded_type! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct SendMeVersion(u8,0,255)
+}
+set_default_for_bounded_type!(SendMeVersion, 0);
 
 /// The error type for this crate.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +137,26 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// This structure holds recognised configuration parameters. All values are type safey
+/// and where applicable clamped to be within range.
+#[derive(Clone, Debug, Default)]
+pub struct NetParameters {
+    /// A weighting factor for bandwidth calculations
+    pub bw_weight_scale: Option<BandwidthWeightFactor>,
+    /// The maximum cell window size?
+    pub circuit_window: Option<CircuitWindowSizeLimit>,
+    /// The decay paramter for circuit priority
+    pub circuit_priority_half_life: Option<CircuitPriorityHalflife>,
+    /// Whether to perform circuit extenstions by Ed25519 ID
+    pub extend_by_ed25519_id: Option<ExtendByEd25519Id>,
+    /// The minimum threshold for circuit patch construction
+    pub min_circuit_path_threshold: Option<MinCircuitPathThreshold>,
+    /// The minimum sendme version to accept.
+    pub send_me_accept_min_version: Option<SendMeVersion>,
+    /// The minimum sendme version to transmit.
+    pub send_me_emit_min_version: Option<SendMeVersion>,
+}
+
 impl NetParameters {
     /// Given a name and value as strings, produce either a result or an error if the parsing fails.
     /// The error may reflect a failure to parse a value of the correct type or withint the necessary bounds.
@@ -119,22 +166,36 @@ impl NetParameters {
         name: &str,
         value: &str,
     ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+        //TODO It would be much nicer to generate this and the struct automatically from a
+        // list of triples  (name, type, str_key)
         match name {
-            "bwweightscale" => self.bw_weight_scale = Some(value.parse()?),
-            "circwindow" => self.circuit_window = Some(value.parse()?),
-            "CircuitPriorityHalflifeMsec" => self.circuit_priority_half_life = Some(value.parse()?),
-            "ExtendByEd25519ID" => self.extend_by_ed25519_id = Some(value.parse()?),
-            "min_paths_for_circs_pct" => self.min_circuit_path_threshold = Some(value.parse()?),
-            "sendme_accept_min_version" => self.send_me_accept_min_version = Some(value.parse()?),
-            "sendme_emit_min_version" => self.send_me_emit_min_version = Some(value.parse()?),
-            _ => return Err(Box::new(Error::KeyNotRecognized)), //TODO Should return an error!
+            "bwweightscale" => {
+                self.bw_weight_scale = Some(BandwidthWeightFactor::clamped_from_str(value)?)
+            }
+            "circwindow" => {
+                self.circuit_window = Some(CircuitWindowSizeLimit::clamped_from_str(value)?)
+            }
+            "CircuitPriorityHalflifeMsec" => {
+                self.circuit_priority_half_life =
+                    Some(CircuitPriorityHalflife::clamped_from_str(value)?)
+            }
+            "ExtendByEd25519ID" => {
+                self.extend_by_ed25519_id = Some(IntegerBoolean::clamped_from_str(value)?.into())
+            }
+            "min_paths_for_circs_pct" => {
+                self.min_circuit_path_threshold =
+                    Some(MinCircuitPathThreshold::clamped_from_str(value)?)
+            }
+            "sendme_accept_min_version" => {
+                self.send_me_accept_min_version = Some(SendMeVersion::clamped_from_str(value)?)
+            }
+            "sendme_emit_min_version" => {
+                self.send_me_emit_min_version = Some(SendMeVersion::clamped_from_str(value)?)
+            }
+            _ => return Err(Box::new(Error::KeyNotRecognized)),
         }
         Ok(())
     }
-
-    //pub fn update_if_not_set(&mut self, name:&str, val:&str) -> Result? {
-    //TODO If None then update.
-    // }
 
     /// This function takes an iterator of string references and returns a result.
     /// The result is either OK or a list of errors.
@@ -203,7 +264,10 @@ mod test {
         y.push((k, v));
         let z = x.update(y.into_iter());
         z.ok().unwrap();
-        assert_eq!(x.min_circuit_path_threshold.unwrap().get(), Percentage(54));
+        assert_eq!(
+            x.min_circuit_path_threshold.unwrap().get(),
+            IntegerPercentage(54)
+        );
     }
 
     #[test]
@@ -230,7 +294,10 @@ mod test {
         y.push((k, v));
         let z = x.update(y.into_iter());
         z.ok().unwrap();
-        assert_eq!(x.min_circuit_path_threshold.unwrap().get(), Percentage(54));
+        assert_eq!(
+            x.min_circuit_path_threshold.unwrap().get(),
+            IntegerPercentage(54)
+        );
         assert_eq!(x.circuit_window.unwrap().get(), CellWindowSize(900));
     }
 
