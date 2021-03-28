@@ -70,6 +70,7 @@ pub struct Percentage(pub u8);
 #[cfg(test)]
 mod tests {
 
+    #[test]
     fn test_weight_wrapper() {
         let x = super::BandwidthWeight(50);
         let y = super::BandwidthWeight(27);
@@ -85,7 +86,7 @@ mod tests {
         let super::BandwidthWeight(raw) = x + y;
         assert!(raw == 21);
         let k = "1234";
-        let k_bw: super::BandwidthWeight = k.parse().unwrap();
+        let _k_bw: super::BandwidthWeight = k.parse().unwrap();
     }
 
     bounded_type! { pub struct TestFoo(u16, 1, 5) }
