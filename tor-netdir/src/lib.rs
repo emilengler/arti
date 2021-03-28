@@ -310,13 +310,13 @@ impl NetDir {
         // If we can build a randomly chosen path with at least this
         // probability, we know enough information to participate
         // on the network.
-        let tor_primitive_types::Percentage(min_pct) = self
+
+        let min_frac_paths: f64 = self
             .params()
             .min_circuit_path_threshold
-            .clone()
             .unwrap_or_default()
-            .get(); //TODO Escapes type safety!
-        let min_frac_paths = (min_pct as f64) / 100.0;
+            .get()
+            .into();
 
         // What fraction of paths can we build?
         let available = self.frac_for_role(WeightRole::Guard)

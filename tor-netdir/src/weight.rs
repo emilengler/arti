@@ -237,8 +237,7 @@ impl WeightSet {
     /// Compute the correct WeightSet for a provided MdConsensus.
     pub(crate) fn from_consensus(consensus: &MdConsensus, params: &NetParameters) -> Self {
         let bandwidth_fn = pick_bandwidth_fn(consensus.routers().iter().map(|rs| rs.weight()));
-        let BandwidthWeight(weight_scale) =
-            params.bw_weight_scale.clone().unwrap_or_default().get(); //TODO Escapes the type.
+        let BandwidthWeight(weight_scale) = params.bw_weight_scale.unwrap_or_default().get(); //TODO Escapes the type.
         let weight_scale_int =
             i32::try_from(weight_scale).expect("Weight scale outside expected range"); //TODO Fix, how did this code even work before?
         let total_bw = consensus
