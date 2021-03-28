@@ -65,7 +65,7 @@ impl From<ExtendByEd25519Id> for bool {
 impl Default for ExtendByEd25519Id {
     fn default() -> Self {
         //TODO - Lookup what the default should be.
-        ExtendByEd25519Id(IntegerBoolean::clamped_from(0))
+        ExtendByEd25519Id(IntegerBoolean::saturating_from(0))
     }
 }
 
@@ -170,27 +170,27 @@ impl NetParameters {
         // list of triples  (name, type, str_key)
         match name {
             "bwweightscale" => {
-                self.bw_weight_scale = Some(BandwidthWeightFactor::clamped_from_str(value)?)
+                self.bw_weight_scale = Some(BandwidthWeightFactor::saturating_from_str(value)?)
             }
             "circwindow" => {
-                self.circuit_window = Some(CircuitWindowSizeLimit::clamped_from_str(value)?)
+                self.circuit_window = Some(CircuitWindowSizeLimit::saturating_from_str(value)?)
             }
             "CircuitPriorityHalflifeMsec" => {
                 self.circuit_priority_half_life =
-                    Some(CircuitPriorityHalflife::clamped_from_str(value)?)
+                    Some(CircuitPriorityHalflife::saturating_from_str(value)?)
             }
             "ExtendByEd25519ID" => {
-                self.extend_by_ed25519_id = Some(IntegerBoolean::clamped_from_str(value)?.into())
+                self.extend_by_ed25519_id = Some(IntegerBoolean::saturating_from_str(value)?.into())
             }
             "min_paths_for_circs_pct" => {
                 self.min_circuit_path_threshold =
-                    Some(MinCircuitPathThreshold::clamped_from_str(value)?)
+                    Some(MinCircuitPathThreshold::saturating_from_str(value)?)
             }
             "sendme_accept_min_version" => {
-                self.send_me_accept_min_version = Some(SendMeVersion::clamped_from_str(value)?)
+                self.send_me_accept_min_version = Some(SendMeVersion::saturating_from_str(value)?)
             }
             "sendme_emit_min_version" => {
-                self.send_me_emit_min_version = Some(SendMeVersion::clamped_from_str(value)?)
+                self.send_me_emit_min_version = Some(SendMeVersion::saturating_from_str(value)?)
             }
             _ => return Err(Box::new(Error::KeyNotRecognized)),
         }
