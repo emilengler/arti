@@ -88,13 +88,11 @@ mod tests {
         let k_bw: super::BandwidthWeight = k.parse().unwrap();
     }
 
-    bounded_type! {TestFoo(u16, 1, 5, test_foo_bounds) }
-    make_default_type! { TestFoo(4, test_foo_default) }
-    make_saturating_type! {TestFoo(u16)}
+    bounded_type! { pub struct TestFoo(u16, 1, 5) }
+    set_default_for_bounded_type!(TestFoo, 4);
 
-    bounded_type! { TestBar(i32, -45, 17, test_bar_bounds) }
-    make_default_type! { TestBar(0, test_bar_default) }
-    make_checked_type! {TestBar(i32)}
+    bounded_type! { struct TestBar(i32, -45, 17) }
+    set_default_for_bounded_type!(TestBar, 0);
 
     //make_parameter_type! {TestFoo(3,)}
     #[test]
@@ -105,10 +103,10 @@ mod tests {
 
     #[test]
     fn saturate_works() {
-        let x: TestFoo = "1000".parse().unwrap();
+        let x: TestFoo = TestFoo::clamped_from_str("1000").unwrap();
         let x_val: u16 = x.into();
         assert!(x_val == TestFoo::UPPER);
-        let x: TestFoo = "0".parse().unwrap();
+        let x: TestFoo = TestFoo::clamped_from_str("0").unwrap();
         let x_val: u16 = x.into();
         assert!(x_val == TestFoo::LOWER);
     }

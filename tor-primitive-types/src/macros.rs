@@ -6,23 +6,12 @@
 macro_rules! bounded_type {
     {
         $(#[$meta:meta])*
-        $type_name:ident($underlying_type:ty,$lower:expr,$upper:expr,$test_name:ident)
+        $visibility:vis struct $type_name:ident($underlying_type:ty,$lower:expr,$upper:expr)
     } => {
 
-        #[cfg(test)]
-        /// This is an automatically generated test which ensures that the bounds on the integer
-        /// type make sense and that the default is within those bounds. It is possible to compile
-        /// to create a type with invalid bounds, but running `cargo test` will show the failing
-        /// test and type. Currently, the user has to provide a test name because macros are not
-        /// allowed to generate new identifiers without using nightly.
-        /// TODO - Mark functions for inlining and branches for expectation?s
-        #[test]
-        fn $test_name() {
-            assert!($lower <= $upper);
-        }
         /// The structure for the type, including the underlying value.
-		#[derive(Debug, Clone)]
-        pub struct $type_name {
+        $(#[$meta])*
+        $visibility struct $type_name {
             value : $underlying_type
         }
 
@@ -33,9 +22,12 @@ macro_rules! bounded_type {
             /// A lower bound for values of this type
         	const LOWER : $underlying_type = $lower;
             /// Private constructor function for this type.
-            fn new(value: $underlying_type) -> $type_name {
+            fn unchecked_new(value: $underlying_type) -> $type_name {
+                debug_assert!($type_name::LOWER <= $type_name::UPPER);
                 $type_name { value }
             }
+            //TODO - We use debug_assert! here because const_assert! from static_assertions is not yet ready. If support stabilizes, it would be preferable.
+
             /// Public getter for the underlying type.
             pub fn get(&self) -> $underlying_type {
             	self.value
@@ -44,7 +36,7 @@ macro_rules! bounded_type {
             /// If the value lies outside the maximum range of the type, it is clamped to the
             /// upper or lower bound as appropriate.
             pub fn saturating_new(val: $underlying_type) -> $type_name {
-                $type_name::new($type_name::clamp(val))
+                $type_name::unchecked_new($type_name::clamp(val))
             }
             /// This constructor returns a result containing the new value or else
             /// an error if the input lies outside the acceptable range.
@@ -54,7 +46,7 @@ macro_rules! bounded_type {
                 } else if val < $type_name::LOWER {
                     Err($crate::Error::BelowLowerBound)
                 } else {
-                    Ok($type_name::new(val))
+                    Ok($type_name::unchecked_new(val))
                 }
             }
             /// This private function clamps an input to the acceptable range.
@@ -67,6 +59,15 @@ macro_rules! bounded_type {
                     val
                 }
             }
+            /// Convert from the underlying type, clamping to the upper or lower bound if needed.
+            fn saturating_from(val: $underlying_type) -> $type_name {
+                $type_name::unchecked_new($type_name::clamp(val))
+            }
+            /// Convert from a string, clamping to the upper or lower bound if needed.
+            fn saturating_from_str(s: &str) ->  std::result::Result<Self, Box<dyn std::error::Error>> {
+                let val : $underlying_type = s.parse()?;
+                Ok($type_name::saturating_from(val))
+            }
         }
         impl std::fmt::Display for $type_name {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -78,63 +79,6 @@ macro_rules! bounded_type {
                 val.value
             }
         }
-    }
-}
-
-/// This macro generates a default implementation for the type and a test to ensure
-/// that the default value is within the correct bounds.
-#[macro_export]
-macro_rules! make_default_type {
-    {
-     $type_name:ident($def:expr,$test_name:ident)
-    } => {
-
-        #[cfg(test)]
-        #[test]
-        fn $test_name() {
-            assert!($type_name::LOWER <= $def);
-            assert!($def <= $type_name::UPPER);
-        }
-
-        impl Default for $type_name {
-            fn default() -> Self {
-                $type_name { value : $def }
-            }
-        }
-    }
-}
-
-/// This macro implements From and FromStr traits to support parsing and conversion
-/// from the underlying type. It uses the saturating constructor to clamp the underlying
-/// values to be within the upper and lower bounds of the type.
-#[macro_export]
-macro_rules! make_saturating_type{
-    {
-     $type_name:ident($underlying_type:ty)
-    } => {
-        impl std::convert::From<$underlying_type> for $type_name {
-            fn from(val: $underlying_type) -> $type_name {
-                $type_name::saturating_new(val)
-            }
-        }
-
-        impl std::str::FromStr for $type_name {
-            //TODO Is this sufficiently general?
-            type Err = std::num::ParseIntError;
-            fn from_str(s: &str) ->  std::result::Result<Self, Self::Err>{
-                Ok($type_name::saturating_new(s.parse()?))
-            }
-        }
-    }
-}
-
-/// This macro instanties a checked type which returns an error if the passed value
-/// lies outside the upper or lower bounds.
-#[macro_export]
-macro_rules! make_checked_type {
-    {
-     $type_name:ident($underlying_type:ty)
-    } => {
         impl std::convert::TryFrom<$underlying_type> for $type_name {
             type Error = $crate::Error;
             fn try_from(val: $underlying_type) -> Result<Self,Self::Error> {
@@ -149,4 +93,19 @@ macro_rules! make_checked_type {
             }
         }
     }
+}
+
+/// This macro generates a default implementation for the type and a test to ensure
+/// that the default value is within the correct bounds.
+#[macro_export]
+macro_rules! set_default_for_bounded_type {
+    ($type_name:ident, $def:expr ) => {
+        impl Default for $type_name {
+            fn default() -> Self {
+                debug_assert!($def <= $type_name::UPPER);
+                debug_assert!($def >= $type_name::LOWER);
+                $type_name::unchecked_new($def)
+            }
+        }
+    };
 }
