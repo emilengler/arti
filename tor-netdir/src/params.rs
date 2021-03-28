@@ -161,7 +161,7 @@ impl NetParameters {
     /// Given a name and value as strings, produce either a result or an error if the parsing fails.
     /// The error may reflect a failure to parse a value of the correct type or withint the necessary bounds.
     /// TODO - Should probably wrap the underlying error to add context? E.g. the key
-    fn update_override(
+    fn saturating_update_override(
         &mut self,
         name: &str,
         value: &str,
@@ -199,7 +199,7 @@ impl NetParameters {
 
     /// This function takes an iterator of string references and returns a result.
     /// The result is either OK or a list of errors.
-    pub fn update<'a>(
+    pub fn saturating_update<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a std::string::String, &'a std::string::String)>,
     ) -> std::result::Result<(), Vec<Box<dyn std::error::Error>>> {
@@ -208,7 +208,7 @@ impl NetParameters {
         let mut changes = false; //This state doesn't feel very idiomatic!
         for (k, v) in iter {
             changes = true;
-            let r = self.update_override(k, v);
+            let r = self.saturating_update_override(k, v);
             match r {
                 Ok(()) => continue,
                 Err(x) => errors.push(x),
@@ -238,7 +238,7 @@ mod test {
     fn empty_list() {
         let mut x = NetParameters::default();
         let y = Vec::<(&String, &String)>::new();
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.err().unwrap();
     }
 
@@ -249,7 +249,7 @@ mod test {
         let k = &String::from("This_is_not_a_real_key");
         let v = &String::from("456");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.err().unwrap();
     }
     // #[test]
@@ -262,7 +262,7 @@ mod test {
         let k = &String::from("min_paths_for_circs_pct");
         let v = &String::from("54");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.ok().unwrap();
         assert_eq!(
             x.min_circuit_path_threshold.unwrap().get(),
@@ -277,7 +277,7 @@ mod test {
         let k = &String::from("min_paths_for_circs_pct");
         let v = &String::from("The_colour_red");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.err().unwrap();
         assert!(x.min_circuit_path_threshold.is_none());
     }
@@ -292,7 +292,7 @@ mod test {
         let k = &String::from("circwindow");
         let v = &String::from("900");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.ok().unwrap();
         assert_eq!(
             x.min_circuit_path_threshold.unwrap().get(),
@@ -311,7 +311,7 @@ mod test {
         let k = &String::from("min_paths_for_circs_pct");
         let v = &String::from("255");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.ok().unwrap();
         assert_eq!(x.send_me_accept_min_version.unwrap().get(), 30);
         assert_eq!(
@@ -330,7 +330,7 @@ mod test {
         let k = &String::from("min_paths_for_circs_pct");
         let v = &String::from("9000");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.err().unwrap();
         assert_eq!(x.send_me_accept_min_version.unwrap().get(), 30);
         assert_eq!(x.min_circuit_path_threshold.is_none(), true);
@@ -348,7 +348,7 @@ mod test {
         let k = &String::from("not_a_real_parameter");
         let v = &String::from("9000");
         y.push((k, v));
-        let z = x.update(y.into_iter());
+        let z = x.saturating_update(y.into_iter());
         z.err().unwrap();
         assert_eq!(x.send_me_accept_min_version.unwrap().get(), 30);
     }

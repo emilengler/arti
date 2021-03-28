@@ -89,10 +89,10 @@ mod tests {
 
     #[test]
     fn saturate_works() {
-        let x: TestFoo = TestFoo::clamped_from_str("1000").unwrap();
+        let x: TestFoo = TestFoo::saturating_from_str("1000").unwrap();
         let x_val: u16 = x.into();
         assert!(x_val == TestFoo::UPPER);
-        let x: TestFoo = TestFoo::clamped_from_str("0").unwrap();
+        let x: TestFoo = TestFoo::saturating_from_str("0").unwrap();
         let x_val: u16 = x.into();
         assert!(x_val == TestFoo::LOWER);
     }

@@ -167,7 +167,7 @@ impl PartialNetDir {
         replacement_params: Option<&netstatus::NetParams<std::string::String>>,
     ) -> Self {
         let mut params = NetParameters::default();
-        match params.update(consensus.params().iter()) {
+        match params.saturating_update(consensus.params().iter()) {
             Ok(()) => (),
             Err(x) => {
                 for u in x {
@@ -178,7 +178,7 @@ impl PartialNetDir {
         // We have to do this now, or else changes won't be reflected in our
         // weights.
         if let Some(replacement) = replacement_params {
-            match params.update(replacement.iter()) {
+            match params.saturating_update(replacement.iter()) {
                 Ok(()) => (),
                 Err(x) => {
                     for u in x {
