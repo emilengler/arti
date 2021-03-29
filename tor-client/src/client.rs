@@ -118,4 +118,10 @@ impl TorClient {
 
         Ok(stream)
     }
+
+    /// Return a reference counted DirMgr object
+    #[cfg(feature = "client-api")]
+    pub async fn get_dirmgr(&self) -> Arc<tor_dirmgr::DirMgr> {
+        Arc::clone(&self.dirmgr)
+    }
 }

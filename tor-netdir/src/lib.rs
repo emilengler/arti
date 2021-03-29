@@ -454,6 +454,14 @@ impl<'a> Relay<'a> {
     pub fn ipv6_policy(&self) -> &Arc<PortPolicy> {
         self.md.ipv6_policy()
     }
+    /// Return MD router status reference of this relay.
+    pub fn get_rs(&self) -> &netstatus::MdConsensusRouterStatus {
+        self.rs
+    }
+    /// Return micro descriptor reference of this relay.
+    pub fn get_md(&self) -> &Microdesc {
+        self.md
+    }
 }
 
 impl<'a> tor_linkspec::ChanTarget for Relay<'a> {

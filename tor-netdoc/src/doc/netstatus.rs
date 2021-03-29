@@ -296,7 +296,7 @@ struct DirSource {
 
 bitflags! {
     /// A set of known flags on a single relay
-    struct RouterFlags: u16 {
+    pub struct RouterFlags: u16 {
         /// Is this a directory authority?
         const AUTHORITY = (1<<0);
         /// Is this relay marked as a bad exit?

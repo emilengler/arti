@@ -40,6 +40,23 @@ impl Default for RelayFamily {
     }
 }
 
+/// Format the family on one single line with all fingerprints seperated by a
+/// whitespace.
+impl std::fmt::Display for RelayFamily {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut line: Vec<_> = self
+            .0
+            .iter()
+            .map(|&id| format!("{}", id.to_string().to_uppercase()))
+            .collect();
+        if line.is_empty() {
+            return write!(f, "None");
+        }
+        line.sort();
+        write!(f, "{}", line.join(" "))
+    }
+}
+
 impl std::str::FromStr for RelayFamily {
     type Err = Error;
     fn from_str(s: &str) -> Result<Self> {
