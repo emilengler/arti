@@ -41,7 +41,7 @@ type MacTag = [u8; 32];
 /// The AUTH_INPUT_MAC from the HS Ntor protocol
 type AuthInputMac = MacTag;
 /// The Service's subcredential
-type Subcredential = [u8; 32];
+pub type Subcredential = [u8; 32];
 
 /// The key generator used by the HS ntor handshake.  Implements the simple key
 /// expansion protocl specified in section "Key expansion" of rend-spec-v3.txt .
@@ -67,28 +67,29 @@ impl KeyGenerator for HsNtorHkdfKeyGenerator {
 /*********************** Client Side Code ************************************/
 
 /// The input to enter the HS Ntor protocol as a client
+/// XXX Make a constructor
 #[derive(Clone)]
 pub struct HsNtorClientInput {
     /// Introduction point encryption key (aka B)
     /// (found in the HS descriptor)
-    B: curve25519::PublicKey,
+    pub B: curve25519::PublicKey,
 
     /// Introduction point authentication key (aka AUTH_KEY)
     /// (found in the HS descriptor)
-    auth_key: ed25519::PublicKey,
+    pub auth_key: ed25519::PublicKey,
 
     /// Service subcredential
-    subcredential: Subcredential,
+    pub subcredential: Subcredential,
 
     /// The plaintext that should be encrypted into ENCRYPTED_DATA It's
     /// structure is irrelevant for this crate, but can be found in section
     /// [PROCESS_INTRO2] of the spec
-    plaintext: Vec<u8>,
+    pub plaintext: Vec<u8>,
 
     /// The data of the INTRODUCE1 cell from the beginning and up to the start
     /// of the ENCRYPTED_DATA. It's used to compute the MAC at the end of the
     /// INTRODUCE1 cell.
-    intro_cell_data: Vec<u8>,
+    pub intro_cell_data: Vec<u8>,
 }
 
 /// Client state for an ntor handshake.
@@ -137,7 +138,7 @@ fn encrypt_and_mac(
 ///  CLIENT_PK                [PK_PUBKEY_LEN bytes]
 ///  ENCRYPTED_DATA           [Padded to length of plaintext]
 ///  MAC                      [MAC_LEN bytes]
-fn client_send_intro<R>(
+pub fn client_send_intro<R>(
     rng: &mut R,
     proto_input: &HsNtorClientInput,
 ) -> Result<(HsNtorClientState, Vec<u8>)>
@@ -188,7 +189,7 @@ where
 ///
 /// Handle it by computing and verifying the MAC, and if it's legit return a
 /// key generator based on the result of the key exchange.
-fn client_receive_rend<T>(state: HsNtorClientState, msg: T) -> Result<HsNtorHkdfKeyGenerator>
+pub fn client_receive_rend<T>(state: HsNtorClientState, msg: T) -> Result<HsNtorHkdfKeyGenerator>
 where
     T: AsRef<[u8]>,
 {
@@ -221,22 +222,23 @@ where
 /*********************** Server Side Code ************************************/
 
 /// The input required to enter the HS Ntor protocol as a service
+/// XXX Make a constructor
 pub struct HsNtorServiceInput {
     /// Introduction point encryption privkey
-    b: curve25519::StaticSecret,
+    pub b: curve25519::StaticSecret,
     /// Introduction point encryption pubkey
-    B: curve25519::PublicKey,
+    pub B: curve25519::PublicKey,
 
     /// Introduction point authentication key (aka AUTH_KEY)
-    auth_key: ed25519::PublicKey,
+    pub auth_key: ed25519::PublicKey,
 
     /// Our subcredential
-    subcredential: Subcredential,
+    pub subcredential: Subcredential,
 
     /// The data of the INTRODUCE1 cell from the beginning and up to the start
     /// of the ENCRYPTED_DATA. Will be used to verify the MAC at the end of the
     /// INTRODUCE1 cell.
-    intro_cell_data: Vec<u8>,
+    pub intro_cell_data: Vec<u8>,
 }
 
 /// Conduct the HS Ntor handshake as the service.
@@ -247,7 +249,7 @@ pub struct HsNtorServiceInput {
 /// The response to the client is:
 ///    SERVER_PK   Y                         [PK_PUBKEY_LEN bytes]
 ///    AUTH        AUTH_INPUT_MAC            [MAC_LEN bytes]
-fn server_receive_intro<R, T>(
+pub fn server_receive_intro<R, T>(
     rng: &mut R,
     proto_input: HsNtorServiceInput,
     msg: T,
