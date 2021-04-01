@@ -16,7 +16,7 @@
 
 use crate::crypto::handshake::KeyGenerator;
 use crate::crypto::ll::kdf::{Kdf, ShakeKdf};
-use crate::{Result, SecretBytes};
+use crate::{Error, Result, SecretBytes};
 use tor_bytes::{Reader, Writer};
 use tor_llcrypto::d::Sha3_256;
 use tor_llcrypto::pk::{curve25519, ed25519};
@@ -331,7 +331,9 @@ fn hs_ntor_mac(key: &Vec<u8>, message: &[u8]) -> Result<[u8; 32]> {
     d.update(message);
 
     let result = d.finalize();
-    Ok(result.try_into().unwrap()) // XXX unwrap but this should not fail (?)
+    result
+        .try_into()
+        .map_err(|_| Error::InternalError("failed MAC computation".into()))
 }
 
 /// Helper function: Compute the part of the HS ntor handshake that generates
@@ -374,8 +376,12 @@ fn get_introduce1_key_material(
 
     let hs_keys = ShakeKdf::new().derive(&secret_input[..], 32 + 32)?;
     // Extract the keys into arrays
-    let enc_key = hs_keys[0..32].try_into().unwrap(); // XXX bad unwrap turning slice to array
-    let mac_key = hs_keys[32..64].try_into().unwrap(); // XXX bad unwrap
+    let enc_key = hs_keys[0..32]
+        .try_into()
+        .map_err(|_| Error::InternalError("converting enc_key".into()))?;
+    let mac_key = hs_keys[32..64]
+        .try_into()
+        .map_err(|_| Error::InternalError("converting mac_key".into()))?;
 
     Ok((enc_key, mac_key))
 }
