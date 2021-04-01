@@ -35,29 +35,29 @@ use zeroize::Zeroizing;
 /// The ENC_KEY from the HS Ntor protocol
 type EncKey = [u8; 32];
 /// The MAC_KEY from the HS Ntor protocol
-type MACKey = [u8; 32];
+type MacKey = [u8; 32];
 /// A generic 256-bit MAC tag
-type MACTag = [u8; 32];
+type MacTag = [u8; 32];
 /// The AUTH_INPUT_MAC from the HS Ntor protocol
-type AuthInputMAC = MACTag;
+type AuthInputMac = MacTag;
 /// The Service's subcredential
 type Subcredential = [u8; 32];
 
 /// The key generator used by the HS ntor handshake.  Implements the simple key
 /// expansion protocl specified in section "Key expansion" of rend-spec-v3.txt .
-pub struct HSNtorHkdfKeyGenerator {
+pub struct HsNtorHkdfKeyGenerator {
     /// Secret data derived from the handshake, used as input to HKDF
     seed: SecretBytes,
 }
 
-impl HSNtorHkdfKeyGenerator {
+impl HsNtorHkdfKeyGenerator {
     /// Create a new key generator to expand a given seed
     pub fn new(seed: SecretBytes) -> Self {
-        HSNtorHkdfKeyGenerator { seed }
+        HsNtorHkdfKeyGenerator { seed }
     }
 }
 
-impl KeyGenerator for HSNtorHkdfKeyGenerator {
+impl KeyGenerator for HsNtorHkdfKeyGenerator {
     /// Expand the seed into a keystream of 'keylen' size
     fn expand(self, keylen: usize) -> Result<SecretBytes> {
         ShakeKdf::new().derive(&self.seed[..], keylen)
@@ -68,7 +68,7 @@ impl KeyGenerator for HSNtorHkdfKeyGenerator {
 
 /// The input to enter the HS Ntor protocol as a client
 #[derive(Clone)]
-pub struct HSNtorClientInput {
+pub struct HsNtorClientInput {
     /// Introduction point encryption key (aka B)
     /// (found in the HS descriptor)
     B: curve25519::PublicKey,
@@ -92,10 +92,10 @@ pub struct HSNtorClientInput {
 }
 
 /// Client state for an ntor handshake.
-pub struct HSNtorClientState {
+pub struct HsNtorClientState {
     /// Keys received from our caller when we started the protocol. The rest of
     /// the keys in this state structure have been created during the protocol.
-    proto_input: HSNtorClientInput,
+    proto_input: HsNtorClientInput,
 
     /// The temporary curve25519 secret that we generated for this handshake.
     x: curve25519::StaticSecret,
@@ -107,10 +107,10 @@ pub struct HSNtorClientState {
 /// using 'mac_key' and return (ciphertext, mac_tag).
 fn encrypt_and_mac(
     mut plaintext: Vec<u8>,
-    other_data: &Vec<u8>,
+    other_data: &[u8],
     enc_key: EncKey,
-    mac_key: MACKey,
-) -> Result<(Vec<u8>, MACTag)> {
+    mac_key: MacKey,
+) -> Result<(Vec<u8>, MacTag)> {
     // Encrypt the introduction data using 'enc_key'
     let zero_iv = GenericArray::default();
     let mut cipher = Aes256Ctr::new(&enc_key.into(), &zero_iv);
@@ -139,8 +139,8 @@ fn encrypt_and_mac(
 ///  MAC                      [MAC_LEN bytes]
 fn client_send_intro<R>(
     rng: &mut R,
-    proto_input: &HSNtorClientInput,
-) -> Result<(HSNtorClientState, Vec<u8>)>
+    proto_input: &HsNtorClientInput,
+) -> Result<(HsNtorClientState, Vec<u8>)>
 where
     R: RngCore + CryptoRng,
 {
@@ -152,10 +152,10 @@ where
     let bx = x.diffie_hellman(&proto_input.B);
 
     // Compile our state structure
-    let state = HSNtorClientState {
+    let state = HsNtorClientState {
         proto_input: proto_input.clone(),
-        x: x,
-        X: X,
+        x,
+        X,
     };
 
     // Compute keys required to finish this part of the handshake
@@ -188,14 +188,14 @@ where
 ///
 /// Handle it by computing and verifying the MAC, and if it's legit return a
 /// key generator based on the result of the key exchange.
-fn client_receive_rend<T>(state: HSNtorClientState, msg: T) -> Result<HSNtorHkdfKeyGenerator>
+fn client_receive_rend<T>(state: HsNtorClientState, msg: T) -> Result<HsNtorHkdfKeyGenerator>
 where
     T: AsRef<[u8]>,
 {
     // Extract the public key of the service from the message
     let mut cur = Reader::from_slice(msg.as_ref());
     let Y: curve25519::PublicKey = cur.extract()?;
-    let mac_tag: MACTag = cur.extract()?;
+    let mac_tag: MacTag = cur.extract()?;
 
     // Get EXP(Y,x) and EXP(B,x)
     let xy = state.x.diffie_hellman(&Y);
@@ -221,9 +221,10 @@ where
 /*********************** Server Side Code ************************************/
 
 /// The input required to enter the HS Ntor protocol as a service
-pub struct HSNtorServiceInput {
-    /// Introduction point encryption keypair
+pub struct HsNtorServiceInput {
+    /// Introduction point encryption privkey
     b: curve25519::StaticSecret,
+    /// Introduction point encryption pubkey
     B: curve25519::PublicKey,
 
     /// Introduction point authentication key (aka AUTH_KEY)
@@ -248,9 +249,9 @@ pub struct HSNtorServiceInput {
 ///    AUTH        AUTH_INPUT_MAC            [MAC_LEN bytes]
 fn server_receive_intro<R, T>(
     rng: &mut R,
-    proto_input: HSNtorServiceInput,
+    proto_input: HsNtorServiceInput,
     msg: T,
-) -> Result<(HSNtorHkdfKeyGenerator, Vec<u8>, Vec<u8>)>
+) -> Result<(HsNtorHkdfKeyGenerator, Vec<u8>, Vec<u8>)>
 where
     R: RngCore + CryptoRng,
     T: AsRef<[u8]>,
@@ -260,7 +261,7 @@ where
     let X: curve25519::PublicKey = cur.extract()?;
     let remaining_bytes = cur.remaining();
     let ciphertext = &mut cur.take(remaining_bytes - 32)?.to_vec();
-    let mac_tag: MACTag = cur.extract()?;
+    let mac_tag: MacTag = cur.extract()?;
 
     // Now derive keys needed for handling the INTRO1 cell
     let bx = proto_input.b.diffie_hellman(&X);
@@ -312,7 +313,7 @@ where
 
 /// Implement the MAC function used as part of the HS ntor handshake:
 /// MAC(k, m) is H(k_len | k | m) where k_len is htonll(len(k)).
-fn hs_ntor_mac(key: &Vec<u8>, message: &[u8]) -> Result<MACTag> {
+fn hs_ntor_mac(key: &[u8], message: &[u8]) -> Result<MacTag> {
     let k_len = key.len();
 
     let mut d = Sha3_256::new();
@@ -343,7 +344,7 @@ fn get_introduce1_key_material(
     X: &curve25519::PublicKey,
     B: &curve25519::PublicKey,
     subcredential: &Subcredential,
-) -> Result<(EncKey, MACKey)> {
+) -> Result<(EncKey, MacKey)> {
     let hs_ntor_protoid_constant = &b"tor-hs-ntor-curve25519-sha3-256-1"[..];
     let hs_ntor_key_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_key_extract"[..];
     let hs_ntor_expand_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_key_expand"[..];
@@ -396,7 +397,7 @@ fn get_rendezvous1_key_material(
     B: &curve25519::PublicKey,
     X: &curve25519::PublicKey,
     Y: &curve25519::PublicKey,
-) -> Result<(HSNtorHkdfKeyGenerator, AuthInputMAC)> {
+) -> Result<(HsNtorHkdfKeyGenerator, AuthInputMac)> {
     let hs_ntor_protoid_constant = &b"tor-hs-ntor-curve25519-sha3-256-1"[..];
     let hs_ntor_mac_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_mac"[..];
     let hs_ntor_verify_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_verify"[..];
@@ -435,7 +436,7 @@ fn get_rendezvous1_key_material(
     let mut kdf_seed = Zeroizing::new(Vec::new());
     kdf_seed.write(&ntor_key_seed);
     kdf_seed.write(hs_ntor_expand_constant);
-    let keygen = HSNtorHkdfKeyGenerator::new(Zeroizing::new(kdf_seed.to_vec()));
+    let keygen = HsNtorHkdfKeyGenerator::new(Zeroizing::new(kdf_seed.to_vec()));
 
     Ok((keygen, auth_input_mac))
 }
@@ -460,7 +461,7 @@ mod test {
         let intro_auth_key_pubkey = ed25519::PublicKey::from(&intro_auth_key_privkey);
 
         // Create keys for client and service
-        let client_keys = HSNtorClientInput {
+        let client_keys = HsNtorClientInput {
             B: intro_b_pubkey,
             auth_key: intro_auth_key_pubkey,
             subcredential: [5; 32],
@@ -468,7 +469,7 @@ mod test {
             intro_cell_data: vec![42; 60],
         };
 
-        let service_keys = HSNtorServiceInput {
+        let service_keys = HsNtorServiceInput {
             b: intro_b_privkey,
             B: intro_b_pubkey,
             auth_key: intro_auth_key_pubkey,
@@ -500,13 +501,13 @@ mod test {
     #[test]
     /// Test vectors generated with hs_ntor_ref.py from little-t-tor.
     fn ntor_mac() -> Result<()> {
-        let result = hs_ntor_mac(&"who".as_bytes().to_vec(), b"knows?")?;
+        let result = hs_ntor_mac(&"who".as_bytes(), b"knows?")?;
         assert_eq!(
             &result,
             &hex!("5e7da329630fdaa3eab7498bb1dc625bbb9ca968f10392b6af92d51d5db17473")
         );
 
-        let result = hs_ntor_mac(&"gone".as_bytes().to_vec(), b"by")?;
+        let result = hs_ntor_mac(&"gone".as_bytes(), b"by")?;
         assert_eq!(
             &result,
             &hex!("90071aabb06d3f7c777db41542f4790c7dd9e2e7b2b842f54c9c42bbdb37e9a0")
