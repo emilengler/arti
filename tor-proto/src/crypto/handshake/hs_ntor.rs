@@ -27,6 +27,15 @@ use rand_core::{CryptoRng, RngCore};
 use std::convert::TryInto;
 use zeroize::Zeroizing;
 
+/// The ENC_KEY from the HS Ntor protocol
+type EncKey = [u8; 32];
+/// The MAC_KEY from the HS Ntor protocol
+type MACKey = [u8; 32];
+/// The AUTH_INPUT_MAC from the HS Ntor protocol
+type AuthInputMAC = [u8; 32];
+/// The Service's subcredential
+type Subcredential = [u8; 32];
+
 /// The key generator used by the HS ntor handshake.  Implements the simple key
 /// expansion protocl specified in section "Key expansion" of rend-spec-v3.txt .
 pub struct HSNtorHkdfKeyGenerator {
@@ -95,7 +104,7 @@ impl HSNtorClient {
     fn client1_with_extra_data<R: RngCore + CryptoRng>(
         rng: &mut R,
         keys: &HSNtorClientKeys,
-    ) -> Result<(HSNtorClientState, Vec<u8>, [u8; 32], [u8; 32])> {
+    ) -> Result<(HSNtorClientState, Vec<u8>, EncKey, MACKey)> {
         client_send_intro(rng, keys)
     }
 
@@ -106,7 +115,7 @@ impl HSNtorClient {
     fn client2_with_extra_data<T: AsRef<[u8]>>(
         state: HSNtorClientState,
         msg: T,
-    ) -> Result<(HSNtorHkdfKeyGenerator, [u8; 32])> {
+    ) -> Result<(HSNtorHkdfKeyGenerator, AuthInputMAC)> {
         client_verify_rend(msg, state)
     }
 }
@@ -122,7 +131,7 @@ pub struct HSNtorClientKeys {
     auth_key: ed25519::PublicKey,
 
     /// Service subcredential
-    subcredential: [u8; 32],
+    subcredential: Subcredential,
 }
 
 /// Client state for an ntor handshake.
@@ -149,7 +158,7 @@ pub struct HSNtorClientState {
 fn client_send_intro<R>(
     rng: &mut R,
     keys: &HSNtorClientKeys,
-) -> Result<(HSNtorClientState, Vec<u8>, [u8; 32], [u8; 32])>
+) -> Result<(HSNtorClientState, Vec<u8>, EncKey, MACKey)>
 where
     R: RngCore + CryptoRng,
 {
@@ -179,11 +188,12 @@ where
 }
 
 /// The introduction has been completed and the service has replied with a
-/// RENDEZVOUS1. Verify it's correct and return a key generator on success.
+/// RENDEZVOUS1. Handle it, and return a key generator and the AUTH_INPUT_MAC
+/// on success.
 fn client_verify_rend<T>(
     msg: T,
     state: HSNtorClientState,
-) -> Result<(HSNtorHkdfKeyGenerator, [u8; 32])>
+) -> Result<(HSNtorHkdfKeyGenerator, AuthInputMAC)>
 where
     T: AsRef<[u8]>,
 {
@@ -249,9 +259,9 @@ impl HSNtorServer {
     ) -> Result<(
         HSNtorHkdfKeyGenerator,
         Vec<u8>,
-        [u8; 32],
-        [u8; 32],
-        [u8; 32],
+        EncKey,
+        MACKey,
+        AuthInputMAC,
     )> {
         server_handshake_ntor_v1(rng, keys, msg)
     }
@@ -266,7 +276,7 @@ pub struct HSNtorServiceKeys {
     auth_key: ed25519::PublicKey,
 
     /// Our subcredential
-    subcredential: [u8; 32],
+    subcredential: Subcredential,
 }
 
 /// Conduct the HS Ntor handshake as the service.
@@ -281,9 +291,9 @@ fn server_handshake_ntor_v1<R, T>(
 ) -> Result<(
     HSNtorHkdfKeyGenerator,
     Vec<u8>,
-    [u8; 32],
-    [u8; 32],
-    [u8; 32],
+    EncKey,
+    MACKey,
+    AuthInputMAC,
 )>
 where
     R: RngCore + CryptoRng,
@@ -352,8 +362,8 @@ fn get_introduce1_key_material(
     auth_key: &ed25519::PublicKey,
     X: &curve25519::PublicKey,
     B: &curve25519::PublicKey,
-    subcredential: &[u8; 32],
-) -> Result<([u8; 32], [u8; 32])> {
+    subcredential: &Subcredential,
+) -> Result<(EncKey, MACKey)> {
     let hs_ntor_protoid_constant = &b"tor-hs-ntor-curve25519-sha3-256-1"[..];
     let hs_ntor_key_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_key_extract"[..];
     let hs_ntor_expand_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_key_expand"[..];
@@ -406,7 +416,7 @@ fn get_rendezvous1_key_material(
     B: &curve25519::PublicKey,
     X: &curve25519::PublicKey,
     Y: &curve25519::PublicKey,
-) -> Result<(HSNtorHkdfKeyGenerator, [u8; 32])> {
+) -> Result<(HSNtorHkdfKeyGenerator, AuthInputMAC)> {
     let hs_ntor_protoid_constant = &b"tor-hs-ntor-curve25519-sha3-256-1"[..];
     let hs_ntor_mac_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_mac"[..];
     let hs_ntor_verify_constant = &b"tor-hs-ntor-curve25519-sha3-256-1:hs_verify"[..];
