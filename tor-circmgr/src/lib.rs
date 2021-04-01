@@ -552,6 +552,22 @@ impl CircMgr {
 
         circs.remove(circ_id);
     }
+
+    /// Construct a client circuit using a given path.
+    ///
+    /// This function is unstable. It is only enabled if the crate was
+    /// built with the `experimental-api` feature.
+    #[cfg(feature = "experimental-api")]
+    pub async fn build_path(
+        &self,
+        rng: &mut StdRng,
+        netdir: DirInfo<'_>,
+        path: &TorPath<'_>,
+    ) -> Result<Arc<ClientCirc>> {
+        let params = netdir.circ_params();
+        let circ = path.build_circuit(rng, &self.chanmgr, &params).await?;
+        Ok(circ)
+    }
 }
 
 impl CircSet {
