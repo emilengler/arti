@@ -59,69 +59,9 @@ impl KeyGenerator for HSNtorHkdfKeyGenerator {
 
 /*********************** Client Side Code ************************************/
 
-/// Client side of the HS Ntor handshake
-pub struct HSNtorClient;
-
-impl super::ClientHandshake for HSNtorClient {
-    type KeyType = HSNtorClientKeys;
-    type StateType = HSNtorClientState;
-    type KeyGen = HSNtorHkdfKeyGenerator;
-
-    /// Start the HS Ntor handshake as the client. This method is here to
-    /// satisfy the ClientHandshake trait but the work actually happens in
-    /// client1_with_extra_data() below.
-    fn client1<R: RngCore + CryptoRng>(
-        rng: &mut R,
-        keys: &Self::KeyType,
-    ) -> Result<(Self::StateType, Vec<u8>)> {
-        let (state, response, _, _) = Self::client1_with_extra_data(rng, keys)?;
-        Ok((state, response))
-    }
-
-    /// Finish the HS Ntor handshake as the client. This method is here to
-    /// satisfy the ClientHandshake trait but the work actually happens in
-    /// client2_with_extra_data() below.
-    fn client2<T: AsRef<[u8]>>(state: Self::StateType, msg: T) -> Result<Self::KeyGen> {
-        let (keygen, _) = Self::client2_with_extra_data(state, msg)?;
-        Ok(keygen)
-    }
-}
-
-/// We add a bunch of advanced functions to HSNtorClient to fit the needs of
-/// the HS Ntor handshake. In particular the functions below return additional
-/// data to allow the caller to encrypt and MAC the data to be encrypted as
-/// part of the HS protocol.
-///
-/// XXXX We should adapt the ClientHandshake trait to use associated types so
-/// that it returns the data below as part of its regular client1() interface.
-impl HSNtorClient {
-    /// Start the HS Ntor handshake as the client.
-    ///
-    /// Return the Ntor protocol state, the response to the service, the
-    /// encryption key, and the MAC key.
-    ///
-    /// The response has the public key 'X' of the client.
-    fn client1_with_extra_data<R: RngCore + CryptoRng>(
-        rng: &mut R,
-        keys: &HSNtorClientKeys,
-    ) -> Result<(HSNtorClientState, Vec<u8>, EncKey, MACKey)> {
-        client_send_intro(rng, keys)
-    }
-
-    /// Finish the HS Ntor handshake as the client
-    ///
-    /// Return a key generator which is the result of the key exchange, and the
-    /// AUTH_INPUT_MAC that should be validated.
-    fn client2_with_extra_data<T: AsRef<[u8]>>(
-        state: HSNtorClientState,
-        msg: T,
-    ) -> Result<(HSNtorHkdfKeyGenerator, AuthInputMAC)> {
-        client_verify_rend(msg, state)
-    }
-}
-
+/// The input to enter the HS Ntor protocol as a client
 #[derive(Clone)]
-pub struct HSNtorClientKeys {
+pub struct HSNtorClientInput {
     /// Introduction point encryption key (aka B)
     /// (found in the HS descriptor)
     B: curve25519::PublicKey,
@@ -139,7 +79,7 @@ pub struct HSNtorClientState {
     /// Keys that we received from our caller when we started the protocol. The
     /// rest of the keys in this state structure have been created during the
     /// protocol.
-    public_keys: HSNtorClientKeys,
+    proto_input: HSNtorClientInput,
 
     /// The temporary curve25519 secret that we've generated for this
     /// handshake.
@@ -157,7 +97,7 @@ pub struct HSNtorClientState {
 /// authenticate that intro data.
 fn client_send_intro<R>(
     rng: &mut R,
-    keys: &HSNtorClientKeys,
+    proto_input: &HSNtorClientInput,
 ) -> Result<(HSNtorClientState, Vec<u8>, EncKey, MACKey)>
 where
     R: RngCore + CryptoRng,
@@ -167,18 +107,18 @@ where
     let X = curve25519::PublicKey::from(&x);
 
     // Get EXP(B,x)
-    let bx = x.diffie_hellman(&keys.B);
+    let bx = x.diffie_hellman(&proto_input.B);
 
     // Compile our state structure
     let state = HSNtorClientState {
-        public_keys: keys.clone(),
+        proto_input: proto_input.clone(),
         x: x,
         X: X,
     };
 
     // Compute keys required to finish this part of the handshake
     let (enc_key, mac_key) =
-        get_introduce1_key_material(&bx, &keys.auth_key, &X, &keys.B, &keys.subcredential)?;
+        get_introduce1_key_material(&bx, &proto_input.auth_key, &X, &proto_input.B, &proto_input.subcredential)?;
 
     // Create the relevant parts of INTRO1
     let mut v: Vec<u8> = Vec::new();
@@ -190,9 +130,9 @@ where
 /// The introduction has been completed and the service has replied with a
 /// RENDEZVOUS1. Handle it, and return a key generator and the AUTH_INPUT_MAC
 /// on success.
-fn client_verify_rend<T>(
-    msg: T,
+fn client_receive_rend<T>(
     state: HSNtorClientState,
+    msg: T,
 ) -> Result<(HSNtorHkdfKeyGenerator, AuthInputMAC)>
 where
     T: AsRef<[u8]>,
@@ -203,13 +143,13 @@ where
 
     // Get EXP(Y,x) and EXP(B,x)
     let xy = state.x.diffie_hellman(&Y);
-    let xb = state.x.diffie_hellman(&state.public_keys.B);
+    let xb = state.x.diffie_hellman(&state.proto_input.B);
 
     let (keygen, auth_input_mac) = get_rendezvous1_key_material(
         &xy,
         &xb,
-        &state.public_keys.auth_key,
-        &state.public_keys.B,
+        &state.proto_input.auth_key,
+        &state.proto_input.B,
         &state.X,
         &Y,
     )?;
@@ -219,55 +159,8 @@ where
 
 /*********************** Server Side Code ************************************/
 
-/// Server side of the HS ntor handshake.
-pub struct HSNtorServer;
-
-impl super::ServerHandshake for HSNtorServer {
-    type KeyType = HSNtorServiceKeys;
-    type KeyGen = HSNtorHkdfKeyGenerator;
-
-    /// Conduct the HS Ntor handshake as the service. This method is here to
-    /// satisfy the ServerHandshake trait but the work actually happens in
-    /// server_with_extra_data() below.
-    fn server<R: RngCore + CryptoRng, T: AsRef<[u8]>>(
-        rng: &mut R,
-        keys: &[Self::KeyType],
-        msg: T,
-    ) -> Result<(Self::KeyGen, Vec<u8>)> {
-        let (keygen, reply, _, _, _) = Self::server_with_extra_data(rng, keys, msg)?;
-        Ok((keygen, reply))
-    }
-}
-
-/// Similar to the way we did it for HSNtorClient, we introduce a function
-/// below to return additional data that are required by the HS Ntor handshake.
-impl HSNtorServer {
-    /// Conduct the HS Ntor handshake as the service.
-    ///
-    /// Return a key generator which is the result of the key exchange, the
-    /// response to the client, the encryption key, the MAC key and the
-    /// AUTH_INPUT_MAC.
-    ///
-    /// XXXX Depending on how we use this API on the final code, we might want
-    /// to split this function into two. One used when handling the
-    /// introduction cell, and one used when creating a rendezvous circuit. We
-    /// use this model in little-t-tor and it works nicely.
-    fn server_with_extra_data<R: RngCore + CryptoRng, T: AsRef<[u8]>>(
-        rng: &mut R,
-        keys: &[HSNtorServiceKeys],
-        msg: T,
-    ) -> Result<(
-        HSNtorHkdfKeyGenerator,
-        Vec<u8>,
-        EncKey,
-        MACKey,
-        AuthInputMAC,
-    )> {
-        server_handshake_ntor_v1(rng, keys, msg)
-    }
-}
-
-pub struct HSNtorServiceKeys {
+/// The input required to enter the HS Ntor protocol as a service
+pub struct HSNtorServiceInput {
     /// Introduction point encryption keypair
     b: curve25519::StaticSecret,
     B: curve25519::PublicKey,
@@ -284,9 +177,9 @@ pub struct HSNtorServiceKeys {
 /// Return a key generator which is the result of the key exchange, the
 /// response to the client, the encryption key, the MAC key and the
 /// AUTH_INPUT_MAC.
-fn server_handshake_ntor_v1<R, T>(
+fn server_receive_intro<R, T>(
     rng: &mut R,
-    key_slice: &[HSNtorServiceKeys],
+    proto_input: HSNtorServiceInput,
     msg: T,
 ) -> Result<(
     HSNtorHkdfKeyGenerator,
@@ -299,16 +192,14 @@ where
     R: RngCore + CryptoRng,
     T: AsRef<[u8]>,
 {
-    let keys = &key_slice[0];
-
     // Extract the client's public key from the message
     let mut cur = Reader::from_slice(msg.as_ref());
     let X: curve25519::PublicKey = cur.extract()?;
 
     // Now get keys needed for handling the INTRO1 cell
-    let bx = keys.b.diffie_hellman(&X);
+    let bx = proto_input.b.diffie_hellman(&X);
     let (enc_key, mac_key) =
-        get_introduce1_key_material(&bx, &keys.auth_key, &X, &keys.B, &keys.subcredential)?;
+        get_introduce1_key_material(&bx, &proto_input.auth_key, &X, &proto_input.B, &proto_input.subcredential)?;
 
     // Generate ephemeral keys for this handshake
     let y = curve25519::EphemeralSecret::new(rng.rng_compat());
@@ -316,10 +207,10 @@ where
 
     // Compute EXP(X,y) and EXP(X,b)
     let xy = y.diffie_hellman(&X);
-    let xb = keys.b.diffie_hellman(&X);
+    let xb = proto_input.b.diffie_hellman(&X);
 
     let (keygen, auth_input_mac) =
-        get_rendezvous1_key_material(&xy, &xb, &keys.auth_key, &keys.B, &X, &Y)?;
+        get_rendezvous1_key_material(&xy, &xb, &proto_input.auth_key, &proto_input.B, &X, &Y)?;
 
     // Set up RENDEZVOUS1 reply to the client
     let mut reply: Vec<u8> = Vec::new();
@@ -480,7 +371,7 @@ mod test {
         let intro_auth_key_privkey = ed25519::SecretKey::generate(&mut rng);
         let intro_auth_key_pubkey = ed25519::PublicKey::from(&intro_auth_key_privkey);
 
-        let client_keys = HSNtorClientKeys {
+        let client_keys = HSNtorClientInput {
             B: intro_b_pubkey,
             auth_key: intro_auth_key_pubkey,
             subcredential: [5; 32],
@@ -488,9 +379,9 @@ mod test {
 
         // Client: Sends an encrypted INTRODUCE1 cell
         let (state, cmsg, c_enc_key, c_mac_key) =
-            HSNtorClient::client1_with_extra_data(&mut rng, &client_keys)?;
+            client_send_intro(&mut rng, &client_keys)?;
 
-        let service_keys = HSNtorServiceKeys {
+        let service_keys = HSNtorServiceInput {
             b: intro_b_privkey,
             B: intro_b_pubkey,
             auth_key: intro_auth_key_pubkey,
@@ -499,7 +390,7 @@ mod test {
 
         // Service: Decrypts INTRODUCE1 cell
         let (skeygen, smsg, s_enc_key, s_mac_key, s_auth_input_mac) =
-            HSNtorServer::server_with_extra_data(&mut rng, &[service_keys], cmsg)?;
+            server_receive_intro(&mut rng, service_keys, cmsg)?;
 
         // Test encryption key
         assert_eq!(c_enc_key, s_enc_key);
@@ -507,7 +398,7 @@ mod test {
         assert_eq!(c_mac_key, s_mac_key);
 
         // Service: Create RENDEZVOUS1 key material
-        let (ckeygen, c_auth_input_mac) = HSNtorClient::client2_with_extra_data(state, smsg)?;
+        let (ckeygen, c_auth_input_mac) = client_receive_rend(state, smsg)?;
 
         // Test rend MAC
         assert_eq!(c_auth_input_mac, s_auth_input_mac);
