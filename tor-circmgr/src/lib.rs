@@ -555,12 +555,15 @@ impl CircMgr {
 
     /// Construct a client circuit using a given path.
     ///
+    /// Note: The returned circuit is not managed by the circuit manager and
+    /// therefore won't be used by anything else.
+    ///
     /// This function is unstable. It is only enabled if the crate was
     /// built with the `experimental-api` feature.
     #[cfg(feature = "experimental-api")]
-    pub async fn build_path(
+    pub async fn build_path<R: Rng>(
         &self,
-        rng: &mut StdRng,
+        rng: &mut R,
         netdir: DirInfo<'_>,
         path: &TorPath<'_>,
     ) -> Result<Arc<ClientCirc>> {
