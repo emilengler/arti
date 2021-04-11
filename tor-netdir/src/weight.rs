@@ -207,7 +207,7 @@ pub(crate) struct WeightSet {
 }
 
 use std::convert::TryFrom;
-use tor_primitive_types::BandwidthWeight;
+use tor_units::BandwidthWeight;
 impl WeightSet {
     /// Find the actual 64-bit weight to use for a given routerstatus when
     /// considering it for a given role.

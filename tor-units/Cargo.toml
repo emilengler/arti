@@ -1,5 +1,5 @@
 [package]
-name = "tor-primitive-types"
+name = "tor-units"
 version = "0.1.0"
 authors = ["Dennis Jackson <git@dennisjj.co.uk>"]
 edition = "2018"

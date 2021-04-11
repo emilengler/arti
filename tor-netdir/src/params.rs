@@ -18,9 +18,7 @@
 //! missing.
 
 use thiserror::Error;
-use tor_primitive_types::{
-    bounded_type, set_default_for_bounded_type, BandwidthWeight, CellWindowSize,
-};
+use tor_units::{bounded_type, set_default_for_bounded_type, BandwidthWeight, CellWindowSize};
 extern crate derive_more;
 use derive_more::{Add, Display, Div, From, FromStr, Mul};
 

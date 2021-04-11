@@ -20,7 +20,7 @@ tor-netdoc = { path="../tor-netdoc", version= "*" }
 tor-linkspec = { path="../tor-linkspec", version= "*" }
 tor-llcrypto = { path="../tor-llcrypto", version= "*" }
 tor-protover = { path="../tor-protover", version= "*" }
-tor-primitive-types = { path="../tor-primitive-types", version= "*" }
+tor-units = { path="../tor-units", version= "*" }
 
 base64 = "0.13.0"
 digest = "0.9.0"
