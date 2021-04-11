@@ -18,20 +18,29 @@ use derive_more::{Add, Display, Div, From, FromStr, Mul};
 #[macro_use]
 pub mod macros;
 
-/// These errors are returned by the checkable types (clamped types do not return errors)
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Errors returned by bounded types
+#[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     /// A passed value was below the lower bound for the type.
     BelowLowerBound,
-    /// A paswed value was above the lower bound for the type.
+    /// A passed value was above the upper bound for the type.
     AboveUpperBound,
+    /// A passed value was could not be represented in the underlying data type
+    Unrepresentable,
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::BelowLowerBound => write!(f, "Value was below the lower bound for this type"),
-            Error::AboveUpperBound => write!(f, "Value was above the upper bound for this type"),
+            Error::BelowLowerBound => {
+                write!(f, "Value was below the lower bound for this type")
+            }
+            Error::AboveUpperBound => {
+                write!(f, "Value was above the upper bound for this type")
+            }
+            Error::Unrepresentable => {
+                write!(f, "Value was unrepresentable for the underlying type")
+            }
         }
     }
 }

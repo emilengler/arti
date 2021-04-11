@@ -97,8 +97,8 @@ macro_rules! bounded_type {
                 $type_name::unchecked_new($type_name::clamp(val))
             }
             /// Convert from a string, clamping to the upper or lower bound if needed.
-            fn saturating_from_str(s: &str) ->  std::result::Result<Self, Box<dyn std::error::Error>> {
-                let val : $underlying_type = s.parse()?;
+            fn saturating_from_str(s: &str) ->  std::result::Result<Self, $crate::Error> {
+                let val : $underlying_type = s.parse().map_err(|_| $crate::Error::Unrepresentable)?;
                 Ok($type_name::saturating_from(val))
             }
         }
@@ -120,9 +120,9 @@ macro_rules! bounded_type {
         }
 
         impl std::str::FromStr for $type_name {
-            type Err = Box<dyn std::error::Error>;
+            type Err = $crate::Error;
             fn from_str(s: &str) ->  std::result::Result<Self, Self::Err>{
-                $type_name::checked_new(s.parse()?).map_err(|e| e.into())
+                $type_name::checked_new(s.parse().map_err(|_| $crate::Error::Unrepresentable)?)
             }
         }
     }
