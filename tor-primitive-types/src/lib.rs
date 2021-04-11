@@ -83,27 +83,58 @@ mod tests {
         let _k_bw: super::BandwidthWeight = k.parse().unwrap();
     }
 
-    bounded_type! { pub struct TestFoo(u16, 1, 5) }
+    bounded_type! {
+    #[derive(Debug)]
+    pub struct TestFoo(u16, 1, 5) }
     set_default_for_bounded_type!(TestFoo, 4);
 
-    bounded_type! { struct TestBar(i32, -45, 17) }
+    bounded_type! {
+    #[derive(Debug)]
+    struct TestBar(i32, -45, 17) }
     set_default_for_bounded_type!(TestBar, 0);
 
     //make_parameter_type! {TestFoo(3,)}
     #[test]
-    fn simple_test() {
-        let _: TestFoo = "2".parse().unwrap();
-        let _: TestBar = "-3".parse().unwrap();
+    fn entire_range_parsed() {
+        let x: TestFoo = "1".parse().unwrap();
+        assert!(x.get() == 1);
+        let x: TestFoo = "2".parse().unwrap();
+        assert!(x.get() == 2);
+        let x: TestFoo = "3".parse().unwrap();
+        assert!(x.get() == 3);
+        let x: TestFoo = "4".parse().unwrap();
+        assert!(x.get() == 4);
+        let x: TestFoo = "5".parse().unwrap();
+        assert!(x.get() == 5);
     }
 
     #[test]
-    fn saturate_works() {
+    fn saturating() {
+        let x: TestFoo = TestFoo::saturating_new(1000);
+        let x_val: u16 = x.into();
+        assert!(x_val == TestFoo::UPPER);
+        let x: TestFoo = TestFoo::saturating_new(0);
+        let x_val: u16 = x.into();
+        assert!(x_val == TestFoo::LOWER);
+    }
+    #[test]
+    fn saturating_string() {
         let x: TestFoo = TestFoo::saturating_from_str("1000").unwrap();
         let x_val: u16 = x.into();
         assert!(x_val == TestFoo::UPPER);
         let x: TestFoo = TestFoo::saturating_from_str("0").unwrap();
         let x_val: u16 = x.into();
         assert!(x_val == TestFoo::LOWER);
+    }
+
+    #[test]
+    fn errors_correct() {
+        let x: Result<TestBar, super::Error> = "1000".parse();
+        assert!(x.unwrap_err() == super::Error::AboveUpperBound);
+        let x: Result<TestBar, super::Error> = "-1000".parse();
+        assert!(x.unwrap_err() == super::Error::BelowLowerBound);
+        let x: Result<TestBar, super::Error> = "xyz".parse();
+        assert!(x.unwrap_err() == super::Error::Unrepresentable);
     }
 
     #[test]
