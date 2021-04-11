@@ -1,7 +1,41 @@
-/// This module provides macros helpful for defining a bounded primitive type.
+#![deny(missing_docs)]
+#![deny(clippy::missing_docs_in_private_items)]
 
 /// This macro implements a bounded type. The data is represented as the specified underlying type.
-/// It is impossible to construct an instance of this type outside the underlying bounds.
+/// It is impossible to construct an instance of this type outside the underlying bounds. The bound
+/// is only checked upon creation, if you derive or implement a method which mutates the underlying
+/// value, you can escape this check.
+/// Performance
+/// In a release build, the compiler optimizes away the static checks and indirection. For example:
+///
+/// ```rust
+/// struct foo(u32);
+///
+/// impl foo {
+///     const LOWER : u32 = 1;
+///     const UPPER : u32 = 10;  
+///     fn unchecked_new(value: u32) -> foo {
+///         assert!(foo::LOWER <= foo::UPPER);
+///         foo(value)
+///     }
+/// }
+///
+/// impl Default for foo {
+///     fn default() -> Self {
+///         assert!(4 <= foo::UPPER);
+///         assert!(4 >= foo::LOWER);
+///         foo::unchecked_new(4)
+///     }
+/// }
+/// ```
+/// generates the following assembly when compiled with opt-level=3 with rustc 1.51.0 on godbolt:
+/// ```asm
+/// <example::foo as core::default::Default>::default:
+/// mov     eax, 4
+/// ret
+/// ```
+/// Requirements
+/// The underlying type must implement Ord. The lower bound must be <= the upper bound.
 #[macro_export]
 macro_rules! bounded_type {
     {
@@ -23,10 +57,9 @@ macro_rules! bounded_type {
         	const LOWER : $underlying_type = $lower;
             /// Private constructor function for this type.
             fn unchecked_new(value: $underlying_type) -> $type_name {
-                debug_assert!($type_name::LOWER <= $type_name::UPPER);
+                assert!($type_name::LOWER <= $type_name::UPPER);
                 $type_name { value }
             }
-            //TODO - We use debug_assert! here because const_assert! from static_assertions is not yet ready. If support stabilizes, it would be preferable.
 
             /// Public getter for the underlying type.
             pub fn get(&self) -> $underlying_type {
@@ -95,15 +128,14 @@ macro_rules! bounded_type {
     }
 }
 
-/// This macro generates a default implementation for the type and a test to ensure
-/// that the default value is within the correct bounds.
+/// This macro generates a default implementation for the type.
 #[macro_export]
 macro_rules! set_default_for_bounded_type {
     ($type_name:ident, $def:expr ) => {
         impl Default for $type_name {
             fn default() -> Self {
-                debug_assert!($def <= $type_name::UPPER);
-                debug_assert!($def >= $type_name::LOWER);
+                assert!($def <= $type_name::UPPER);
+                assert!($def >= $type_name::LOWER);
                 $type_name::unchecked_new($def)
             }
         }
