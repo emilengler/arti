@@ -68,7 +68,7 @@ mod tests {
     fn test_weight_wrapper() {
         let x = super::BandwidthWeight(50);
         let y = super::BandwidthWeight(27);
-        let z: super::BandwidthWeight = super::BandwidthWeight::from(x) + y;
+        let z: super::BandwidthWeight = x + y;
         assert!(z == super::BandwidthWeight(77));
     }
     #[test]

@@ -16,7 +16,7 @@
 //! this restriction, it makes sure that the values it gives are in
 //! range, and provides default values for any parameters that are
 //! missing.
-
+#[allow(unused_imports)]
 use thiserror::Error;
 use tor_units::{bounded_type, set_default_for_bounded_type, BandwidthWeight, CellWindowSize};
 extern crate derive_more;
@@ -27,14 +27,14 @@ bounded_type! {
 #[derive(Clone, Copy, Debug)]
 pub struct BandwidthWeightFactor(BandwidthWeight,BandwidthWeight(1),BandwidthWeight(u32::MAX))
 }
-set_default_for_bounded_type!(BandwidthWeightFactor, BandwidthWeight(10000));
+set_default_for_bounded_type!(BandwidthWeightFactor, BandwidthWeight(10_000));
 
 //TODO This could be just a u32 underlying?
 bounded_type! {
     #[derive(Clone, Copy, Debug)]
     pub struct CircuitWindowSizeLimit(CellWindowSize,CellWindowSize(100),CellWindowSize(1000)
 )}
-set_default_for_bounded_type!(CircuitWindowSizeLimit, CellWindowSize(1000));
+set_default_for_bounded_type!(CircuitWindowSizeLimit, CellWindowSize(1_000));
 
 bounded_type! {
     #[derive(
@@ -62,12 +62,12 @@ impl From<ExtendByEd25519Id> for bool {
 
 impl Default for ExtendByEd25519Id {
     fn default() -> Self {
-        //TODO - Lookup what the default should be.
         ExtendByEd25519Id(IntegerBoolean::saturating_from(0))
     }
 }
 
 impl ExtendByEd25519Id {
+    #[allow(dead_code)]
     fn get(self) -> bool {
         self.into()
     }
@@ -101,7 +101,7 @@ bounded_type! {
     #[derive(Clone,Copy, Debug)]
     pub struct CircuitPriorityHalflife(IntegerMilliseconds,IntegerMilliseconds(1),IntegerMilliseconds(u32::MAX))
 }
-set_default_for_bounded_type!(CircuitPriorityHalflife, IntegerMilliseconds(30000));
+set_default_for_bounded_type!(CircuitPriorityHalflife, IntegerMilliseconds(30_000));
 
 bounded_type! {
     #[derive(Clone, Copy, Debug)]
@@ -117,23 +117,25 @@ set_default_for_bounded_type!(SendMeVersion, 0);
 
 /// The error type for this crate.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Error {
+pub enum Error<'a> {
     /// A string key wasn't recognised
-    KeyNotRecognized, //TODO Should wrap a string type?
+    KeyNotRecognized(&'a str), //TODO Should wrap a string type?
     /// There were no parameters to update.
     NoParamsToUpdate,
 }
 
-impl std::fmt::Display for Error {
+impl std::fmt::Display for Error<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::KeyNotRecognized => write!(f, "A Key for NetParams was not recognised."),
+            Error::KeyNotRecognized(unknown_key) => {
+                write!(f, "A Key for NetParams was not recognised: {}", unknown_key)
+            }
             Error::NoParamsToUpdate => write!(f, "NetParams was updated with an empty list."),
         }
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for Error<'_> {}
 
 /// This structure holds recognised configuration parameters. All values are type safey
 /// and where applicable clamped to be within range.
@@ -159,11 +161,11 @@ impl NetParameters {
     /// Given a name and value as strings, produce either a result or an error if the parsing fails.
     /// The error may reflect a failure to parse a value of the correct type or withint the necessary bounds.
     /// TODO - Should probably wrap the underlying error to add context? E.g. the key
-    fn saturating_update_override(
+    fn saturating_update_override<'a>(
         &mut self,
-        name: &str,
+        name: &'a str,
         value: &str,
-    ) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    ) -> std::result::Result<(), Box<dyn std::error::Error + 'a>> {
         //TODO It would be much nicer to generate this and the struct automatically from a
         // list of triples  (name, type, str_key)
         match name {
@@ -190,7 +192,7 @@ impl NetParameters {
             "sendme_emit_min_version" => {
                 self.send_me_emit_min_version = Some(SendMeVersion::saturating_from_str(value)?)
             }
-            _ => return Err(Box::new(Error::KeyNotRecognized)),
+            _ => return Err(Box::new(Error::KeyNotRecognized(name))),
         }
         Ok(())
     }
@@ -200,7 +202,7 @@ impl NetParameters {
     pub fn saturating_update<'a>(
         &mut self,
         iter: impl Iterator<Item = (&'a std::string::String, &'a std::string::String)>,
-    ) -> std::result::Result<(), Vec<Box<dyn std::error::Error>>> {
+    ) -> std::result::Result<(), Vec<Box<dyn std::error::Error + 'a>>> {
         //TODO Error for duplicate parameters?
         let mut errors: Vec<Box<dyn std::error::Error>> = Vec::new();
         let mut changes = false; //This state doesn't feel very idiomatic!
@@ -223,14 +225,11 @@ impl NetParameters {
     }
 }
 
-// TODO Tests
 #[cfg(test)]
+#[allow(clippy::many_single_char_names)]
 mod test {
     use super::*;
     use std::string::String;
-
-    //TODO These tests don't currently check the return type
-    // Investigate better error handling. This can't be the right way to propagate.
 
     #[test]
     fn empty_list() {
@@ -352,7 +351,30 @@ mod test {
     }
 
     #[test]
-    fn real_example() {
-        //TODO
+    fn from_consensus() {
+        let mut p = NetParameters::default();
+        let mut mp: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        mp.insert("bwweightscale".to_string(), "70".to_string());
+        mp.insert("min_paths_for_circs_pct".to_string(), "45".to_string());
+        mp.insert("im_a_little_teapot".to_string(), "1".to_string());
+        mp.insert("circwindow".to_string(), "99999".to_string());
+        mp.insert(
+            "sendme_accept_min_version".to_string(),
+            "potato".to_string(),
+        );
+        mp.insert("ExtendByEd25519ID".to_string(), "1".to_string());
+
+        match p.saturating_update(mp.iter()) {
+            Ok(()) => assert_eq!(0, 1),
+            Err(results) => {
+                assert_eq!(results.len(), 3);
+            }
+        }
+        assert_eq!(p.bw_weight_scale.unwrap().get(), BandwidthWeight(70));
+        assert_eq!(
+            p.min_circuit_path_threshold.unwrap().get(),
+            IntegerPercentage(45)
+        );
+        assert_eq!(p.extend_by_ed25519_id.unwrap().get(), true);
     }
 }
