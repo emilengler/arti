@@ -68,6 +68,7 @@ impl Default for ExtendByEd25519Id {
 
 impl ExtendByEd25519Id {
     #[allow(dead_code)]
+    /// Implemented for uniformity with other param types.
     fn get(self) -> bool {
         self.into()
     }

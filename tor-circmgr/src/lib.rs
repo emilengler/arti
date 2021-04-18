@@ -116,7 +116,7 @@ impl<'a> DirInfo<'a> {
             let mut p = CircParameters::default();
             //TODO The clones / lack of type safety is pretty ugly here.
             let tor_units::CellWindowSize(window_limit) =
-                inp.circuit_window.unwrap_or_default().get().into();
+                inp.circuit_window.unwrap_or_default().get();
             p.set_initial_send_window(window_limit);
             p.set_extend_by_ed25519_id(inp.extend_by_ed25519_id.unwrap_or_default().into());
             p
