@@ -163,7 +163,7 @@ impl PartialNetDir {
     /// If `replacement_params` is provided, override network parameters from
     /// the consensus with those from `replacement_params`.
     pub fn new(
-        consensus: MDConsensus,
+        consensus: MdConsensus,
         replacement_params: Option<&netstatus::NetParams<std::string::String>>,
     ) -> Self {
         let mut params = NetParameters::default();
