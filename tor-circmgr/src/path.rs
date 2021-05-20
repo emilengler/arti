@@ -20,6 +20,7 @@ use crate::{Error, Result};
 
 /// A list of Tor relays through the network.
 pub struct TorPath<'a> {
+    /// The inner TorPath state.
     inner: TorPathInner<'a>,
 }
 

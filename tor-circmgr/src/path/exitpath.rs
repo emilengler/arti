@@ -4,14 +4,19 @@ use super::*;
 use crate::{DirInfo, Error, TargetPort};
 use tor_netdir::{NetDir, WeightRole};
 
+/// Internal representation of PathBuilder.
 enum ExitPathBuilderInner<'a> {
+    /// Request a path that allows exit to the given TargetPort's.
     WantsPorts(Vec<TargetPort>),
+
+    /// Request a path that uses a given relay as exit node.
     ChosenExit(Relay<'a>),
 }
 
 /// A PathBuilder that builds a path to an exit relay supporting a given
 /// set of ports.
 pub struct ExitPathBuilder<'a> {
+    /// The inner ExitPathBuilder state.
     inner: ExitPathBuilderInner<'a>,
 }
 
