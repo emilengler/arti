@@ -37,6 +37,7 @@ impl<'a> ExitPathBuilder<'a> {
         }
     }
 
+    /// Find a suitable exit node from either the chosen exit or from the network directory.
     fn pick_exit<R: Rng>(&self, rng: &mut R, netdir: &'a NetDir) -> Result<Relay<'a>> {
         match &self.inner {
             ExitPathBuilderInner::WantsPorts(wantports) => Ok(netdir
