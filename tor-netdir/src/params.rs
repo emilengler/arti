@@ -82,14 +82,11 @@ impl Default for NetParameters {
 impl NetParameters {
     /// Given a name and value as strings, produce either a result or an error if the parsing fails.
     /// The error may reflect a failure to parse a value of the correct type or withint the necessary bounds.
-    /// TODO - Should probably wrap the underlying error to add context? E.g. the key
     fn saturating_update_override<'a>(
         &mut self,
         name: &'a str,
         value: &'a str,
     ) -> std::result::Result<(), Error<'a>> {
-        //TODO It would be much nicer to generate this and the struct automatically from a
-        // list of triples  (name, type, str_key)
         let enrich = |x| Error::InvalidValue(name, value, x);
         match name {
             "bwweightscale" => {

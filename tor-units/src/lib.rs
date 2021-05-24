@@ -1,13 +1,6 @@
-//! This crate defines wrappers for primitive types. For example, milliseconds or percentages
-//! which could be represented directly as a primitive such as i32, are instead their own type.
-//! This helps avoid mistakes e.g. passing seconds to a function expecting milliseconds.
-//!
-//! This crate also provides macros for defining bounded types, for example, a particular
-//! configuration parameter might be restricted to a subset of possible values. In the future,
-//! Rust plans to implement 'const generics' which would allow this to be expressed as
-//! a language feature. Instead, we use macros to generate equivalent code automatically.  
-//!  macros for defining bounded types
-
+//! This crate provides safe wrappers for primitive types. In particular it provides
+//! a bounded i32 with both checked and clamping constructors, an integer milliseconds
+//! wrapper which must be converted to a std::duration and SendMeVersion which can be compared.
 #![deny(missing_docs)]
 #![deny(clippy::missing_docs_in_private_items)]
 
@@ -23,7 +16,7 @@ pub enum Error {
     BelowLowerBound(i32, i32),
     /// A passed value was above the upper bound for the type.
     AboveUpperBound(i32, i32),
-    /// A passed value was could not be represented in the underlying data type
+    /// A passed value was could not be represented as an i32.
     Unrepresentable(),
 }
 
@@ -49,7 +42,7 @@ impl std::fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// The structure for the type, including the underlying value.
+/// This type holds an i32 value such that LOWER <= value <= UPPER
 #[derive(Debug, Clone, Copy)]
 pub struct BoundedInt32<const LOWER: i32, const UPPER: i32> {
     /// Interior Value
@@ -65,7 +58,7 @@ impl<const LOWER: i32, const UPPER: i32> BoundedInt32<LOWER, UPPER> {
 
     /// Private constructor function for this type.
     fn unchecked_new(value: i32) -> Self {
-        assert!(LOWER <= UPPER);
+        assert!(LOWER <= UPPER); //The compiler optimises this out, no run-time cost.
         BoundedInt32 { value }
     }
 
@@ -149,7 +142,7 @@ impl std::convert::From<BoundedInt32<1, { i32::MAX }>> for u64 {
 #[derive(
     Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
 )]
-/// An integer number of milliseconds
+/// This type represents an integer number of milliseconds.
 pub struct IntegerMilliseconds<T> {
     /// Interior Value. Should Implement TryInto<u64> to be useful.
     value: T,
