@@ -206,8 +206,6 @@ pub(crate) struct WeightSet {
     w: [RelayWeight; 8],
 }
 
-use std::convert::TryFrom;
-use tor_units::BandwidthWeight;
 impl WeightSet {
     /// Find the actual 64-bit weight to use for a given routerstatus when
     /// considering it for a given role.
@@ -237,9 +235,7 @@ impl WeightSet {
     /// Compute the correct WeightSet for a provided MdConsensus.
     pub(crate) fn from_consensus(consensus: &MdConsensus, params: &NetParameters) -> Self {
         let bandwidth_fn = pick_bandwidth_fn(consensus.routers().iter().map(|rs| rs.weight()));
-        let BandwidthWeight(weight_scale) = params.bw_weight_scale.unwrap_or_default().get(); //TODO Escapes the type.
-        let weight_scale_int =
-            i32::try_from(weight_scale).expect("Weight scale outside expected range"); //TODO Fix, how did this code even work before?
+        let weight_scale = params.bw_weight_scale.get(); //TODO Escapes the type.
         let total_bw = consensus
             .routers()
             .iter()
@@ -247,7 +243,7 @@ impl WeightSet {
             .sum();
         let p = consensus.bandwidth_weights();
 
-        Self::from_parts(bandwidth_fn, total_bw, weight_scale_int, p)
+        Self::from_parts(bandwidth_fn, total_bw, weight_scale, p)
     }
 
     /// Compute the correct WeightSet given a bandwidth function, a

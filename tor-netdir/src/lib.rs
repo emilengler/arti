@@ -311,12 +311,7 @@ impl NetDir {
         // probability, we know enough information to participate
         // on the network.
 
-        let min_frac_paths: f64 = self
-            .params()
-            .min_circuit_path_threshold
-            .unwrap_or_default()
-            .get()
-            .into();
+        let min_frac_paths: f64 = self.params().min_circuit_path_threshold.get().into();
 
         // What fraction of paths can we build?
         let available = self.frac_for_role(WeightRole::Guard)
