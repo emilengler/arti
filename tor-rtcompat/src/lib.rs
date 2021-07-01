@@ -16,8 +16,7 @@
 //!
 //! Additionally, the `AsyncRead` and `AsyncWrite` traits provide by
 //! [`futures`] are not the same as those provided by `tokio`, and
-//! require compatibility wrappers to use. (We re-export those of
-//! [`tokio_util`].
+//! require compatibility wrappers to use.
 //!
 //! To solve these problems, the `tor-rtcompat` crate provides a set
 //! of traits that represent a runtime's ability to perform these
@@ -62,10 +61,10 @@
 //!     using for anything besides Arti, you can use [`create_runtime()`].
 //!
 //!   * If you want to explicitly construct a runtime with a specific
-//!     backend, you can do so with `create_async_std_runtime` or
-//!     [`create_tokio_runtime`].  Or if you have already constructed a
+//!     backend, you can do so with [`async_std::create_async_std_runtime`] or
+//!     [`tokio::create_tokio_runtime`].  Or if you have already constructed a
 //!     tokio runtime that you want to use, you can wrap it as a
-//!     [`Runtime`] explicitly with [`TokioRuntimeHandle`].
+//!     [`Runtime`] explicitly with [`tokio::TokioRuntimeHandle`].
 //!
 //! # Cargo features
 //!
@@ -156,6 +155,61 @@ pub mod tokio;
 
 #[cfg(feature = "async-std")]
 pub mod async_std;
+
+/// Try to return an instance of the currently running [`Runtime`].
+///
+/// # Limitations
+///
+/// If the `tor-rtcompat` crate was compiled with `tokio` support,
+/// this function will never return an `async_std` runtime.
+///
+/// # Usage note
+///
+/// We should never call this from inside other Arti crates, or from
+/// library crates that want to supporet multiple runtimes!  This
+/// function is for Arti _users_ who want to wrap some existing Tokio
+/// or Async_std runtime as a [`Runtime`].  It is not for library
+/// crates that want to work with multiple runtimes.
+///
+/// Once you have a runtime returned by this function, you should
+/// just create more handles to it via [`Clone`].
+#[cfg(any(feature = "async-std", feature = "tokio"))]
+pub fn current_user_runtime() -> std::io::Result<impl Runtime> {
+    #[cfg(feature = "tokio")]
+    {
+        crate::tokio::current_runtime()
+    }
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    {
+        crate::async_std::current_runtime()
+    }
+}
+
+/// Return a new instance of the default [`Runtime`].
+///
+/// Generally you should call this function at most once, and then use
+/// [`Clone::clone()`] to create additional references to that
+/// runtime.
+///
+/// Tokio users may want to avoid this function and instead make a
+/// runtime using [`current_user_runtime()`] or
+/// [`tokio::TokioRuntimeHandle::new()`]: this function always _builds_ a
+/// runtime, and if you already have a runtime, that isn't what you
+/// want with Tokio.
+///
+/// If you need more fine-grained control over a runtime, you can
+/// create it using an appropriate builder type or function.
+#[cfg(any(feature = "async-std", feature = "tokio"))]
+pub fn create_runtime() -> std::io::Result<impl Runtime> {
+    #[cfg(feature = "tokio")]
+    {
+        crate::tokio::create_runtime()
+    }
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    {
+        crate::async_std::create_runtime()
+    }
+}
 
 /// Helpers for test_with_all_runtimes
 pub mod testing__ {

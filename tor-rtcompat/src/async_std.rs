@@ -15,6 +15,7 @@ pub fn create_runtime() -> std::io::Result<impl Runtime> {
 /// Try to return an instance of the currently running async_std
 /// [`Runtime`].
 pub fn current_runtime() -> std::io::Result<impl Runtime> {
+    // In async_std, the runtime is a global singleton.
     create_runtime()
 }
 
