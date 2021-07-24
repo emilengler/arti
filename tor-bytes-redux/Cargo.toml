@@ -1,0 +1,18 @@
+[package]
+name = "tor-bytes-redux"
+version = "0.1.0"
+authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>", "Daniel Eades <danieleades@hotmail.com>"]
+edition = "2018"
+license = "MIT OR Apache-2.0"
+homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
+description = "Helpers for encoding and decoding byte-orientted data, as used by Tor"
+keywords = [ "tor", "arti", "encoding" ]
+categories = [ "parsing", "encoding" ]
+repository="https://gitlab.torproject.org/tpo/core/arti.git/"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bytes = "1.0.1"
+paste = "1.0.5"
+thiserror = "1.0.26"
