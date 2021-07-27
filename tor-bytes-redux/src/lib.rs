@@ -9,12 +9,31 @@
 )]
 #![warn(clippy::pedantic)]
 
-mod bufext;
+use bytes::{Buf};
+
+mod safe_buf;
 mod error;
+
+/// Unchecked buffer reading methods
+pub mod unchecked {
+    pub use bytes::Buf;
+}
 
 pub use error::Error;
 
 /// Type alias for the return type of fallible functions in this crate
 pub type Result<T> = std::result::Result<T, Error>;
 
-pub use bufext::{BufExt, FromBuf};
+pub use safe_buf::{SafeBuf};
+
+/// Objects which implement [`FromBuf`] are capable of constructing themselves by reading bytes from a [`Buf`]
+pub trait FromBuf: Sized {
+    /// read an instance of `Self` from a buffer
+    ///
+    /// # Errors
+    ///
+    /// This method will return an error if the number of bytes remaining in the buffer is insufficent, or if the type cannot be parsed from the bytes.
+    fn from_buf<B>(buffer: B) -> Result<Self>
+    where
+        B: Buf;
+}

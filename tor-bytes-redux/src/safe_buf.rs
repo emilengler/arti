@@ -1,22 +1,10 @@
 //! Extension traits for extracting custom objects from a [`bytes::Buf`]
 
-use crate::{Error, Result};
+use crate::{Error, FromBuf, Result};
 use bytes::{Buf, Bytes};
 use paste::paste;
 
-/// Objects which implement [`FromBuf`] are capable of constructing
-pub trait FromBuf: Sized {
-    /// read an instance of `Self` from a buffer
-    ///
-    /// # Errors
-    ///
-    /// This method will return an error if the number of bytes remaining in the buffer is insufficent, or if the type cannot be parsed from the bytes.
-    fn from_buf<B>(buffer: B) -> Result<Self>
-    where
-        B: Buf;
-}
-
-macro_rules! get_primitive {
+macro_rules! get_primitive_checked {
     ($t:ty, $width:literal) => {
         paste! {
             #[doc = "This method wraps [`Buf::get_" $t "`] with a bounds check to ensure there are enough bytes remaining, without panicking."]
@@ -33,7 +21,7 @@ macro_rules! get_primitive {
 }
 
 /// Extension trait for [`bytes::Buf`]
-pub trait BufExt: Buf {
+pub trait SafeBuf: Buf {
     /// Peek at a given number of bytes from the buffer, with a check to ensure there are enough remaining
     ///
     /// Use this version when you know the array length at compile time. Otherwise use [`BufExt::peek_checked`].
@@ -117,9 +105,9 @@ pub trait BufExt: Buf {
         }
     }
 
-    get_primitive!(u8, 1);
-    get_primitive!(u16, 2);
-    get_primitive!(u32, 4);
+    get_primitive_checked!(u8, 1);
+    get_primitive_checked!(u16, 2);
+    get_primitive_checked!(u32, 4);
 }
 
-impl<T> BufExt for T where T: Buf {}
+impl<T> SafeBuf for T where T: Buf {}

@@ -15,6 +15,7 @@ members = [
     "tor-protover",
     "tor-bytes",
     "tor-bytes-redux",
+    "tor-bytes-impl",
     "tor-socksproto",
     "tor-checkable",
     "tor-cert",
