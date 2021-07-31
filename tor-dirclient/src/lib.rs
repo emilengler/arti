@@ -70,6 +70,7 @@ pub use response::{DirResponse, SourceInfo};
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// A helper type to provide conversions from Vec<u8> to other types (String and Vec<u8> at this time)
+#[non_exhaustive]
 pub struct Bytes {
     /// The bytes
     pub bytes: Vec<u8>,
