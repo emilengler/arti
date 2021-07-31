@@ -153,8 +153,8 @@ async fn download_attempt<R: Runtime>(
                         dirmgr.notify().await;
                         match outcome {
                             Ok(b) => b,
-                            // TODO: in this case we might want to stop using this source.
                             Err(e) => {
+                                // TODO: in this case we might want to stop using this source.
                                 warn!("error while adding directory info: {}", e);
                                 false
                             }
