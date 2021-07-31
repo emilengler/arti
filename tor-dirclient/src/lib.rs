@@ -624,7 +624,84 @@ mod test {
         Ok(())
     }
 
-    // TODO: test for a partial download with and without partial_ok
+    #[async_test]
+    async fn test_download_string() -> Result<()> {
+        let (mut s1, s2) = stream_pair();
+        let (mut s2_r, mut s2_w) = s2.split();
+        let mock_time = MockSleepProvider::new(std::time::SystemTime::now());
 
-    // TODO: test with bad utf-8
+        let req = request::RouterDescRequest::all();
+
+        let (v1, v2, v3): (Result<DirResponse<String>>, Result<Vec<u8>>, Result<()>) = futures::join!(
+            async {
+                let r = download(&mock_time, &req, &mut s1, None).await?;
+                s1.close().await?;
+                Ok(r)
+            },
+            async {
+                let mut v = Vec::new();
+                s2_r.read_to_end(&mut v).await?;
+                Ok(v)
+            },
+            async {
+                s2_w.write_all(b"HTTP/1.0 200 OK\r\n\r\n").await?;
+                s2_w.write_all(b"This is where the descs would go.").await?;
+                s2_w.close().await?;
+                Ok(())
+            }
+        );
+
+        let response = v1?;
+        v3?;
+        let request = v2?;
+
+        assert!(request[..].starts_with(b"GET /tor/server/all.z HTTP/1.0\r\n"));
+        assert_eq!(response.status_code(), 200);
+        assert_eq!(response.is_partial(), false);
+        assert!(response.error().is_none());
+        assert!(response.source().is_none());
+        let out = response.into_output();
+        assert_eq!(&out, &"This is where the descs would go.".to_string());
+
+        Ok(())
+    }
+
+    #[async_test]
+    async fn test_download_parse_error() -> Result<()> {
+        let (mut s1, s2) = stream_pair();
+        let (mut s2_r, mut s2_w) = s2.split();
+        let mock_time = MockSleepProvider::new(std::time::SystemTime::now());
+
+        let req = request::RouterDescRequest::all();
+
+        let (v1, v2, v3): (Result<DirResponse<String>>, Result<Vec<u8>>, Result<()>) = futures::join!(
+            async {
+                let r = download(&mock_time, &req, &mut s1, None).await;
+                s1.close().await?; // Close response stream before we return the error
+                Ok(r?)
+            },
+            async {
+                let mut v = Vec::new();
+                s2_r.read_to_end(&mut v).await?;
+                Ok(v)
+            },
+            async {
+                s2_w.write_all(b"HTTP/1.0 200 OK\r\n\r\n").await?;
+                // Invalid UTF-8 should cause Bytes::try_from(String) to fail
+                s2_w.write_all(b"\xff\xff: Oops").await?;
+                s2_w.close().await?;
+                Ok(())
+            }
+        );
+
+        assert!(v1.err().is_some());
+        v3?;
+        let request = v2?;
+
+        assert!(request[..].starts_with(b"GET /tor/server/all.z HTTP/1.0\r\n"));
+
+        Ok(())
+    }
+
+    // TODO: test for a partial download with and without partial_ok
 }
