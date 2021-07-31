@@ -145,29 +145,28 @@ async fn download_attempt<R: Runtime>(
             (state, false),
             |(state, changed), (client_req, dir_response)| async move {
                 let text = dir_response.into_output();
-                let changed = changed
-                    | match dirmgr.expand_response_text(&client_req, text).await {
-                        Ok(text) => {
-                            let outcome = state
-                                .add_from_download(&text, &client_req, Some(&dirmgr.store))
-                                .await;
-                            dirmgr.notify().await;
-                            match outcome {
-                                Ok(b) => b,
-                                // TODO: in this case we might want to stop using this source.
-                                Err(e) => {
-                                    warn!("error while adding directory info: {}", e);
-                                    false
-                                }
+                let changed_now = match dirmgr.expand_response_text(&client_req, text).await {
+                    Ok(text) => {
+                        let outcome = state
+                            .add_from_download(&text, &client_req, Some(&dirmgr.store))
+                            .await;
+                        dirmgr.notify().await;
+                        match outcome {
+                            Ok(b) => b,
+                            // TODO: in this case we might want to stop using this source.
+                            Err(e) => {
+                                warn!("error while adding directory info: {}", e);
+                                false
                             }
                         }
-                        Err(e) => {
-                            // TODO: in this case we might want to stop using this source.
-                            warn!("Error when expanding directory text: {}", e);
-                            false
-                        }
-                    };
-                (state, changed)
+                    }
+                    Err(e) => {
+                        // TODO: in this case we might want to stop using this source.
+                        warn!("Error when expanding directory text: {}", e);
+                        false
+                    }
+                };
+                (state, changed | changed_now)
             },
         )
         .await;
