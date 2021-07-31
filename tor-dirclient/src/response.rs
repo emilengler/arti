@@ -7,11 +7,11 @@ use crate::Error;
 /// A successful (or at any rate, well-formed) response to a directory
 /// request.
 #[derive(Debug)]
-pub struct DirResponse {
+pub struct DirResponse<Output> {
     /// An HTTP status code.
     status: u16,
     /// The decompressed output that we got from the directory cache.
-    output: Vec<u8>,
+    output: Output,
     /// The error, if any, that caused us to stop getting this response early.
     error: Option<Error>,
     /// Information about the directory cache we used.
@@ -31,12 +31,12 @@ pub struct SourceInfo {
     circuit: UniqId,
 }
 
-impl DirResponse {
+impl<Output> DirResponse<Output> {
     /// Construct a new DirResponse from its parts
     pub(crate) fn new(
         status: u16,
         error: Option<Error>,
-        output: Vec<u8>,
+        output: Output,
         source: Option<SourceInfo>,
     ) -> Self {
         DirResponse {
@@ -63,12 +63,12 @@ impl DirResponse {
     }
 
     /// Return the output from this response.
-    pub fn output(&self) -> &[u8] {
+    pub fn output(&self) -> &Output {
         &self.output
     }
 
     /// Consume this DirResponse and return the output in it.
-    pub fn into_output(self) -> Vec<u8> {
+    pub fn into_output(self) -> Output {
         self.output
     }
 

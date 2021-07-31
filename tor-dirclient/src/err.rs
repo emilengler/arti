@@ -1,5 +1,7 @@
 //! Declare dirclient-specific errors.
 
+use std::convert::Infallible;
+
 use thiserror::Error;
 use tor_rtcompat::TimeoutError;
 
@@ -51,6 +53,12 @@ pub enum Error {
 impl From<TimeoutError> for Error {
     fn from(_: TimeoutError) -> Self {
         Error::DirTimeout
+    }
+}
+
+impl From<Infallible> for Error {
+    fn from(_: Infallible) -> Self {
+        unreachable!()
     }
 }
 

@@ -59,6 +59,7 @@ use futures::io::{
 use futures::FutureExt;
 use log::info;
 use memchr::memchr;
+use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -67,6 +68,34 @@ pub use response::{DirResponse, SourceInfo};
 
 /// Type for results returned in this crate.
 pub type Result<T> = std::result::Result<T, Error>;
+
+/// A helper type to provide conversions from Vec<u8> to other types (String and Vec<u8> at this time)
+pub struct Bytes {
+    /// The bytes
+    pub bytes: Vec<u8>,
+}
+
+impl TryFrom<Bytes> for String {
+    type Error = std::string::FromUtf8Error;
+
+    fn try_from(value: Bytes) -> std::result::Result<String, Self::Error> {
+        String::from_utf8(value.bytes)
+    }
+}
+
+impl TryFrom<Bytes> for Vec<u8> {
+    type Error = std::convert::Infallible;
+
+    fn try_from(value: Bytes) -> std::result::Result<Self, Self::Error> {
+        Ok(value.bytes)
+    }
+}
+
+impl From<Vec<u8>> for Bytes {
+    fn from(v: Vec<u8>) -> Self {
+        Bytes { bytes: v }
+    }
+}
 
 /// Fetch the resource described by `req` over the Tor network.
 ///
@@ -80,16 +109,17 @@ pub type Result<T> = std::result::Result<T, Error>;
 ///
 /// This is the only function in this crate that knows about CircMgr and
 /// DirInfo.  Perhaps this function should move up a level into DirMgr?
-pub async fn get_resource<CR, R, SP>(
+pub async fn get_resource<CR, R, SP, Output: TryFrom<Bytes>>(
     req: &CR,
     dirinfo: DirInfo<'_>,
     runtime: &SP,
     circ_mgr: Arc<CircMgr<R>>,
-) -> anyhow::Result<DirResponse>
+) -> anyhow::Result<DirResponse<Output>>
 where
     CR: request::Requestable + ?Sized,
     R: Runtime,
     SP: SleepProvider,
+    err::Error: From<<Output as TryFrom<Bytes>>::Error>,
 {
     let circuit = circ_mgr.get_or_launch_dir(dirinfo).await?;
 
@@ -132,16 +162,17 @@ where
 ///
 /// This function doesn't close the stream; you may want to do that
 /// yourself.
-pub async fn download<R, S, SP>(
+pub async fn download<R, S, SP, Output: TryFrom<Bytes>>(
     runtime: &SP,
     req: &R,
     stream: &mut S,
     source: Option<SourceInfo>,
-) -> Result<DirResponse>
+) -> Result<DirResponse<Output>>
 where
     R: request::Requestable + ?Sized,
     S: AsyncRead + AsyncWrite + Send + Unpin,
     SP: SleepProvider,
+    err::Error: From<<Output as TryFrom<Bytes>>::Error>,
 {
     let partial_ok = req.partial_docs_ok();
     let maxlen = req.max_response_len();
@@ -177,7 +208,9 @@ where
         (_, Ok(()), _) => Ok(()),
     };
 
-    Ok(DirResponse::new(200, ok.err(), result, source))
+    let output = Output::try_from(Bytes::from(result))?;
+
+    Ok(DirResponse::new(200, ok.err(), output, source))
 }
 
 /// Read and parse HTTP/1 headers from `stream`.
@@ -556,7 +589,7 @@ mod test {
 
         let req = request::RouterDescRequest::all();
 
-        let (v1, v2, v3): (Result<DirResponse>, Result<Vec<u8>>, Result<()>) = futures::join!(
+        let (v1, v2, v3): (Result<DirResponse<Vec<u8>>>, Result<Vec<u8>>, Result<()>) = futures::join!(
             async {
                 let r = download(&mock_time, &req, &mut s1, None).await?;
                 s1.close().await?;
