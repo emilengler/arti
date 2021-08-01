@@ -12,9 +12,9 @@ use crate::{
     upgrade_weak_ref, DirMgr, DirState, DocId, DocumentText, Error, Readiness, Result,
 };
 
-use futures::FutureExt;
 use futures::StreamExt;
 use futures::{channel::oneshot, Stream};
+use futures::{lock::Mutex, Future, FutureExt};
 use log::{info, warn};
 use tor_dirclient::DirResponse;
 use tor_rtcompat::{Runtime, SleepProviderExt};
@@ -33,7 +33,7 @@ async fn load_all<R: Runtime>(
 
 /// Launch a single client request and get an associated response.
 async fn fetch_single<R: Runtime>(
-    dirmgr: Arc<DirMgr<R>>,
+    dirmgr: &DirMgr<R>,
     request: ClientRequest,
 ) -> Result<(ClientRequest, DirResponse)> {
     let circmgr = dirmgr.circmgr()?;
@@ -56,17 +56,16 @@ async fn fetch_single<R: Runtime>(
 async fn fetch_multiple<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     missing: Vec<DocId>,
-    parallelism: usize,
-) -> Result<impl Stream<Item = (ClientRequest, DirResponse)>> {
+) -> Result<impl Stream<Item = impl Future<Output = Option<(ClientRequest, DirResponse)>>>> {
     let mut requests = Vec::new();
     for (_type, query) in docid::partition_by_type(missing.into_iter()) {
         requests.extend(dirmgr.query_into_requests(query).await?);
     }
 
-    let useful_responses = futures::stream::iter(requests)
-        .map(move |query| fetch_single(Arc::clone(&dirmgr), query))
-        .buffer_unordered(parallelism)
-        .filter_map(|response| async {
+    let useful_responses = futures::stream::iter(requests).map(move |query| {
+        let dirmgr = Arc::clone(&dirmgr);
+        async move {
+            let response = fetch_single(&dirmgr, query).await;
             match response {
                 Ok(x) => Some(x),
                 Err(e) => {
@@ -75,7 +74,8 @@ async fn fetch_multiple<R: Runtime>(
                     None
                 }
             }
-        });
+        }
+    });
     Ok(useful_responses)
 }
 
@@ -139,36 +139,47 @@ async fn download_attempt<R: Runtime>(
     parallelism: usize,
 ) -> Result<bool> {
     let missing = state.missing_docs();
-    let fetched = fetch_multiple(Arc::clone(dirmgr), missing, parallelism).await?;
-    let (_state, changed) = fetched
-        .fold(
-            (state, false),
-            |(state, changed), (client_req, dir_response)| async move {
-                let text = dir_response.into_output();
-                let changed_now = match dirmgr.expand_response_text(&client_req, text).await {
-                    Ok(text) => {
-                        let outcome = state
-                            .add_from_download(&text, &client_req, Some(&dirmgr.store))
-                            .await;
-                        dirmgr.notify().await;
-                        match outcome {
-                            Ok(b) => b,
-                            Err(e) => {
-                                // TODO: in this case we might want to stop using this source.
-                                warn!("error while adding directory info: {}", e);
-                                false
+    let fetched = fetch_multiple(Arc::clone(dirmgr), missing).await?;
+    let state = Arc::new(Mutex::new(state));
+    let changed = fetched
+        .map(|fut| {
+            fut.then(|s| {
+                let dirmgr = Arc::clone(dirmgr);
+                let state = Arc::clone(&state);
+                async move {
+                    match s {
+                        Some((client_req, dir_response)) => {
+                            let text = dir_response.into_output();
+                            match dirmgr.expand_response_text(&client_req, text).await {
+                                Ok(text) => {
+                                    let mut state = state.lock().await;
+                                    let outcome = state
+                                        .add_from_download(&text, &client_req, Some(&dirmgr.store))
+                                        .await;
+                                    dirmgr.notify().await;
+                                    match outcome {
+                                        Ok(b) => b,
+                                        Err(e) => {
+                                            // TODO: in this case we might want to stop using this source.
+                                            warn!("error while adding directory info: {}", e);
+                                            false
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // TODO: in this case we might want to stop using this source.
+                                    warn!("Error when expanding directory text: {}", e);
+                                    false
+                                }
                             }
                         }
+                        None => false,
                     }
-                    Err(e) => {
-                        // TODO: in this case we might want to stop using this source.
-                        warn!("Error when expanding directory text: {}", e);
-                        false
-                    }
-                };
-                (state, changed | changed_now)
-            },
-        )
+                }
+            })
+        })
+        .buffer_unordered(parallelism)
+        .fold(false, |a, changed_now| async move { a | changed_now })
         .await;
     Ok(changed)
 }
