@@ -205,12 +205,32 @@ where
     }
 }
 
+/// An iterator of retry errors.
+#[derive(Debug)]
+pub struct RetryErrorIter<E> {
+    /// The inner iterator.
+    #[allow(clippy::type_complexity)]
+    iter: std::iter::Map<std::vec::IntoIter<(Attempt, E)>, fn((Attempt, E)) -> E>,
+}
+
+impl<E> Iterator for RetryErrorIter<E> {
+    type Item = E;
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next()
+    }
+}
+
 impl<E> IntoIterator for RetryError<E> {
     type Item = E;
-    type IntoIter = std::vec::IntoIter<E>;
+    type IntoIter = RetryErrorIter<E>;
     fn into_iter(self) -> Self::IntoIter {
-        let v: Vec<_> = self.errors.into_iter().map(|x| x.1).collect();
-        v.into_iter()
+        /// Given an Attempt and an error, get the error.
+        fn map<E>(x: (Attempt, E)) -> E {
+            x.1
+        }
+        RetryErrorIter {
+            iter: self.errors.into_iter().map(map),
+        }
     }
 }
 
