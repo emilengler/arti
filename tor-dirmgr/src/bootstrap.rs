@@ -152,10 +152,16 @@ async fn download_attempt<R: Runtime>(
                             let text = dir_response.into_output();
                             match dirmgr.expand_response_text(&client_req, text).await {
                                 Ok(text) => {
-                                    let mut state = state.lock().await;
-                                    let outcome = state
-                                        .add_from_download(&text, &client_req, Some(&dirmgr.store))
-                                        .await;
+                                    let outcome = {
+                                        let mut state = state.lock().await;
+                                        state
+                                            .add_from_download(
+                                                &text,
+                                                &client_req,
+                                                Some(&dirmgr.store),
+                                            )
+                                            .await
+                                    };
                                     dirmgr.notify().await;
                                     match outcome {
                                         Ok(b) => b,
