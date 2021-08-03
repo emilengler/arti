@@ -84,11 +84,9 @@ impl TryFrom<Bytes> for String {
     }
 }
 
-impl TryFrom<Bytes> for Vec<u8> {
-    type Error = std::convert::Infallible;
-
-    fn try_from(value: Bytes) -> std::result::Result<Self, Self::Error> {
-        Ok(value.bytes)
+impl From<Bytes> for Vec<u8> {
+    fn from(value: Bytes) -> Self {
+        value.bytes
     }
 }
 
