@@ -80,7 +80,7 @@ pub struct RetryError<E> {
 
 /// Represents which attempts, in sequence, failed to complete.
 #[derive(Debug, Clone)]
-enum Attempt {
+pub enum Attempt {
     /// A single attempt that failed.
     Single(usize),
     /// A range of consecutive attempts that failed.
@@ -92,7 +92,7 @@ enum Attempt {
 impl<E: Debug + Display> Error for RetryError<E> {}
 
 impl<E> RetryError<E> {
-    /// Crate a new RetryError, with no failed attempts,
+    /// Create a new RetryError, with no failed attempts,
     ///
     /// The provided `doing` argument is a short string that describes
     /// what we were trying to do when we failed too many times.  It
@@ -207,15 +207,9 @@ where
 
 impl<E> IntoIterator for RetryError<E> {
     type Item = E;
-    type IntoIter = std::vec::IntoIter<E>;
-    #[allow(clippy::needless_collect)]
-    // TODO We have to use collect/into_iter here for now, since
-    // the actual Map<> type can't be named.  Once Rust lets us say
-    // `type IntoIter = impl Iterator<Item=E>` then we fix the code
-    // and turn the Clippy warning back on.
+    type IntoIter = std::iter::Map<std::vec::IntoIter<(Attempt, E)>, fn((Attempt, E)) -> E>;
     fn into_iter(self) -> Self::IntoIter {
-        let v: Vec<_> = self.errors.into_iter().map(|x| x.1).collect();
-        v.into_iter()
+        self.errors.into_iter().map(|x| x.1)
     }
 }
 
