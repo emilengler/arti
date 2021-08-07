@@ -6,7 +6,6 @@
 use super::RelayCmd;
 use crate::chancell::msg::{DestroyReason, TAP_C_HANDSHAKE_LEN, TAP_S_HANDSHAKE_LEN};
 use crate::chancell::CELL_DATA_LEN;
-use bytes::{BufMut, Bytes};
 use caret::caret_int;
 use std::net::{IpAddr, Ipv4Addr};
 use tor_bytes::{Error, Result};
@@ -63,7 +62,7 @@ pub trait Body: Sized {
     /// Decode a relay cell body from a provided reader.
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self>;
     /// Encode the body of this cell into the end of a vec.
-    fn encode_onto(self, w: &mut dyn BufMut);
+    fn encode_onto(self, w: &mut Vec<u8>);
 }
 
 impl<B: Body> From<B> for RelayMsg {
@@ -298,27 +297,26 @@ impl Body for Begin {
 #[derive(Debug, Clone)]
 pub struct Data {
     /// Contents of the cell, to be sent on a specific stream
-    body: Bytes,
+    body: Vec<u8>,
 }
 impl Data {
     /// The longest allowable body length for a single data cell.
     pub const MAXLEN: usize = CELL_DATA_LEN - 11;
 
     /// Construct a new data cell.
-    pub fn new(inp: impl Into<Bytes>) -> Self {
-        let body = input.into();
-        assert!(body.len() <= Data::MAXLEN);
-        Data { body }
+    pub fn new(inp: &[u8]) -> Self {
+        assert!(inp.len() <= Data::MAXLEN);
+        Data { body: inp.into() }
     }
 }
-impl From<Data> for Bytes {
-    fn from(data: Data) -> Self {
+impl From<Data> for Vec<u8> {
+    fn from(data: Data) -> Vec<u8> {
         data.body
     }
 }
 impl AsRef<[u8]> for Data {
     fn as_ref(&self) -> &[u8] {
-        &self.body.as_ref()
+        &self.body[..]
     }
 }
 
@@ -331,7 +329,7 @@ impl Body for Data {
             body: r.take(r.remaining())?.into(),
         })
     }
-    fn encode_onto(mut self, w: &mut dyn BufMut) {
+    fn encode_onto(mut self, w: &mut Vec<u8>) {
         w.append(&mut self.body);
     }
 }
