@@ -35,7 +35,7 @@ pub struct NetworkConfig {
 
 impl Default for NetworkConfig {
     fn default() -> Self {
-        NetworkConfig {
+        Self {
             fallback_cache: fallbacks::default_fallbacks(),
             authority: crate::authority::default_authorities(),
         }
@@ -166,7 +166,7 @@ fn default_microdesc_parallelism() -> u8 {
 
 impl Default for DownloadScheduleConfig {
     fn default() -> Self {
-        DownloadScheduleConfig {
+        Self {
             retry_bootstrap: default_retry_bootstrap(),
             retry_consensus: Default::default(),
             retry_certs: Default::default(),
@@ -307,7 +307,7 @@ impl DirMgrConfigBuilder {
     /// To use this, call at least one method to set a cache directory,
     /// then call load().
     pub fn new() -> Self {
-        DirMgrConfigBuilder::default()
+        Self::default()
     }
 
     /// Set the network information (authorities and fallbacks) from `config`.

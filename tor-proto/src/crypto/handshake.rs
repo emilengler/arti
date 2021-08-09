@@ -85,7 +85,7 @@ pub(crate) struct TapKeyGenerator {
 impl TapKeyGenerator {
     /// Create a key generator based on a provided seed
     pub(crate) fn new(seed: SecretBytes) -> Self {
-        TapKeyGenerator { seed }
+        Self { seed }
     }
 }
 
@@ -106,7 +106,7 @@ impl ShakeKeyGenerator {
     /// Create a key generator based on a provided seed
     #[allow(dead_code)] // We'll construct these for v3 onion services
     pub(crate) fn new(seed: SecretBytes) -> Self {
-        ShakeKeyGenerator { seed }
+        Self { seed }
     }
 }
 

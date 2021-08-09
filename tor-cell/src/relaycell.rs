@@ -85,30 +85,30 @@ impl RelayCmd {
     /// StreamId, and return a corresponding StreamIdReq.
     fn expects_streamid(self) -> StreamIdReq {
         match self {
-            RelayCmd::BEGIN
-            | RelayCmd::DATA
-            | RelayCmd::END
-            | RelayCmd::CONNECTED
-            | RelayCmd::RESOLVE
-            | RelayCmd::RESOLVED
-            | RelayCmd::BEGIN_DIR => StreamIdReq::WantNonZero,
-            RelayCmd::EXTEND
-            | RelayCmd::EXTENDED
-            | RelayCmd::TRUNCATE
-            | RelayCmd::TRUNCATED
-            | RelayCmd::DROP
-            | RelayCmd::EXTEND2
-            | RelayCmd::EXTENDED2
-            | RelayCmd::ESTABLISH_INTRO
-            | RelayCmd::ESTABLISH_RENDEZVOUS
-            | RelayCmd::INTRODUCE1
-            | RelayCmd::INTRODUCE2
-            | RelayCmd::RENDEZVOUS1
-            | RelayCmd::RENDEZVOUS2
-            | RelayCmd::INTRO_ESTABLISHED
-            | RelayCmd::RENDEZVOUS_ESTABLISHED
-            | RelayCmd::INTRODUCE_ACK => StreamIdReq::WantZero,
-            RelayCmd::SENDME => StreamIdReq::Any,
+            Self::BEGIN
+            | Self::DATA
+            | Self::END
+            | Self::CONNECTED
+            | Self::RESOLVE
+            | Self::RESOLVED
+            | Self::BEGIN_DIR => StreamIdReq::WantNonZero,
+            Self::EXTEND
+            | Self::EXTENDED
+            | Self::TRUNCATE
+            | Self::TRUNCATED
+            | Self::DROP
+            | Self::EXTEND2
+            | Self::EXTENDED2
+            | Self::ESTABLISH_INTRO
+            | Self::ESTABLISH_RENDEZVOUS
+            | Self::INTRODUCE1
+            | Self::INTRODUCE2
+            | Self::RENDEZVOUS1
+            | Self::RENDEZVOUS2
+            | Self::INTRO_ESTABLISHED
+            | Self::RENDEZVOUS_ESTABLISHED
+            | Self::INTRODUCE_ACK => StreamIdReq::WantZero,
+            Self::SENDME => StreamIdReq::Any,
             _ => StreamIdReq::Any,
         }
     }
@@ -130,13 +130,13 @@ impl RelayCmd {
 pub struct StreamId(u16);
 
 impl From<u16> for StreamId {
-    fn from(v: u16) -> StreamId {
-        StreamId(v)
+    fn from(v: u16) -> Self {
+        Self(v)
     }
 }
 
 impl From<StreamId> for u16 {
-    fn from(id: StreamId) -> u16 {
+    fn from(id: StreamId) -> Self {
         id.0
     }
 }
@@ -173,7 +173,7 @@ pub struct RelayCell {
 impl RelayCell {
     /// Construct a new relay cell.
     pub fn new(streamid: StreamId, msg: msg::RelayMsg) -> Self {
-        RelayCell { streamid, msg }
+        Self { streamid, msg }
     }
     /// Consume this cell and return its components.
     pub fn into_streamid_and_msg(self) -> (StreamId, msg::RelayMsg) {
@@ -238,7 +238,7 @@ impl RelayCell {
     /// performed
     pub fn decode(body: RawCellBody) -> Result<Self> {
         let mut reader = Reader::from_slice(body.as_ref());
-        RelayCell::decode_from_reader(&mut reader)
+        Self::decode_from_reader(&mut reader)
     }
     /// Parse a RELAY or RELAY_EARLY cell body into a RelayCell from a reader.
     ///
@@ -255,6 +255,6 @@ impl RelayCell {
         }
         r.truncate(len);
         let msg = msg::RelayMsg::decode_from_reader(cmd, r)?;
-        Ok(RelayCell { streamid, msg })
+        Ok(Self { streamid, msg })
     }
 }

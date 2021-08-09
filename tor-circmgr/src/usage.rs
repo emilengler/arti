@@ -35,14 +35,14 @@ pub struct TargetPort {
 impl TargetPort {
     /// Create a request to make sure that a circuit supports a given
     /// ipv4 exit port.
-    pub fn ipv4(port: u16) -> TargetPort {
-        TargetPort { ipv6: false, port }
+    pub fn ipv4(port: u16) -> Self {
+        Self { ipv6: false, port }
     }
 
     /// Create a request to make sure that a circuit supports a given
     /// ipv6 exit port.
-    pub fn ipv6(port: u16) -> TargetPort {
-        TargetPort { ipv6: true, port }
+    pub fn ipv6(port: u16) -> Self {
+        Self { ipv6: true, port }
     }
 
     /// Return true if this port is supported by the provided Relay.
@@ -75,7 +75,7 @@ impl IsolationToken {
         // different number each time
         let token = COUNTER.fetch_add(1, Ordering::Relaxed);
         assert!(token < u64::MAX);
-        IsolationToken(token)
+        Self(token)
     }
 }
 

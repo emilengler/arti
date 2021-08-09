@@ -25,8 +25,8 @@ impl std::fmt::Display for TimeoutError {
 }
 
 impl From<TimeoutError> for std::io::Error {
-    fn from(err: TimeoutError) -> std::io::Error {
-        std::io::Error::new(std::io::ErrorKind::TimedOut, err)
+    fn from(err: TimeoutError) -> Self {
+        Self::new(std::io::ErrorKind::TimedOut, err)
     }
 }
 

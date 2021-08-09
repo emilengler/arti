@@ -51,12 +51,12 @@ impl Ed25519Identity {
     /// assert!(pk.is_err());
     /// ```
     pub fn new(id: [u8; 32]) -> Self {
-        Ed25519Identity { id }
+        Self { id }
     }
     /// If `id` is of the correct length, wrap it in an Ed25519Identity.
     pub fn from_bytes(id: &[u8]) -> Option<Self> {
         if id.len() == 32 {
-            Some(Ed25519Identity::new(*array_ref!(id, 0, 32)))
+            Some(Self::new(*array_ref!(id, 0, 32)))
         } else {
             None
         }
@@ -69,7 +69,7 @@ impl Ed25519Identity {
 
 impl From<[u8; 32]> for Ed25519Identity {
     fn from(id: [u8; 32]) -> Self {
-        Ed25519Identity::new(id)
+        Self::new(id)
     }
 }
 
@@ -83,26 +83,26 @@ impl From<&PublicKey> for Ed25519Identity {
     fn from(pk: &PublicKey) -> Self {
         // This unwrap is safe because the public key is always 32 bytes
         // long.
-        Ed25519Identity::from_bytes(pk.as_bytes()).expect("Ed25519 public key had wrong length?")
+        Self::from_bytes(pk.as_bytes()).expect("Ed25519 public key had wrong length?")
     }
 }
 
 impl TryFrom<&Ed25519Identity> for PublicKey {
     type Error = ed25519_dalek::SignatureError;
-    fn try_from(id: &Ed25519Identity) -> Result<PublicKey, Self::Error> {
-        PublicKey::from_bytes(&id.id[..])
+    fn try_from(id: &Ed25519Identity) -> Result<Self, Self::Error> {
+        Self::from_bytes(&id.id[..])
     }
 }
 
 impl TryFrom<Ed25519Identity> for PublicKey {
     type Error = ed25519_dalek::SignatureError;
-    fn try_from(id: Ed25519Identity) -> Result<PublicKey, Self::Error> {
+    fn try_from(id: Ed25519Identity) -> Result<Self, Self::Error> {
         (&id).try_into()
     }
 }
 
-impl PartialEq<Ed25519Identity> for Ed25519Identity {
-    fn eq(&self, rhs: &Ed25519Identity) -> bool {
+impl PartialEq<Self> for Ed25519Identity {
+    fn eq(&self, rhs: &Self) -> bool {
         self.id.ct_eq(&rhs.id).unwrap_u8() == 1
     }
 }
@@ -204,7 +204,7 @@ pub struct ValidatableEd25519Signature {
 impl ValidatableEd25519Signature {
     /// Create a new ValidatableEd25519Signature
     pub fn new(key: PublicKey, sig: Signature, text: &[u8]) -> Self {
-        ValidatableEd25519Signature {
+        Self {
             key,
             sig,
             entire_text_of_signed_thing: text.into(),

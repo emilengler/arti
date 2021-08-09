@@ -232,7 +232,7 @@ mod rsa_impls {
     impl Readable for RsaIdentity {
         fn take_from(b: &mut Reader<'_>) -> Result<Self> {
             let m = b.take(RSA_ID_LEN)?;
-            Ok(RsaIdentity::from_bytes(m).expect("take gave wrong length"))
+            Ok(Self::from_bytes(m).expect("take gave wrong length"))
         }
     }
 }
@@ -250,7 +250,7 @@ mod mac_impls {
     impl<M: Mac> Readable for Output<M> {
         fn take_from(b: &mut Reader<'_>) -> Result<Self> {
             let array = GenericArray::take_from(b)?;
-            Ok(Output::new(array))
+            Ok(Self::new(array))
         }
     }
 }

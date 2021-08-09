@@ -54,15 +54,15 @@ impl Readable for LinkSpec {
         Ok(match lstype {
             LSTYPE_ORPORT_V4 => {
                 let addr = IpAddr::V4(r.extract()?);
-                LinkSpec::OrPort(addr, r.take_u16()?)
+                Self::OrPort(addr, r.take_u16()?)
             }
             LSTYPE_ORPORT_V6 => {
                 let addr = IpAddr::V6(r.extract()?);
-                LinkSpec::OrPort(addr, r.take_u16()?)
+                Self::OrPort(addr, r.take_u16()?)
             }
-            LSTYPE_RSAID => LinkSpec::RsaId(r.extract()?),
-            LSTYPE_ED25519ID => LinkSpec::Ed25519Id(r.extract()?),
-            _ => LinkSpec::Unrecognized(lstype, r.take(lslen)?.into()),
+            LSTYPE_RSAID => Self::RsaId(r.extract()?),
+            LSTYPE_ED25519ID => Self::Ed25519Id(r.extract()?),
+            _ => Self::Unrecognized(lstype, r.take(lslen)?.into()),
         })
     }
 }
@@ -104,7 +104,7 @@ impl Writeable for LinkSpec {
 
 impl From<&SocketAddr> for LinkSpec {
     fn from(sa: &SocketAddr) -> Self {
-        LinkSpec::OrPort(sa.ip(), sa.port())
+        Self::OrPort(sa.ip(), sa.port())
     }
 }
 impl From<SocketAddr> for LinkSpec {
@@ -114,17 +114,17 @@ impl From<SocketAddr> for LinkSpec {
 }
 impl From<RsaIdentity> for LinkSpec {
     fn from(id: RsaIdentity) -> Self {
-        LinkSpec::RsaId(id)
+        Self::RsaId(id)
     }
 }
 impl From<ed25519::Ed25519Identity> for LinkSpec {
     fn from(id: ed25519::Ed25519Identity) -> Self {
-        LinkSpec::Ed25519Id(id)
+        Self::Ed25519Id(id)
     }
 }
 impl From<ed25519::PublicKey> for LinkSpec {
     fn from(pk: ed25519::PublicKey) -> Self {
-        LinkSpec::Ed25519Id(pk.into())
+        Self::Ed25519Id(pk.into())
     }
 }
 
@@ -145,7 +145,7 @@ impl LinkSpec {
     /// Sort a slice of LinkSpec based on the order in which they should
     /// appear in an EXTEND cell.
     pub fn sort_by_type(lst: &mut [Self]) {
-        lst.sort_by_key(LinkSpec::sort_pos)
+        lst.sort_by_key(Self::sort_pos)
     }
 }
 

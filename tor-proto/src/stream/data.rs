@@ -75,7 +75,7 @@ impl DataStream {
                 n_pending: 0,
             })),
         };
-        DataStream { w, r }
+        Self { w, r }
     }
 
     /// Divide this DataStream into its constituent parts.

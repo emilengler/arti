@@ -39,7 +39,7 @@ impl DirResponse {
         output: String,
         source: Option<SourceInfo>,
     ) -> Self {
-        DirResponse {
+        Self {
             status,
             output,
             error,
@@ -81,7 +81,7 @@ impl DirResponse {
 impl SourceInfo {
     /// Construct a new SourceInfo
     pub(crate) fn new(circuit: UniqId) -> Self {
-        SourceInfo { circuit }
+        Self { circuit }
     }
     /// Return the unique circuit identifier for the circuit on which
     /// we received this info.

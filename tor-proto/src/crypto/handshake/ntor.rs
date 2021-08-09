@@ -78,7 +78,7 @@ impl NtorSecretKey {
     /// Construct a new NtorSecretKey from its components.
     #[allow(unused)]
     pub(crate) fn new(sk: StaticSecret, pk: PublicKey, id: RsaIdentity) -> Self {
-        NtorSecretKey {
+        Self {
             pk: NtorPublicKey { id, pk },
             sk,
         }
@@ -115,7 +115,7 @@ pub(crate) struct NtorHkdfKeyGenerator {
 impl NtorHkdfKeyGenerator {
     /// Create a new key generator to expand a given seed
     pub(crate) fn new(seed: SecretBytes) -> Self {
-        NtorHkdfKeyGenerator { seed }
+        Self { seed }
     }
 }
 

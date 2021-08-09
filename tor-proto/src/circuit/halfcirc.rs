@@ -17,7 +17,7 @@ pub(crate) struct HalfCirc {
 impl HalfCirc {
     /// Create a new HalfCirc that will allow `total_windows` RELAY cells.
     pub(crate) fn new(total_windows: u16) -> Self {
-        HalfCirc {
+        Self {
             allow_relay_cells: total_windows,
         }
     }

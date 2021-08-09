@@ -24,11 +24,11 @@ pub(crate) enum CreateResponse {
 impl TryFrom<ChanMsg> for CreateResponse {
     type Error = crate::Error;
 
-    fn try_from(m: ChanMsg) -> Result<CreateResponse> {
+    fn try_from(m: ChanMsg) -> Result<Self> {
         match m {
-            ChanMsg::Destroy(m) => Ok(CreateResponse::Destroy(m)),
-            ChanMsg::CreatedFast(m) => Ok(CreateResponse::CreatedFast(m)),
-            ChanMsg::Created2(m) => Ok(CreateResponse::Created2(m)),
+            ChanMsg::Destroy(m) => Ok(Self::Destroy(m)),
+            ChanMsg::CreatedFast(m) => Ok(Self::CreatedFast(m)),
+            ChanMsg::Created2(m) => Ok(Self::Created2(m)),
             _ => Err(Error::ChanProto(format!(
                 "Got a {} in response to circuit creation",
                 m.cmd()
@@ -52,10 +52,10 @@ pub(crate) enum ClientCircChanMsg {
 impl TryFrom<ChanMsg> for ClientCircChanMsg {
     type Error = crate::Error;
 
-    fn try_from(m: ChanMsg) -> Result<ClientCircChanMsg> {
+    fn try_from(m: ChanMsg) -> Result<Self> {
         match m {
-            ChanMsg::Destroy(m) => Ok(ClientCircChanMsg::Destroy(m)),
-            ChanMsg::Relay(m) => Ok(ClientCircChanMsg::Relay(m)),
+            ChanMsg::Destroy(m) => Ok(Self::Destroy(m)),
+            ChanMsg::Relay(m) => Ok(Self::Relay(m)),
             _ => Err(Error::ChanProto(format!(
                 "Got a {} cell on an open circuit",
                 m.cmd()

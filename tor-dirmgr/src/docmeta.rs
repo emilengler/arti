@@ -37,7 +37,7 @@ impl ConsensusMeta {
         sha3_256_of_signed: [u8; 32],
         sha3_256_of_whole: [u8; 32],
     ) -> Self {
-        ConsensusMeta {
+        Self {
             lifetime,
             sha3_256_of_signed,
             sha3_256_of_whole,
@@ -52,7 +52,7 @@ impl ConsensusMeta {
     ) -> Self {
         let lifetime = con.peek_lifetime().clone();
         let (sd, wd) = sha3_dual(signed_part, remainder);
-        ConsensusMeta::new(lifetime, sd, wd)
+        Self::new(lifetime, sd, wd)
     }
     /// Derive a new ConsensusMeta from a MdConsensus and the text of its
     /// signed portion.
@@ -60,7 +60,7 @@ impl ConsensusMeta {
     pub(crate) fn from_consensus(signed_part: &str, remainder: &str, con: &MdConsensus) -> Self {
         let lifetime = con.lifetime().clone();
         let (sd, wd) = sha3_dual(signed_part, remainder);
-        ConsensusMeta::new(lifetime, sd, wd)
+        Self::new(lifetime, sd, wd)
     }
     /// Return the lifetime of this ConsensusMeta
     pub(crate) fn lifetime(&self) -> &Lifetime {
@@ -104,7 +104,7 @@ pub(crate) struct AuthCertMeta {
 impl AuthCertMeta {
     /// Construct a new AuthCertMeta from its components
     pub(crate) fn new(ids: AuthCertKeyIds, published: SystemTime, expires: SystemTime) -> Self {
-        AuthCertMeta {
+        Self {
             ids,
             published,
             expires,
@@ -113,7 +113,7 @@ impl AuthCertMeta {
 
     /// Construct a new AuthCertMeta from a certificate.
     pub(crate) fn from_authcert(cert: &AuthCert) -> Self {
-        AuthCertMeta::new(*cert.key_ids(), cert.published(), cert.expires())
+        Self::new(*cert.key_ids(), cert.published(), cert.expires())
     }
 
     /// Return the key IDs for this certificate

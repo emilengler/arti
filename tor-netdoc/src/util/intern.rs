@@ -23,7 +23,7 @@ pub(crate) struct InternCache<T> {
 impl<T> InternCache<T> {
     /// Create a new, empty, InternCache.
     pub(crate) const fn new() -> Self {
-        InternCache {
+        Self {
             cache: OnceCell::new(),
         }
     }

@@ -164,12 +164,12 @@ pub struct Padding {}
 impl Padding {
     /// Create a new fixed-length padding cell
     pub fn new() -> Self {
-        Padding {}
+        Self {}
     }
 }
 impl Default for Padding {
     fn default() -> Self {
-        Padding::new()
+        Self::new()
     }
 }
 impl Body for Padding {
@@ -180,7 +180,7 @@ impl Body for Padding {
 }
 impl Readable for Padding {
     fn take_from(_r: &mut Reader<'_>) -> Result<Self> {
-        Ok(Padding {})
+        Ok(Self {})
     }
 }
 
@@ -195,7 +195,7 @@ pub struct VPadding {
 impl VPadding {
     /// Return a new vpadding cell with given length.
     pub fn new(len: u16) -> Self {
-        VPadding { len }
+        Self { len }
     }
 }
 impl Body for VPadding {
@@ -211,7 +211,7 @@ impl Readable for VPadding {
         if r.remaining() > std::u16::MAX as usize {
             return Err(Error::BadMessage("Too many bytes in VPADDING cell"));
         }
-        Ok(VPadding {
+        Ok(Self {
             len: r.remaining() as u16,
         })
     }
@@ -349,7 +349,7 @@ impl Readable for Create2 {
         let handshake_type = r.take_u16()?;
         let hlen = r.take_u16()?;
         let handshake = r.take(hlen as usize)?.into();
-        Ok(Create2 {
+        Ok(Self {
             handshake_type,
             handshake,
         })
@@ -362,7 +362,7 @@ impl Create2 {
         B: Into<Vec<u8>>,
     {
         let handshake = handshake.into();
-        Create2 {
+        Self {
             handshake_type,
             handshake,
         }
@@ -395,7 +395,7 @@ impl Created2 {
         B: Into<Vec<u8>>,
     {
         let handshake = handshake.into();
-        Created2 { handshake }
+        Self { handshake }
     }
     /// Consume this created2 cell and return its body.
     pub fn into_body(self) -> Vec<u8> {
@@ -416,7 +416,7 @@ impl Readable for Created2 {
     fn take_from(r: &mut Reader<'_>) -> Result<Self> {
         let hlen = r.take_u16()?;
         let handshake = r.take(hlen as usize)?.into();
-        Ok(Created2 { handshake })
+        Ok(Self { handshake })
     }
 }
 
@@ -447,11 +447,11 @@ impl Relay {
         // TODO: This will panic if body is too long, but that would be a
         // programming error anyway.
         (&mut r[..body.len()]).copy_from_slice(body);
-        Relay { body: Box::new(r) }
+        Self { body: Box::new(r) }
     }
     /// Construct a Relay message from its body.
     pub fn from_raw(body: RawCellBody) -> Self {
-        Relay {
+        Self {
             body: Box::new(body),
         }
     }
@@ -483,7 +483,7 @@ impl Readable for Relay {
     fn take_from(r: &mut Reader<'_>) -> Result<Self> {
         let mut body = Box::new([0_u8; CELL_DATA_LEN]);
         (&mut body[..]).copy_from_slice(r.take(CELL_DATA_LEN)?);
-        Ok(Relay { body })
+        Ok(Self { body })
     }
 }
 
@@ -500,7 +500,7 @@ pub struct Destroy {
 impl Destroy {
     /// Create a new destroy cell.
     pub fn new(reason: DestroyReason) -> Self {
-        Destroy { reason }
+        Self { reason }
     }
 }
 impl Body for Destroy {
@@ -514,7 +514,7 @@ impl Body for Destroy {
 impl Readable for Destroy {
     fn take_from(r: &mut Reader<'_>) -> Result<Self> {
         let reason = r.take_u8()?.into();
-        Ok(Destroy { reason })
+        Ok(Self { reason })
     }
 }
 
@@ -608,7 +608,7 @@ fn take_one_netinfo_addr(r: &mut Reader<'_>) -> Result<Option<IpAddr>> {
 impl Netinfo {
     /// Construct a new Netinfo to be sent by a client.
     pub fn for_client(their_addr: Option<IpAddr>) -> Self {
-        Netinfo {
+        Self {
             timestamp: 0, // clients don't report their timestamps.
             their_addr,
             my_addr: Vec::new(), // clients don't report their addrs.
@@ -620,7 +620,7 @@ impl Netinfo {
         V: Into<Vec<IpAddr>>,
     {
         let my_addr = my_addrs.into();
-        Netinfo {
+        Self {
             timestamp,
             their_addr,
             my_addr,
@@ -655,7 +655,7 @@ impl Readable for Netinfo {
                 my_addr.push(a);
             }
         }
-        Ok(Netinfo {
+        Ok(Self {
             timestamp,
             their_addr,
             my_addr,
@@ -733,7 +733,7 @@ impl Readable for Versions {
         while r.remaining() > 0 {
             versions.push(r.take_u16()?);
         }
-        Ok(Versions { versions })
+        Ok(Self { versions })
     }
 }
 
@@ -773,7 +773,7 @@ impl Readable for PaddingNegotiate {
         let command = r.take_u8()?;
         let ito_low_ms = r.take_u16()?;
         let ito_high_ms = r.take_u16()?;
-        Ok(PaddingNegotiate {
+        Ok(Self {
             command,
             ito_low_ms,
             ito_high_ms,
@@ -826,7 +826,7 @@ pub struct Certs {
 impl Certs {
     /// Return a new empty certs cell.
     pub fn new_empty() -> Self {
-        Certs { certs: Vec::new() }
+        Self { certs: Vec::new() }
     }
     /// Add a new encoded certificate to this cell.
     ///
@@ -887,7 +887,7 @@ impl Readable for Certs {
         for _ in 0..n {
             certs.push(take_one_tor_cert(r)?);
         }
-        Ok(Certs { certs })
+        Ok(Self { certs })
     }
 }
 
@@ -917,7 +917,7 @@ impl AuthChallenge {
         B: Into<[u8; CHALLENGE_LEN]>,
         M: Into<Vec<u16>>,
     {
-        AuthChallenge {
+        Self {
             challenge: challenge.into(),
             methods: methods.into(),
         }
@@ -946,7 +946,7 @@ impl Readable for AuthChallenge {
         for _ in 0..n_methods {
             methods.push(r.take_u16()?);
         }
-        Ok(AuthChallenge { challenge, methods })
+        Ok(Self { challenge, methods })
     }
 }
 
@@ -969,7 +969,7 @@ impl Authenticate {
     where
         B: Into<Vec<u8>>,
     {
-        Authenticate {
+        Self {
             authtype,
             auth: body.into(),
         }
@@ -991,7 +991,7 @@ impl Readable for Authenticate {
         let authtype = r.take_u16()?;
         let authlen = r.take_u16()?;
         let auth = r.take(authlen as usize)?.into();
-        Ok(Authenticate { authtype, auth })
+        Ok(Self { authtype, auth })
     }
 }
 
@@ -1008,7 +1008,7 @@ impl Authorize {
         B: Into<Vec<u8>>,
     {
         let content = content.into();
-        Authorize { content }
+        Self { content }
     }
 }
 impl Body for Authorize {
@@ -1021,7 +1021,7 @@ impl Body for Authorize {
 }
 impl Readable for Authorize {
     fn take_from(r: &mut Reader<'_>) -> Result<Self> {
-        Ok(Authorize {
+        Ok(Self {
             content: r.take(r.remaining())?.into(),
         })
     }
@@ -1055,7 +1055,7 @@ impl Unrecognized {
         B: Into<Vec<u8>>,
     {
         let content = content.into();
-        Unrecognized { cmd, content }
+        Self { cmd, content }
     }
     /// Return the command from this cell.
     fn cmd(&self) -> ChanCmd {
@@ -1072,7 +1072,7 @@ impl Body for Unrecognized {
 }
 impl Readable for Unrecognized {
     fn take_from(r: &mut Reader<'_>) -> Result<Self> {
-        Ok(Unrecognized {
+        Ok(Self {
             cmd: 0.into(),
             content: r.take(r.remaining())?.into(),
         })

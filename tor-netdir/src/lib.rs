@@ -48,6 +48,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 mod err;
 pub mod fallback;
@@ -131,12 +132,12 @@ impl MdEntry {
 }
 
 impl From<Microdesc> for MdEntry {
-    fn from(md: Microdesc) -> MdEntry {
-        MdEntry::Present(Arc::new(md))
+    fn from(md: Microdesc) -> Self {
+        Self::Present(Arc::new(md))
     }
 }
 impl PartialEq for MdEntry {
-    fn eq(&self, rhs: &MdEntry) -> bool {
+    fn eq(&self, rhs: &Self) -> bool {
         self.digest() == rhs.digest()
     }
 }
@@ -257,7 +258,7 @@ impl PartialNetDir {
         for rs in netdir.consensus.relays().iter() {
             netdir.mds.insert(MdEntry::Absent(*rs.md_digest()));
         }
-        PartialNetDir { netdir }
+        Self { netdir }
     }
 
     /// Return the declared lifetime of this PartialNetDir.
@@ -285,7 +286,7 @@ impl PartialNetDir {
     }
     /// If this directory has enough information to build multihop
     /// circuits, return it.
-    pub fn unwrap_if_sufficient(self) -> std::result::Result<NetDir, PartialNetDir> {
+    pub fn unwrap_if_sufficient(self) -> std::result::Result<NetDir, Self> {
         if self.netdir.have_enough_paths() {
             Ok(self.netdir)
         } else {

@@ -44,7 +44,7 @@ impl Publisher {
     #[allow(clippy::new_without_default)]
     pub(crate) fn new() -> Self {
         let (send, _recv) = broadcast::channel(QUEUE_LEN);
-        Publisher { send }
+        Self { send }
     }
 
     /// Broadcast the provided [`DirEvent`] to every subscribed listener.

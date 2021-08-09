@@ -58,7 +58,7 @@ impl Display for PortPolicy {
 impl PortPolicy {
     /// Return a new PortPolicy that rejects all ports.
     pub fn new_reject_all() -> Self {
-        PortPolicy {
+        Self {
             allowed: Vec::new(),
         }
     }
@@ -122,7 +122,7 @@ impl FromStr for PortPolicy {
         } else {
             return Err(PolicyError::InvalidPolicy);
         };
-        let mut result = PortPolicy {
+        let mut result = Self {
             allowed: Vec::new(),
         };
         s = &s[7..];

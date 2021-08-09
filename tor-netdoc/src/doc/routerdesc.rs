@@ -154,12 +154,12 @@ impl std::str::FromStr for RelayPlatform {
         if args.starts_with("Tor ") {
             let v: Vec<_> = args.splitn(4, ' ').collect();
             match &v[..] {
-                ["Tor", ver, "on", p] => Ok(RelayPlatform::Tor(ver.parse()?, (*p).to_string())),
-                ["Tor", ver, ..] => Ok(RelayPlatform::Tor(ver.parse()?, "".to_string())),
+                ["Tor", ver, "on", p] => Ok(Self::Tor(ver.parse()?, (*p).to_string())),
+                ["Tor", ver, ..] => Ok(Self::Tor(ver.parse()?, "".to_string())),
                 _ => unreachable!(),
             }
         } else {
-            Ok(RelayPlatform::Other(args.to_string()))
+            Ok(Self::Other(args.to_string()))
         }
     }
 }
@@ -286,7 +286,7 @@ static ROUTER_SIG_RULES: Lazy<SectionRules<RouterKwd>> = Lazy::new(|| {
 
 impl Default for RouterAnnotation {
     fn default() -> Self {
-        RouterAnnotation {
+        Self {
             source: None,
             downloaded: None,
             purpose: None,
@@ -296,7 +296,7 @@ impl Default for RouterAnnotation {
 
 impl RouterAnnotation {
     /// Extract a single RouterAnnotation (possibly empty) from a reader.
-    fn take_from_reader(reader: &mut NetDocReader<'_, RouterKwd>) -> Result<RouterAnnotation> {
+    fn take_from_reader(reader: &mut NetDocReader<'_, RouterKwd>) -> Result<Self> {
         use RouterKwd::*;
         let mut items = reader.pause_at(|item| item.is_ok_with_non_annotation());
 
@@ -308,7 +308,7 @@ impl RouterAnnotation {
             .maybe(ANN_DOWNLOADED_AT)
             .parse_args_as_str::<Iso8601TimeSp>()?
             .map(|t| t.into());
-        Ok(RouterAnnotation {
+        Ok(Self {
             source,
             downloaded,
             purpose,
@@ -379,7 +379,7 @@ impl RouterDesc {
         use RouterKwd::*;
 
         let s = r.str();
-        let (header, body, sig) = RouterDesc::parse_sections(r)?;
+        let (header, body, sig) = Self::parse_sections(r)?;
 
         let start_offset = header.required(ROUTER)?.offset_in(s).unwrap();
 
@@ -617,7 +617,7 @@ impl RouterDesc {
 
         let start_time = published - time::Duration::new(ROUTER_PRE_VALIDITY_SECONDS, 0);
 
-        let desc = RouterDesc {
+        let desc = Self {
             nickname,
             ipv4addr,
             orport,

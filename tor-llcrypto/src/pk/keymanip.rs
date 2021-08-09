@@ -103,8 +103,8 @@ pub enum BlindingError {
 
 // Convert this dalek error to a BlindingError
 impl From<ed25519_dalek::SignatureError> for BlindingError {
-    fn from(_: ed25519_dalek::SignatureError) -> BlindingError {
-        BlindingError::BlindingFailed
+    fn from(_: ed25519_dalek::SignatureError) -> Self {
+        Self::BlindingFailed
     }
 }
 

@@ -97,7 +97,7 @@ pub(super) struct InboundHop {
 impl InboundHop {
     /// Create a new hop.
     pub(super) fn new() -> Self {
-        InboundHop {
+        Self {
             map: streammap::StreamMap::new(),
             recvwindow: sendme::CircRecvWindow::new(1000),
         }
@@ -152,7 +152,7 @@ impl Reactor {
         let oneshots = stream::FuturesUnordered::new();
         oneshots.push(closeflag);
         let control = stream::select(control, oneshots);
-        Reactor {
+        Self {
             input: input.fuse(),
             control: control.fuse(),
             circuit: Arc::downgrade(circuit),

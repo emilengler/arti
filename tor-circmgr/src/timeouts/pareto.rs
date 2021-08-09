@@ -45,7 +45,7 @@ impl MsecDuration {
     /// extra-high values to u32::MAX milliseconds.
     fn new_saturating(d: &Duration) -> Self {
         let msec = std::cmp::min(d.as_millis(), u32::MAX as u128) as u32;
-        MsecDuration(msec)
+        Self(msec)
     }
 }
 
@@ -83,7 +83,7 @@ struct History {
 impl History {
     /// Initialize a new empty `History` with no observations.
     fn new_empty() -> Self {
-        History {
+        Self {
             time_history: BoundedVecDeque::new(TIME_HISTORY_LEN),
             time_histogram: BTreeMap::new(),
             success_history: BoundedVecDeque::new(SUCCESS_HISTORY_DEFAULT_LEN),
@@ -140,7 +140,7 @@ impl History {
         let mut rng = rand::thread_rng();
         observations[..].shuffle(&mut rng);
 
-        let mut result = History::new_empty();
+        let mut result = Self::new_empty();
         for obs in observations {
             result.add_time(obs);
         }
@@ -168,7 +168,7 @@ impl History {
 
     /// Increment the histogram bucket containing `time` by one.
     fn inc_bucket(&mut self, time: MsecDuration) {
-        let center = History::bucket_center(time);
+        let center = Self::bucket_center(time);
         *self.time_histogram.entry(center).or_insert(0) += 1
     }
 
@@ -176,7 +176,7 @@ impl History {
     /// it if it becomes 0.
     fn dec_bucket(&mut self, time: MsecDuration) {
         use std::collections::btree_map::Entry;
-        let center = History::bucket_center(time);
+        let center = Self::bucket_center(time);
         match self.time_histogram.entry(center) {
             Entry::Vacant(_) => {
                 // this is a bug.
@@ -378,7 +378,7 @@ pub(crate) struct Params {
 
 impl Default for Params {
     fn default() -> Self {
-        Params {
+        Self {
             use_estimates: true,
             min_observations: 100,
             significant_hop: 2,
@@ -395,7 +395,7 @@ impl Default for Params {
 }
 
 impl From<&tor_netdir::params::NetParameters> for Params {
-    fn from(p: &tor_netdir::params::NetParameters) -> Params {
+    fn from(p: &tor_netdir::params::NetParameters) -> Self {
         // Because of the underlying bounds, the "unwrap_or_else"
         // conversions here should be impossible, and the "as"
         // conversions should always be in-range.
@@ -405,7 +405,7 @@ impl From<&tor_netdir::params::NetParameters> for Params {
             .try_into()
             .unwrap_or_else(|_| Duration::from_secs(60));
         let learning_disabled: bool = p.cbt_learning_disabled.into();
-        Params {
+        Self {
             use_estimates: !learning_disabled,
             min_observations: p.cbt_min_circs_for_estimate.get() as u16,
             significant_hop: 2,
@@ -497,7 +497,7 @@ impl ParetoTimeoutEstimator {
             fallback_timeouts: p.default_thresholds,
             p,
         };
-        ParetoTimeoutEstimator {
+        Self {
             est: Mutex::new(inner),
         }
     }

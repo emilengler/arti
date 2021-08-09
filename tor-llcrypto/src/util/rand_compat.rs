@@ -49,7 +49,7 @@ pub trait RngCompatExt: RngCore {
 }
 
 impl<T: RngCore + Sized> RngCompatExt for T {
-    type Wrapper = RngWrapper<T>;
+    type Wrapper = RngWrapper<Self>;
     fn rng_compat(self) -> RngWrapper<Self> {
         self.into()
     }
@@ -69,8 +69,8 @@ impl<T: RngCore + Sized> RngCompatExt for T {
 pub struct RngWrapper<T>(T);
 
 impl<T: RngCore> From<T> for RngWrapper<T> {
-    fn from(rng: T) -> RngWrapper<T> {
-        RngWrapper(rng)
+    fn from(rng: T) -> Self {
+        Self(rng)
     }
 }
 

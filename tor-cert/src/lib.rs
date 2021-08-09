@@ -73,6 +73,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 pub mod rsa;
 
@@ -231,10 +232,10 @@ impl CertifiedKey {
     /// already read its type as `key_type`.
     fn from_reader(key_type: KeyType, r: &mut Reader<'_>) -> Result<Self> {
         Ok(match key_type {
-            KeyType::ED25519_KEY => CertifiedKey::Ed25519(r.extract()?),
-            KeyType::SHA256_OF_RSA => CertifiedKey::RsaSha256Digest(r.extract()?),
-            KeyType::SHA256_OF_X509 => CertifiedKey::X509Sha256Digest(r.extract()?),
-            _ => CertifiedKey::Unrecognized(UnrecognizedKey {
+            KeyType::ED25519_KEY => Self::Ed25519(r.extract()?),
+            KeyType::SHA256_OF_RSA => Self::RsaSha256Digest(r.extract()?),
+            KeyType::SHA256_OF_X509 => Self::X509Sha256Digest(r.extract()?),
+            _ => Self::Unrecognized(UnrecognizedKey {
                 key_type,
                 key_digest: r.extract()?,
             }),
@@ -339,7 +340,7 @@ impl Readable for CertExt {
                 if body.len() != 32 {
                     return Err(Error::BadMessage("wrong length on Ed25519 key"));
                 }
-                CertExt::SignedWithEd25519(SignedWithEd25519Ext {
+                Self::SignedWithEd25519(SignedWithEd25519Ext {
                     pk: ed25519::PublicKey::from_bytes(body)
                         .map_err(|_| Error::BadMessage("invalid Ed25519 public key"))?,
                 })
@@ -350,7 +351,7 @@ impl Readable for CertExt {
                         "unrecognized certificate extension, with 'affects_validation' flag set.",
                     ));
                 }
-                CertExt::Unrecognized(UnrecognizedExt {
+                Self::Unrecognized(UnrecognizedExt {
                     affects_validation: false,
                     ext_type,
                     body: body.into(),
@@ -439,7 +440,7 @@ impl Ed25519Cert {
 
         Ok(KeyUnknownCert {
             cert: UncheckedCert {
-                cert: Ed25519Cert {
+                cert: Self {
                     exp_hours,
                     cert_type,
                     cert_key,

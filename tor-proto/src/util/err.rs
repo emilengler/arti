@@ -85,28 +85,28 @@ pub enum Error {
 }
 
 impl From<tor_cell::Error> for Error {
-    fn from(err: tor_cell::Error) -> Error {
+    fn from(err: tor_cell::Error) -> Self {
         match err {
-            tor_cell::Error::ChanProto(msg) => Error::ChanProto(msg),
-            _ => Error::CellErr(err),
+            tor_cell::Error::ChanProto(msg) => Self::ChanProto(msg),
+            _ => Self::CellErr(err),
         }
     }
 }
 
 impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Error {
-        Error::IoErr(Arc::new(err))
+    fn from(err: std::io::Error) -> Self {
+        Self::IoErr(Arc::new(err))
     }
 }
 
 impl From<Error> for std::io::Error {
-    fn from(err: Error) -> std::io::Error {
+    fn from(err: Error) -> Self {
         use std::io::ErrorKind;
         use Error::*;
         let kind = match err {
             IoErr(e) => match Arc::try_unwrap(e) {
                 Ok(e) => return e,
-                Err(arc) => return std::io::Error::new(arc.kind(), arc),
+                Err(arc) => return Self::new(arc.kind(), arc),
             },
 
             InvalidOutputLength | NoSuchHop | BadStreamAddress => ErrorKind::InvalidInput,
@@ -124,7 +124,7 @@ impl From<Error> for std::io::Error {
                 ErrorKind::Other
             }
         };
-        std::io::Error::new(kind, err)
+        Self::new(kind, err)
     }
 }
 
@@ -138,8 +138,8 @@ pub(crate) enum ReactorError {
     Shutdown,
 }
 impl From<Error> for ReactorError {
-    fn from(e: Error) -> ReactorError {
-        ReactorError::Err(e)
+    fn from(e: Error) -> Self {
+        Self::Err(e)
     }
 }
 #[cfg(test)]

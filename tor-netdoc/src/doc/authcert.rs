@@ -141,7 +141,7 @@ impl AuthCert {
     /// check its expiration dates.
     pub fn parse(s: &str) -> Result<UncheckedAuthCert> {
         let mut reader = NetDocReader::new(s);
-        let result = AuthCert::take_from_reader(&mut reader).map_err(|e| e.within(s));
+        let result = Self::take_from_reader(&mut reader).map_err(|e| e.within(s));
         reader.should_be_exhausted()?;
         result
     }
@@ -327,7 +327,7 @@ impl AuthCert {
             }
         };
 
-        let authcert = AuthCert {
+        let authcert = Self {
             address,
             identity_key,
             signing_key,

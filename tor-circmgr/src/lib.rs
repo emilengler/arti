@@ -45,6 +45,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 use tor_chanmgr::ChanMgr;
 use tor_netdir::{fallback::FallbackDir, NetDir};
@@ -172,7 +173,7 @@ impl<R: Runtime> CircMgr<R> {
         let builder =
             build::CircuitBuilder::new(runtime.clone(), chanmgr, path_config, Arc::clone(&storage));
         let mgr = mgr::AbstractCircMgr::new(builder, runtime, request_timing);
-        CircMgr {
+        Self {
             mgr: Arc::new(mgr),
             storage,
         }

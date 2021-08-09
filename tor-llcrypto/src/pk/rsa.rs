@@ -40,8 +40,8 @@ pub struct RsaIdentity {
     id: [u8; RSA_ID_LEN],
 }
 
-impl PartialEq<RsaIdentity> for RsaIdentity {
-    fn eq(&self, rhs: &RsaIdentity) -> bool {
+impl PartialEq<Self> for RsaIdentity {
+    fn eq(&self, rhs: &Self) -> bool {
         self.id.ct_eq(&rhs.id).unwrap_u8() == 1
     }
 }
@@ -139,7 +139,7 @@ impl RsaIdentity {
     /// ```
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() == RSA_ID_LEN {
-            Some(RsaIdentity {
+            Some(Self {
                 id: *array_ref![bytes, 0, RSA_ID_LEN],
             })
         } else {
@@ -149,8 +149,8 @@ impl RsaIdentity {
 }
 
 impl From<[u8; 20]> for RsaIdentity {
-    fn from(id: [u8; 20]) -> RsaIdentity {
-        RsaIdentity { id }
+    fn from(id: [u8; 20]) -> Self {
+        Self { id }
     }
 }
 
@@ -175,7 +175,7 @@ impl PrivateKey {
     }
     /// Construct a PrivateKey from DER pkcs1 encoding.
     pub fn from_der(der: &[u8]) -> Option<Self> {
-        Some(PrivateKey(rsa::RsaPrivateKey::from_pkcs1_der(der).ok()?))
+        Some(Self(rsa::RsaPrivateKey::from_pkcs1_der(der).ok()?))
     }
     // ....
 }
@@ -210,7 +210,7 @@ impl PublicKey {
     /// (This function expects an RsaPublicKey, as used by Tor.  It
     /// does not expect or accept a PublicKeyInfo.)
     pub fn from_der(der: &[u8]) -> Option<Self> {
-        Some(PublicKey(rsa::RsaPublicKey::from_pkcs1_der(der).ok()?))
+        Some(Self(rsa::RsaPublicKey::from_pkcs1_der(der).ok()?))
     }
     /// Encode this public key into the DER format as used by Tor.
     ///
@@ -261,7 +261,7 @@ pub struct ValidatableRsaSignature {
 impl ValidatableRsaSignature {
     /// Construct a new ValidatableRsaSignature.
     pub fn new(key: &PublicKey, sig: &[u8], expected_hash: &[u8]) -> Self {
-        ValidatableRsaSignature {
+        Self {
             key: key.clone(),
             sig: sig.into(),
             expected_hash: expected_hash.into(),

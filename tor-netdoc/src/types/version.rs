@@ -163,7 +163,7 @@ impl FromStr for TorVersion {
             (_, _) => false,
         };
 
-        Ok(TorVersion {
+        Ok(Self {
             major,
             minor,
             micro,

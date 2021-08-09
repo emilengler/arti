@@ -33,7 +33,7 @@ impl HalfStream {
         recvw: StreamRecvWindow,
         connected_ok: bool,
     ) -> Self {
-        HalfStream {
+        Self {
             sendw,
             recvw,
             connected_ok,

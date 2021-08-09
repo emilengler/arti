@@ -87,7 +87,7 @@ pub(super) struct CircMap {
 impl CircMap {
     /// Make a new empty CircMap
     pub(super) fn new(idrange: CircIdRange) -> Self {
-        CircMap {
+        Self {
             m: HashMap::new(),
             range: idrange,
         }

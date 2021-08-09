@@ -16,7 +16,7 @@ pub struct ChannelCodec(codec::ChannelCodec);
 impl ChannelCodec {
     /// Create a new ChannelCodec with a given link protocol.
     pub(crate) fn new(link_proto: u16) -> Self {
-        ChannelCodec(codec::ChannelCodec::new(link_proto))
+        Self(codec::ChannelCodec::new(link_proto))
     }
 }
 

@@ -19,7 +19,7 @@ pub(crate) struct RelayCellBody(RawCellBody);
 
 impl From<RawCellBody> for RelayCellBody {
     fn from(body: RawCellBody) -> Self {
-        RelayCellBody(body)
+        Self(body)
     }
 }
 impl From<RelayCellBody> for RawCellBody {
@@ -109,20 +109,20 @@ pub(crate) trait InboundClientLayer {
 pub(crate) struct HopNum(u8);
 
 impl From<HopNum> for u8 {
-    fn from(hop: HopNum) -> u8 {
+    fn from(hop: HopNum) -> Self {
         hop.0
     }
 }
 
 impl From<u8> for HopNum {
-    fn from(v: u8) -> HopNum {
-        HopNum(v)
+    fn from(v: u8) -> Self {
+        Self(v)
     }
 }
 
 impl From<HopNum> for usize {
-    fn from(hop: HopNum) -> usize {
-        hop.0 as usize
+    fn from(hop: HopNum) -> Self {
+        hop.0 as Self
     }
 }
 
@@ -151,7 +151,7 @@ pub(crate) struct InboundClientCrypt {
 impl OutboundClientCrypt {
     /// Return a new (empty) OutboundClientCrypt.
     pub(crate) fn new() -> Self {
-        OutboundClientCrypt { layers: Vec::new() }
+        Self { layers: Vec::new() }
     }
     /// Prepare a cell body to sent away from the client.
     ///
@@ -190,7 +190,7 @@ impl OutboundClientCrypt {
 impl InboundClientCrypt {
     /// Return a new (empty) InboundClientCrypt.
     pub(crate) fn new() -> Self {
-        InboundClientCrypt { layers: Vec::new() }
+        Self { layers: Vec::new() }
     }
     /// Decrypt an incoming cell that is coming to the client.
     ///
@@ -277,7 +277,7 @@ pub(crate) mod tor1 {
                 digest: D::new().chain(bdinit),
                 last_digest_val: GenericArray::default(),
             };
-            CryptStatePair { fwd, back }
+            Self { fwd, back }
         }
     }
 

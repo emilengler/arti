@@ -87,7 +87,7 @@ impl<C: AbstractChannel> ChannelState<C> {
 impl<C: AbstractChannel> ChannelMap<C> {
     /// Create a new empty ChannelMap.
     pub(crate) fn new() -> Self {
-        ChannelMap {
+        Self {
             channels: std::sync::Mutex::new(HashMap::new()),
         }
     }

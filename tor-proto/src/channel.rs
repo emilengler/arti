@@ -156,7 +156,7 @@ pub struct ChannelBuilder {
 impl ChannelBuilder {
     /// Construct a new ChannelBuilder.
     pub fn new() -> Self {
-        ChannelBuilder { target: None }
+        Self { target: None }
     }
 
     /// Set the declared target address of this channel.
@@ -221,7 +221,7 @@ impl Channel {
             circ_unique_id_ctx: unique_id::CircUniqIdContext::new(),
         };
         let inner = Mutex::new(inner);
-        let channel = Channel {
+        let channel = Self {
             unique_id,
             ed25519_id,
             rsa_id,
@@ -430,7 +430,7 @@ pub(crate) struct CircDestroyHandle {
 impl CircDestroyHandle {
     /// Create a new CircDestroyHandle
     fn new(id: CircId, sender: oneshot::Sender<CtrlMsg>) -> Self {
-        CircDestroyHandle {
+        Self {
             id,
             sender: Some(sender),
         }

@@ -61,7 +61,7 @@ struct IsolationMapInner {
 impl IsolationMap {
     /// Create a new, empty, IsolationMap
     fn new() -> Self {
-        IsolationMap {
+        Self {
             inner: Mutex::new(IsolationMapInner {
                 map: HashMap::new(),
                 next_gc: Instant::now() + Duration::new(60 * 30, 0),

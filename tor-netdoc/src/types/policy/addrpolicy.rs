@@ -74,7 +74,7 @@ impl AddrPolicy {
 
     /// Create a new AddrPolicy that matches nothing.
     pub fn new() -> Self {
-        AddrPolicy { rules: Vec::new() }
+        Self { rules: Vec::new() }
     }
 
     /// Add a new rule to this policy.
@@ -91,7 +91,7 @@ impl AddrPolicy {
 
 impl Default for AddrPolicy {
     fn default() -> Self {
-        AddrPolicy::new()
+        Self::new()
     }
 }
 
@@ -177,7 +177,7 @@ impl FromStr for AddrPortPattern {
             ports_s.parse()?
         };
 
-        Ok(AddrPortPattern { pattern, ports })
+        Ok(Self { pattern, ports })
     }
 }
 
@@ -200,10 +200,10 @@ impl IpPattern {
     /// Construct an IpPattern that matches the first `mask` bits of `addr`.
     fn from_addr_and_mask(addr: IpAddr, mask: u8) -> Result<Self, PolicyError> {
         match (addr, mask) {
-            (IpAddr::V4(_), 0) => Ok(IpPattern::V4Star),
-            (IpAddr::V6(_), 0) => Ok(IpPattern::V6Star),
-            (IpAddr::V4(a), m) if m <= 32 => Ok(IpPattern::V4(a, m)),
-            (IpAddr::V6(a), m) if m <= 128 => Ok(IpPattern::V6(a, m)),
+            (IpAddr::V4(_), 0) => Ok(Self::V4Star),
+            (IpAddr::V6(_), 0) => Ok(Self::V6Star),
+            (IpAddr::V4(a), m) if m <= 32 => Ok(Self::V4(a, m)),
+            (IpAddr::V6(a), m) if m <= 128 => Ok(Self::V6(a, m)),
             (_, _) => Err(PolicyError::InvalidMask),
         }
     }
@@ -266,16 +266,16 @@ impl FromStr for IpPattern {
         };
         match (ip_s, mask_s) {
             ("*", Some(_)) => Err(PolicyError::MaskWithStar),
-            ("*", None) => Ok(IpPattern::Star),
+            ("*", None) => Ok(Self::Star),
             (s, Some(m)) => {
                 let a: IpAddr = parse_addr(s)?;
                 let m: u8 = m.parse().map_err(|_| PolicyError::InvalidMask)?;
-                IpPattern::from_addr_and_mask(a, m)
+                Self::from_addr_and_mask(a, m)
             }
             (s, None) => {
                 let a: IpAddr = parse_addr(s)?;
                 let m = if a.is_ipv4() { 32 } else { 128 };
-                IpPattern::from_addr_and_mask(a, m)
+                Self::from_addr_and_mask(a, m)
             }
         }
     }

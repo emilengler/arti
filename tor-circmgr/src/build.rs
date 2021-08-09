@@ -149,7 +149,7 @@ impl<
 {
     /// Construct a new [`Builder`].
     fn new(runtime: R, chanmgr: Arc<ChanMgr<R>>, timeouts: T) -> Self {
-        Builder {
+        Self {
             runtime,
             chanmgr,
             timeouts,
@@ -274,7 +274,7 @@ impl<R: Runtime> CircuitBuilder<R> {
             }
         };
 
-        CircuitBuilder {
+        Self {
             builder: Arc::new(Builder::new(runtime, chanmgr, timeouts)),
             path_config,
             storage,

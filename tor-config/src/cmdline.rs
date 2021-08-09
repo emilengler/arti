@@ -31,7 +31,7 @@ impl Default for CmdLine {
 impl CmdLine {
     /// Make a new empty command-line
     pub fn new() -> Self {
-        CmdLine {
+        Self {
             name: "command line".to_string(),
             contents: Vec::new(),
         }

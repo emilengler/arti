@@ -54,7 +54,7 @@ pub struct ConsensusRequest {
 impl ConsensusRequest {
     /// Create a new request for a consensus directory document.
     pub fn new(flavor: ConsensusFlavor) -> Self {
-        ConsensusRequest {
+        Self {
             flavor,
             authority_ids: Vec::new(),
             last_consensus_published: None,
@@ -161,7 +161,7 @@ pub struct AuthCertRequest {
 impl AuthCertRequest {
     /// Create a new request, asking for no authority certificates.
     pub fn new() -> Self {
-        AuthCertRequest { ids: Vec::new() }
+        Self { ids: Vec::new() }
     }
 
     /// Add `ids` to the list of certificates we're asking for.
@@ -235,7 +235,7 @@ pub struct MicrodescRequest {
 impl MicrodescRequest {
     /// Construct a request for no microdescriptors.
     pub fn new() -> Self {
-        MicrodescRequest {
+        Self {
             digests: Vec::new(),
         }
     }
@@ -314,14 +314,14 @@ impl Default for RouterDescRequest {
 impl RouterDescRequest {
     /// Construct a request for all router descriptors.
     pub fn all() -> Self {
-        RouterDescRequest {
+        Self {
             all_descriptors: true,
             digests: Vec::new(),
         }
     }
     /// Construct a new empty request.
     pub fn new() -> Self {
-        RouterDescRequest {
+        Self {
             all_descriptors: false,
             digests: Vec::new(),
         }

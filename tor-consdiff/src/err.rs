@@ -21,12 +21,12 @@ pub enum Error {
 }
 
 impl From<ParseIntError> for Error {
-    fn from(_e: ParseIntError) -> Error {
-        Error::BadDiff("can't parse line number")
+    fn from(_e: ParseIntError) -> Self {
+        Self::BadDiff("can't parse line number")
     }
 }
 impl From<hex::FromHexError> for Error {
-    fn from(_e: hex::FromHexError) -> Error {
-        Error::BadDiff("invalid hexadecimal in 'hash' line")
+    fn from(_e: hex::FromHexError) -> Self {
+        Self::BadDiff("invalid hexadecimal in 'hash' line")
     }
 }

@@ -25,7 +25,7 @@ impl<R: Runtime> ChanBuilder<R> {
     /// Construct a new ChanBuilder.
     pub(crate) fn new(runtime: R) -> Self {
         let tls_connector = runtime.tls_connector();
-        ChanBuilder {
+        Self {
             runtime,
             tls_connector,
         }

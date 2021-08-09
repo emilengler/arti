@@ -66,7 +66,7 @@ pub trait Body: Sized {
 }
 
 impl<B: Body> From<B> for RelayMsg {
-    fn from(b: B) -> RelayMsg {
+    fn from(b: B) -> Self {
         b.into_message()
     }
 }
@@ -97,23 +97,23 @@ impl RelayMsg {
     /// Extract the body of this message from `r`
     pub fn decode_from_reader(c: RelayCmd, r: &mut Reader<'_>) -> Result<Self> {
         Ok(match c {
-            RelayCmd::BEGIN => RelayMsg::Begin(Begin::decode_from_reader(r)?),
-            RelayCmd::DATA => RelayMsg::Data(Data::decode_from_reader(r)?),
-            RelayCmd::END => RelayMsg::End(End::decode_from_reader(r)?),
-            RelayCmd::CONNECTED => RelayMsg::Connected(Connected::decode_from_reader(r)?),
-            RelayCmd::SENDME => RelayMsg::Sendme(Sendme::decode_from_reader(r)?),
-            RelayCmd::EXTEND => RelayMsg::Extend(Extend::decode_from_reader(r)?),
-            RelayCmd::EXTENDED => RelayMsg::Extended(Extended::decode_from_reader(r)?),
-            RelayCmd::EXTEND2 => RelayMsg::Extend2(Extend2::decode_from_reader(r)?),
-            RelayCmd::EXTENDED2 => RelayMsg::Extended2(Extended2::decode_from_reader(r)?),
-            RelayCmd::TRUNCATE => RelayMsg::Truncate,
-            RelayCmd::TRUNCATED => RelayMsg::Truncated(Truncated::decode_from_reader(r)?),
-            RelayCmd::DROP => RelayMsg::Drop,
-            RelayCmd::RESOLVE => RelayMsg::Resolve(Resolve::decode_from_reader(r)?),
-            RelayCmd::RESOLVED => RelayMsg::Resolved(Resolved::decode_from_reader(r)?),
-            RelayCmd::BEGIN_DIR => RelayMsg::BeginDir,
+            RelayCmd::BEGIN => Self::Begin(Begin::decode_from_reader(r)?),
+            RelayCmd::DATA => Self::Data(Data::decode_from_reader(r)?),
+            RelayCmd::END => Self::End(End::decode_from_reader(r)?),
+            RelayCmd::CONNECTED => Self::Connected(Connected::decode_from_reader(r)?),
+            RelayCmd::SENDME => Self::Sendme(Sendme::decode_from_reader(r)?),
+            RelayCmd::EXTEND => Self::Extend(Extend::decode_from_reader(r)?),
+            RelayCmd::EXTENDED => Self::Extended(Extended::decode_from_reader(r)?),
+            RelayCmd::EXTEND2 => Self::Extend2(Extend2::decode_from_reader(r)?),
+            RelayCmd::EXTENDED2 => Self::Extended2(Extended2::decode_from_reader(r)?),
+            RelayCmd::TRUNCATE => Self::Truncate,
+            RelayCmd::TRUNCATED => Self::Truncated(Truncated::decode_from_reader(r)?),
+            RelayCmd::DROP => Self::Drop,
+            RelayCmd::RESOLVE => Self::Resolve(Resolve::decode_from_reader(r)?),
+            RelayCmd::RESOLVED => Self::Resolved(Resolved::decode_from_reader(r)?),
+            RelayCmd::BEGIN_DIR => Self::BeginDir,
 
-            _ => RelayMsg::Unrecognized(Unrecognized::decode_with_cmd(c, r)?),
+            _ => Self::Unrecognized(Unrecognized::decode_with_cmd(c, r)?),
         })
     }
     /// Encode the body of this message, not including command or length
@@ -156,7 +156,7 @@ bitflags! {
 }
 impl From<u32> for BeginFlags {
     fn from(v: u32) -> Self {
-        BeginFlags::from_bits_truncate(v)
+        Self::from_bits_truncate(v)
     }
 }
 
@@ -179,15 +179,15 @@ impl From<IpVersionPreference> for BeginFlags {
         use IpVersionPreference::*;
         match v {
             Ipv4Only => 0.into(),
-            Ipv4Preferred => BeginFlags::IPV6_OKAY,
-            Ipv6Preferred => BeginFlags::IPV6_OKAY | BeginFlags::IPV6_PREFERRED,
-            Ipv6Only => BeginFlags::IPV4_NOT_OKAY,
+            Ipv4Preferred => Self::IPV6_OKAY,
+            Ipv6Preferred => Self::IPV6_OKAY | Self::IPV6_PREFERRED,
+            Ipv6Only => Self::IPV4_NOT_OKAY,
         }
     }
 }
 impl Default for IpVersionPreference {
     fn default() -> Self {
-        IpVersionPreference::Ipv4Preferred
+        Self::Ipv4Preferred
     }
 }
 
@@ -222,7 +222,7 @@ impl Begin {
         }
         let mut addr = addr.to_string();
         addr.make_ascii_lowercase(); // SPEC: the spec doesn't say to do this.
-        Ok(Begin {
+        Ok(Self {
             addr: addr.into_bytes(),
             port,
             flags: flags.into(),
@@ -264,7 +264,7 @@ impl Body for Begin {
             .parse()
             .map_err(|_| Error::BadMessage("port in begin cell not a valid port"))?;
 
-        Ok(Begin {
+        Ok(Self {
             addr: addr.into(),
             port,
             flags: flags.into(),
@@ -305,12 +305,12 @@ impl Data {
 
     /// Construct a new data cell.
     pub fn new(inp: &[u8]) -> Self {
-        assert!(inp.len() <= Data::MAXLEN);
-        Data { body: inp.into() }
+        assert!(inp.len() <= Self::MAXLEN);
+        Self { body: inp.into() }
     }
 }
 impl From<Data> for Vec<u8> {
-    fn from(data: Data) -> Vec<u8> {
+    fn from(data: Data) -> Self {
         data.body
     }
 }
@@ -325,7 +325,7 @@ impl Body for Data {
         RelayMsg::Data(self)
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
-        Ok(Data {
+        Ok(Self {
             body: r.take(r.remaining())?.into(),
         })
     }
@@ -389,19 +389,19 @@ impl End {
     ///
     /// Clients send this every time they decide to close a stream.
     pub fn new_misc() -> Self {
-        End {
+        Self {
             reason: EndReason::MISC,
             addr: None,
         }
     }
     /// Make a new END message with the provided end reason.
     pub fn new_with_reason(reason: EndReason) -> Self {
-        End { reason, addr: None }
+        Self { reason, addr: None }
     }
     /// Make a new END message with END_REASON_EXITPOLICY, and the
     /// provided address and ttl.
     pub fn new_exitpolicy(addr: IpAddr, ttl: u32) -> Self {
-        End {
+        Self {
             reason: EndReason::EXITPOLICY,
             addr: Some((addr, ttl)),
         }
@@ -418,7 +418,7 @@ impl Body for End {
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
         if r.remaining() == 0 {
             // TODO SPEC Document this behavior; tor does it too.
-            return Ok(End {
+            return Ok(Self {
                 reason: EndReason::MISC,
                 addr: None,
             });
@@ -431,7 +431,7 @@ impl Body for End {
                 _ => {
                     // TODO SPEC document this behavior.
                     // Ignores other message lengths.
-                    return Ok(End { reason, addr: None });
+                    return Ok(Self { reason, addr: None });
                 }
             };
             let ttl = if r.remaining() == 4 {
@@ -439,12 +439,12 @@ impl Body for End {
             } else {
                 u32::MAX
             };
-            Ok(End {
+            Ok(Self {
                 reason,
                 addr: Some((addr, ttl)),
             })
         } else {
-            Ok(End { reason, addr: None })
+            Ok(Self { reason, addr: None })
         }
     }
     fn encode_onto(self, w: &mut Vec<u8>) {
@@ -494,11 +494,11 @@ pub struct Connected {
 impl Connected {
     /// Construct a new empty connected cell.
     pub fn new_empty() -> Self {
-        Connected { addr: None }
+        Self { addr: None }
     }
     /// Construct a connected cell with an address and a time-to-live value.
     pub fn new_with_addr(addr: IpAddr, ttl: u32) -> Self {
-        Connected {
+        Self {
             addr: Some((addr, ttl)),
         }
     }
@@ -509,7 +509,7 @@ impl Body for Connected {
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
         if r.remaining() == 0 {
-            return Ok(Connected { addr: None });
+            return Ok(Self { addr: None });
         }
         let ipv4 = r.take_u32()?;
         let addr = if ipv4 == 0 {
@@ -522,7 +522,7 @@ impl Body for Connected {
         };
         let ttl = r.take_u32()?;
 
-        Ok(Connected {
+        Ok(Self {
             addr: Some((addr, ttl)),
         })
     }
@@ -568,11 +568,11 @@ impl Sendme {
     /// This format is used on streams, and on circuits without sendme
     /// authentication.
     pub fn new_empty() -> Self {
-        Sendme { digest: None }
+        Self { digest: None }
     }
     /// This format is used on circuits with sendme authentication.
     pub fn new_tag(x: [u8; 20]) -> Self {
-        Sendme {
+        Self {
             digest: Some(x.into()),
         }
     }
@@ -602,7 +602,7 @@ impl Body for Sendme {
                 }
             }
         };
-        Ok(Sendme { digest })
+        Ok(Self { digest })
     }
     fn encode_onto(self, w: &mut Vec<u8>) {
         match self.digest {
@@ -637,7 +637,7 @@ pub struct Extend {
 impl Extend {
     /// Construct a new (deprecated) extend cell
     pub fn new(addr: Ipv4Addr, port: u16, handshake: Vec<u8>, rsaid: RsaIdentity) -> Self {
-        Extend {
+        Self {
             addr,
             port,
             handshake,
@@ -654,7 +654,7 @@ impl Body for Extend {
         let port = r.take_u16()?;
         let handshake = r.take(TAP_C_HANDSHAKE_LEN)?.into();
         let rsaid = r.extract()?;
-        Ok(Extend {
+        Ok(Self {
             addr,
             port,
             handshake,
@@ -682,7 +682,7 @@ pub struct Extended {
 impl Extended {
     /// Construct a new Extended message with the provided handshake
     pub fn new(handshake: Vec<u8>) -> Self {
-        Extended { handshake }
+        Self { handshake }
     }
 }
 impl Body for Extended {
@@ -691,7 +691,7 @@ impl Body for Extended {
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
         let handshake = r.take(TAP_S_HANDSHAKE_LEN)?.into();
-        Ok(Extended { handshake })
+        Ok(Self { handshake })
     }
     fn encode_onto(mut self, w: &mut Vec<u8>) {
         w.append(&mut self.handshake)
@@ -730,7 +730,7 @@ impl Extend2 {
     pub fn new(mut linkspec: Vec<LinkSpec>, handshake_type: u16, handshake: Vec<u8>) -> Self {
         LinkSpec::sort_by_type(linkspec.as_mut());
 
-        Extend2 {
+        Self {
             linkspec,
             handshake_type,
             handshake,
@@ -758,7 +758,7 @@ impl Body for Extend2 {
         let handshake_type = r.take_u16()?;
         let hlen = r.take_u16()?;
         let handshake = r.take(hlen as usize)?.into();
-        Ok(Extend2 {
+        Ok(Self {
             linkspec,
             handshake_type,
             handshake,
@@ -791,7 +791,7 @@ pub struct Extended2 {
 impl Extended2 {
     /// Construct a new Extended2 message with the provided handshake
     pub fn new(handshake: Vec<u8>) -> Self {
-        Extended2 { handshake }
+        Self { handshake }
     }
     /// Consume this extended2 cell and return its body.
     pub fn into_body(self) -> Vec<u8> {
@@ -805,7 +805,7 @@ impl Body for Extended2 {
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
         let hlen = r.take_u16()?;
         let handshake = r.take(hlen as usize)?;
-        Ok(Extended2 {
+        Ok(Self {
             handshake: handshake.into(),
         })
     }
@@ -831,7 +831,7 @@ pub struct Truncated {
 impl Truncated {
     /// Construct a new truncated message.
     pub fn new(reason: DestroyReason) -> Self {
-        Truncated { reason }
+        Self { reason }
     }
 }
 impl Body for Truncated {
@@ -839,7 +839,7 @@ impl Body for Truncated {
         RelayMsg::Truncated(self)
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
-        Ok(Truncated {
+        Ok(Self {
             reason: r.take_u8()?.into(),
         })
     }
@@ -862,7 +862,7 @@ pub struct Resolve {
 impl Resolve {
     /// Construct a new resolve message to look up a hostname.
     pub fn new(s: &str) -> Self {
-        Resolve {
+        Self {
             query: s.as_bytes().into(),
         }
     }
@@ -884,7 +884,7 @@ impl Resolve {
                 s
             }
         };
-        Resolve {
+        Self {
             query: query.into_bytes(),
         }
     }
@@ -895,7 +895,7 @@ impl Body for Resolve {
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
         let query = r.take_until(0)?;
-        Ok(Resolve {
+        Ok(Self {
             query: query.into(),
         })
     }
@@ -1017,7 +1017,7 @@ pub struct Resolved {
 impl Resolved {
     /// Return a new empty Resolved object with no answers.
     pub fn new_empty() -> Self {
-        Resolved {
+        Self {
             answers: Vec::new(),
         }
     }
@@ -1062,7 +1062,7 @@ impl Body for Resolved {
             let ttl = r.take_u32()?;
             answers.push((rv, ttl));
         }
-        Ok(Resolved { answers })
+        Ok(Self { answers })
     }
     fn encode_onto(self, w: &mut Vec<u8>) {
         for (rv, ttl) in self.answers.iter() {
@@ -1090,7 +1090,7 @@ impl Unrecognized {
         B: Into<Vec<u8>>,
     {
         let body = body.into();
-        Unrecognized { cmd, body }
+        Self { cmd, body }
     }
 
     /// Return the command associated with this message
@@ -1099,7 +1099,7 @@ impl Unrecognized {
     }
     /// Decode this message, using a provided command.
     pub fn decode_with_cmd(cmd: RelayCmd, r: &mut Reader<'_>) -> Result<Self> {
-        let mut r = Unrecognized::decode_from_reader(r)?;
+        let mut r = Self::decode_from_reader(r)?;
         r.cmd = cmd;
         Ok(r)
     }
@@ -1110,7 +1110,7 @@ impl Body for Unrecognized {
         RelayMsg::Unrecognized(self)
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
-        Ok(Unrecognized {
+        Ok(Self {
             cmd: 0.into(),
             body: r.take(r.remaining())?.into(),
         })

@@ -18,7 +18,7 @@ impl Default for DirPathBuilder {
 impl DirPathBuilder {
     /// Create a new DirPathBuilder.
     pub fn new() -> Self {
-        DirPathBuilder {}
+        Self {}
     }
 
     /// Try to create and return a path corresponding to the requirements of

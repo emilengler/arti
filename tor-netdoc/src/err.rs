@@ -60,19 +60,19 @@ impl Pos {
     /// Construct a Pos from an offset within a &str slice.
     pub fn from_offset(s: &str, off: usize) -> Self {
         if off > s.len() || !s.is_char_boundary(off) {
-            Pos::Invalid(off)
+            Self::Invalid(off)
         } else {
             let s = &s[..off];
             let last_nl = s.rfind('\n');
             match last_nl {
                 Some(pos) => {
                     let newlines = s.bytes().filter(|b| *b == b'\n').count();
-                    Pos::PosInLine {
+                    Self::PosInLine {
                         line: newlines + 1,
                         byte: off - pos,
                     }
                 }
-                None => Pos::PosInLine {
+                None => Self::PosInLine {
                     line: 1,
                     byte: off + 1,
                 },
@@ -84,20 +84,20 @@ impl Pos {
     /// into a useful Pos with `within`.
     pub fn at(s: &str) -> Self {
         let ptr = s.as_ptr();
-        Pos::Raw { ptr }
+        Self::Raw { ptr }
     }
     /// Construct Pos from the end of some other string.
     pub fn at_end_of(s: &str) -> Self {
         let ending = &s[s.len()..];
-        Pos::at(ending)
+        Self::at(ending)
     }
     /// Construct a position from a byte offset.
     pub fn from_byte(off: usize) -> Self {
-        Pos::Byte { off }
+        Self::Byte { off }
     }
     /// Construct a position from a line and a byte offset within that line.
     pub fn from_line(line: usize, byte: usize) -> Self {
-        Pos::PosInLine { line, byte }
+        Self::PosInLine { line, byte }
     }
     /// If this position appears within `s`, and has not yet been mapped to
     /// a line-and-byte position, return its offset.
@@ -358,7 +358,7 @@ impl Error {
 
     /// Return a new error based on this one, with any byte-based
     /// position mapped to some line within a string.
-    pub fn within(mut self, s: &str) -> Error {
+    pub fn within(mut self, s: &str) -> Self {
         if let Some(p) = self.pos_mut() {
             *p = p.within(s);
         }
@@ -367,7 +367,7 @@ impl Error {
 
     /// Return a new error based on this one, with the position (if
     /// any) replaced by 'p'.
-    pub fn at_pos(mut self, p: Pos) -> Error {
+    pub fn at_pos(mut self, p: Pos) -> Self {
         if let Some(mypos) = self.pos_mut() {
             *mypos = p;
         }
@@ -376,7 +376,7 @@ impl Error {
 
     /// Return a new error based on this one, with the position (if
     /// replaced by 'p' if it had no position before.
-    pub fn or_at_pos(mut self, p: Pos) -> Error {
+    pub fn or_at_pos(mut self, p: Pos) -> Self {
         if let Some(mypos) = self.pos_mut() {
             if *mypos == Pos::None {
                 *mypos = p;
@@ -399,25 +399,25 @@ derive_from_err! {std::num::ParseIntError}
 derive_from_err! {std::net::AddrParseError}
 
 impl From<crate::types::policy::PolicyError> for Error {
-    fn from(e: crate::types::policy::PolicyError) -> Error {
-        Error::BadPolicy(Pos::None, e)
+    fn from(e: crate::types::policy::PolicyError) -> Self {
+        Self::BadPolicy(Pos::None, e)
     }
 }
 
 impl From<tor_bytes::Error> for Error {
-    fn from(e: tor_bytes::Error) -> Error {
-        Error::Undecodable(Pos::None, e)
+    fn from(e: tor_bytes::Error) -> Self {
+        Self::Undecodable(Pos::None, e)
     }
 }
 
 impl From<tor_checkable::TimeValidityError> for Error {
-    fn from(e: tor_checkable::TimeValidityError) -> Error {
-        Error::Untimely(Pos::None, e)
+    fn from(e: tor_checkable::TimeValidityError) -> Self {
+        Self::Untimely(Pos::None, e)
     }
 }
 
 impl From<signature::Error> for Error {
-    fn from(_e: signature::Error) -> Error {
-        Error::BadSignature(Pos::None)
+    fn from(_e: signature::Error) -> Self {
+        Self::BadSignature(Pos::None)
     }
 }

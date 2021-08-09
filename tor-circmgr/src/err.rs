@@ -55,19 +55,19 @@ pub enum Error {
 }
 
 impl From<futures::channel::oneshot::Canceled> for Error {
-    fn from(_: futures::channel::oneshot::Canceled) -> Error {
-        Error::PendingFailed
+    fn from(_: futures::channel::oneshot::Canceled) -> Self {
+        Self::PendingFailed
     }
 }
 
 impl From<futures::task::SpawnError> for Error {
-    fn from(_: futures::task::SpawnError) -> Error {
-        Error::Internal("Unable to spawn new task in executor.".into())
+    fn from(_: futures::task::SpawnError) -> Self {
+        Self::Internal("Unable to spawn new task in executor.".into())
     }
 }
 
 impl From<tor_rtcompat::TimeoutError> for Error {
-    fn from(_: tor_rtcompat::TimeoutError) -> Error {
-        Error::CircTimeout
+    fn from(_: tor_rtcompat::TimeoutError) -> Self {
+        Self::CircTimeout
     }
 }

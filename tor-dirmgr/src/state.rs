@@ -114,7 +114,7 @@ impl<DM: WriteNetDir> GetConsensusState<DM> {
         } else {
             return Err(Error::ManagerDropped.into());
         };
-        Ok(GetConsensusState {
+        Ok(Self {
             cache_usage,
             next: None,
             authority_ids,
@@ -467,7 +467,7 @@ impl<DM: WriteNetDir> GetMicrodescsState<DM> {
         };
 
         let missing = partial_dir.missing_microdescs().map(Clone::clone).collect();
-        let mut result = GetMicrodescsState {
+        let mut result = Self {
             missing,
             writedir,
             partial: Some(partial_dir),

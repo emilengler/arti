@@ -32,7 +32,7 @@ impl<T> Default for SharedMutArc<T> {
 impl<T> SharedMutArc<T> {
     /// Construct a new empty SharedMutArc.
     pub fn new() -> Self {
-        SharedMutArc {
+        Self {
             dir: RwLock::new(None),
         }
     }

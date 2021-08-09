@@ -37,26 +37,26 @@ pub enum Error {
 }
 
 impl From<futures::task::SpawnError> for Error {
-    fn from(_: futures::task::SpawnError) -> Error {
-        Error::Internal("Couldn't spawn channel reactor")
+    fn from(_: futures::task::SpawnError) -> Self {
+        Self::Internal("Couldn't spawn channel reactor")
     }
 }
 
 impl From<tor_rtcompat::TimeoutError> for Error {
-    fn from(_: tor_rtcompat::TimeoutError) -> Error {
-        Error::ChanTimeout
+    fn from(_: tor_rtcompat::TimeoutError) -> Self {
+        Self::ChanTimeout
     }
 }
 
 impl<T> From<std::sync::PoisonError<T>> for Error {
-    fn from(_: std::sync::PoisonError<T>) -> Error {
-        Error::Internal("Thread failed while holding lock")
+    fn from(_: std::sync::PoisonError<T>) -> Self {
+        Self::Internal("Thread failed while holding lock")
     }
 }
 
 impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
-        Error::Io(Arc::new(e))
+    fn from(e: std::io::Error) -> Self {
+        Self::Io(Arc::new(e))
     }
 }
 
@@ -70,7 +70,7 @@ impl std::fmt::Display for PendingChanError {
     }
 }
 impl From<&Error> for PendingChanError {
-    fn from(e: &Error) -> PendingChanError {
-        PendingChanError(e.to_string())
+    fn from(e: &Error) -> Self {
+        Self(e.to_string())
     }
 }
