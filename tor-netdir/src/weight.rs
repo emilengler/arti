@@ -114,7 +114,7 @@ struct RelayWeight {
 impl std::ops::Mul<u32> for RelayWeight {
     type Output = Self;
     fn mul(self, rhs: u32) -> Self {
-        RelayWeight {
+        Self {
             as_guard: self.as_guard * rhs,
             as_middle: self.as_middle * rhs,
             as_exit: self.as_exit * rhs,
@@ -125,7 +125,7 @@ impl std::ops::Mul<u32> for RelayWeight {
 impl std::ops::Div<u32> for RelayWeight {
     type Output = Self;
     fn div(self, rhs: u32) -> Self {
-        RelayWeight {
+        Self {
             as_guard: self.as_guard / rhs,
             as_middle: self.as_middle / rhs,
             as_exit: self.as_exit / rhs,
@@ -182,7 +182,7 @@ impl WeightKind {
         if rs.is_flagged_v2dir() {
             r |= FLG_DIR;
         }
-        WeightKind(r)
+        Self(r)
     }
     /// Return the index to use for this kind of a relay within a WeightSet.
     fn idx(self) -> usize {
@@ -315,7 +315,7 @@ impl WeightSet {
         // We want "shift" such that (total * w_max) >> shift <= u64::max
         let shift = calculate_shift(total_bw, w_max as u64) as u8;
 
-        WeightSet {
+        Self {
             bandwidth_fn,
             shift,
             w,

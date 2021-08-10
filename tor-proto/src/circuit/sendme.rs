@@ -114,7 +114,7 @@ where
     T: PartialEq + Eq + Clone,
 {
     /// Construct a new SendWindow.
-    pub(crate) fn new(window: u16) -> SendWindow<P, T> {
+    pub(crate) fn new(window: u16) -> Self {
         let increment = P::increment();
         let capacity = (window + increment - 1) / increment;
         let inner = SendWindowInner {
@@ -122,7 +122,7 @@ where
             tags: VecDeque::with_capacity(capacity as usize),
             unblock: event_listener::Event::new(),
         };
-        SendWindow {
+        Self {
             w: Arc::new(Mutex::new(inner)),
             _dummy: std::marker::PhantomData,
         }
@@ -130,7 +130,7 @@ where
 
     /// Add a reference-count to SendWindow and return a new handle to it.
     pub(crate) fn new_ref(&self) -> Self {
-        SendWindow {
+        Self {
             w: Arc::clone(&self.w),
             _dummy: std::marker::PhantomData,
         }
@@ -224,8 +224,8 @@ pub(crate) struct RecvWindow<P: WindowParams> {
 
 impl<P: WindowParams> RecvWindow<P> {
     /// Create a new RecvWindow.
-    pub(crate) fn new(window: u16) -> RecvWindow<P> {
-        RecvWindow {
+    pub(crate) fn new(window: u16) -> Self {
+        Self {
             window,
             _dummy: std::marker::PhantomData,
         }

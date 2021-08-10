@@ -39,6 +39,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
@@ -198,15 +199,15 @@ enum RangeEnd {
 
 impl FromStr for RangeEnd {
     type Err = Error;
-    fn from_str(s: &str) -> Result<RangeEnd> {
+    fn from_str(s: &str) -> Result<Self> {
         if s == "$" {
-            Ok(RangeEnd::DollarSign)
+            Ok(Self::DollarSign)
         } else {
             let v: NonZeroUsize = s.parse()?;
             if v.get() == std::usize::MAX {
                 return Err(Error::BadDiff("range end cannot at usize::MAX"));
             }
-            Ok(RangeEnd::Num(v))
+            Ok(Self::Num(v))
         }
     }
 }

@@ -35,11 +35,11 @@ pub enum Error {
 }
 
 impl From<tor_bytes::Error> for Error {
-    fn from(e: tor_bytes::Error) -> Error {
+    fn from(e: tor_bytes::Error) -> Self {
         use tor_bytes::Error as E;
         match e {
-            E::Truncated => Error::Truncated,
-            _ => Error::Syntax,
+            E::Truncated => Self::Truncated,
+            _ => Self::Syntax,
         }
     }
 }

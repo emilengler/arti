@@ -189,8 +189,8 @@ impl DocQuery {
 }
 
 impl From<DocId> for DocQuery {
-    fn from(d: DocId) -> DocQuery {
-        let mut result = DocQuery::empty_from_docid(&d);
+    fn from(d: DocId) -> Self {
+        let mut result = Self::empty_from_docid(&d);
         result.push(d);
         result
     }

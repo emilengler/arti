@@ -22,7 +22,7 @@ impl UniqId {
         // is instantiated with respect to other channels.
         let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
         assert!(id != std::usize::MAX, "Exhausted the channel ID namespace");
-        UniqId(id)
+        Self(id)
     }
 }
 
@@ -45,7 +45,7 @@ pub(crate) struct CircUniqIdContext {
 impl CircUniqIdContext {
     /// Create a new CircUniqIdContext
     pub(super) fn new() -> Self {
-        CircUniqIdContext { next_circ_id: 0 }
+        Self { next_circ_id: 0 }
     }
     /// Construct a new, unique-ish circuit UniqId
     pub(super) fn next(&mut self, unique_id: UniqId) -> crate::circuit::UniqId {

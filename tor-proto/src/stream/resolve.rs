@@ -17,7 +17,7 @@ impl ResolveStream {
     /// Call only after sending a RESOLVE cell.
     #[allow(dead_code)] // need to implement a caller for this.
     pub(crate) fn new(s: RawCellStream) -> Self {
-        ResolveStream { s }
+        Self { s }
     }
 
     /// Read a message from this stream telling us the answer to our

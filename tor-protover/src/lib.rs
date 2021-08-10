@@ -58,6 +58,7 @@
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 #![allow(clippy::upper_case_acronyms)]
+#![warn(clippy::use_self)]
 
 use caret::caret_int;
 
@@ -162,7 +163,7 @@ pub struct Protocols {
 impl Protocols {
     /// Return a new empty set of protocol versions.
     pub fn new() -> Self {
-        Protocols {
+        Self {
             recognized: [0_u64; N_RECOGNIZED],
             unrecognized: Vec::new(),
         }
@@ -263,7 +264,7 @@ impl Protocols {
 
 impl Default for Protocols {
     fn default() -> Self {
-        Protocols::new()
+        Self::new()
     }
 }
 
@@ -331,7 +332,7 @@ impl std::str::FromStr for SubprotocolEntry {
             // We need to handle this case specially, since otherwise
             // it would be treated below as a single empty value, which
             // would be rejected.
-            return Ok(SubprotocolEntry {
+            return Ok(Self {
                 proto,
                 supported: 0,
             });
@@ -371,7 +372,7 @@ impl std::str::FromStr for SubprotocolEntry {
             // Add the appropriate bits to the mask.
             supported |= mask;
         }
-        Ok(SubprotocolEntry { proto, supported })
+        Ok(Self { proto, supported })
     }
 }
 
@@ -391,7 +392,7 @@ impl std::str::FromStr for Protocols {
     type Err = ParseError;
 
     fn from_str(s: &str) -> Result<Self, ParseError> {
-        let mut result = Protocols::new();
+        let mut result = Self::new();
         let mut foundmask = 0_u64;
         for ent in s.split(' ') {
             if ent.is_empty() {

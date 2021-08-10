@@ -37,6 +37,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 use derive_more::{Add, Display, Div, From, FromStr, Mul};
 
@@ -94,7 +95,7 @@ impl<const LOWER: i32, const UPPER: i32> BoundedInt32<LOWER, UPPER> {
     fn unchecked_new(value: i32) -> Self {
         assert!(LOWER <= UPPER); //The compiler optimises this out, no run-time cost.
 
-        BoundedInt32 { value }
+        Self { value }
     }
 
     /// Return the underlying i32 value.
@@ -120,7 +121,7 @@ impl<const LOWER: i32, const UPPER: i32> BoundedInt32<LOWER, UPPER> {
         } else if val < LOWER {
             Err(Error::BelowLowerBound(val, LOWER))
         } else {
-            Ok(BoundedInt32::unchecked_new(val))
+            Ok(Self::unchecked_new(val))
         }
     }
 
@@ -162,13 +163,13 @@ impl<const L: i32, const U: i32> std::fmt::Display for BoundedInt32<L, U> {
 }
 
 impl<const L: i32, const U: i32> From<BoundedInt32<L, U>> for i32 {
-    fn from(val: BoundedInt32<L, U>) -> i32 {
+    fn from(val: BoundedInt32<L, U>) -> Self {
         val.value
     }
 }
 
 impl<const L: i32, const U: i32> From<BoundedInt32<L, U>> for f64 {
-    fn from(val: BoundedInt32<L, U>) -> f64 {
+    fn from(val: BoundedInt32<L, U>) -> Self {
         val.value.into()
     }
 }
@@ -188,14 +189,14 @@ impl<const L: i32, const H: i32> std::str::FromStr for BoundedInt32<L, H> {
 }
 
 impl From<BoundedInt32<0, 1>> for bool {
-    fn from(val: BoundedInt32<0, 1>) -> bool {
+    fn from(val: BoundedInt32<0, 1>) -> Self {
         val.value == 1
     }
 }
 
 impl From<BoundedInt32<0, 255>> for u8 {
-    fn from(val: BoundedInt32<0, 255>) -> u8 {
-        val.value as u8
+    fn from(val: BoundedInt32<0, 255>) -> Self {
+        val.value as Self
     }
 }
 
@@ -205,7 +206,7 @@ impl<const L: i32, const H: i32> TryFrom<BoundedInt32<L, H>> for u64 {
         if val.value < 0 {
             Err(Error::Negative)
         } else {
-            Ok(val.value as u64)
+            Ok(val.value as Self)
         }
     }
 }
@@ -274,7 +275,7 @@ pub struct IntegerMilliseconds<T> {
 impl<T: TryInto<u64>> IntegerMilliseconds<T> {
     /// Public Constructor
     pub fn new(value: T) -> Self {
-        IntegerMilliseconds { value }
+        Self { value }
     }
 }
 
@@ -294,7 +295,7 @@ pub struct SendMeVersion(u8);
 impl SendMeVersion {
     /// Public Constructor
     pub fn new(value: u8) -> Self {
-        SendMeVersion(value)
+        Self(value)
     }
 
     /// Helper

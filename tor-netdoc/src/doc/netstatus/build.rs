@@ -54,8 +54,8 @@ pub struct ConsensusBuilder<RS> {
 
 impl<RS> ConsensusBuilder<RS> {
     /// Construct a new ConsensusBuilder object.
-    pub(crate) fn new(flavor: ConsensusFlavor) -> ConsensusBuilder<RS> {
-        ConsensusBuilder {
+    pub(crate) fn new(flavor: ConsensusFlavor) -> Self {
+        Self {
             flavor,
             lifetime: None,
             client_versions: Vec::new(),
@@ -267,7 +267,7 @@ pub struct VoterInfoBuilder {
 impl VoterInfoBuilder {
     /// Construct a new VoterInfoBuilder.
     pub(crate) fn new() -> Self {
-        VoterInfoBuilder {
+        Self {
             nickname: None,
             identity: None,
             address: None,

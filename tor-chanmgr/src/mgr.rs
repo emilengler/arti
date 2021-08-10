@@ -78,7 +78,7 @@ type Sending<C> = oneshot::Sender<PendResult<Arc<C>>>;
 impl<CF: ChannelFactory> AbstractChanMgr<CF> {
     /// Make a new empty channel manager.
     pub(crate) fn new(connector: CF) -> Self {
-        AbstractChanMgr {
+        Self {
             connector,
             channels: map::ChannelMap::new(),
         }

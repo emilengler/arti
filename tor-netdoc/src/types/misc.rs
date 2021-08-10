@@ -40,7 +40,7 @@ mod b64impl {
         fn from_str(s: &str) -> Result<Self> {
             let bytes = base64::decode_config(s, base64::STANDARD_NO_PAD)
                 .map_err(|_| Error::BadArgument(Pos::at(s), "Invalid base64".into()))?;
-            Ok(B64(bytes))
+            Ok(Self(bytes))
         }
     }
 
@@ -64,7 +64,7 @@ mod b64impl {
     }
 
     impl From<B64> for Vec<u8> {
-        fn from(w: B64) -> Vec<u8> {
+        fn from(w: B64) -> Self {
             w.0
         }
     }
@@ -84,7 +84,7 @@ mod b16impl {
         fn from_str(s: &str) -> Result<Self> {
             let bytes = hex::decode(s)
                 .map_err(|_| Error::BadArgument(Pos::at(s), "invalid hexadecimal".to_string()))?;
-            Ok(B16(bytes))
+            Ok(Self(bytes))
         }
     }
 
@@ -97,7 +97,7 @@ mod b16impl {
     }
 
     impl From<B16> for Vec<u8> {
-        fn from(w: B16) -> Vec<u8> {
+        fn from(w: B16) -> Self {
             w.0
         }
     }
@@ -122,12 +122,12 @@ mod curve25519impl {
             let arry: [u8; 32] = b64.as_bytes().try_into().map_err(|_| {
                 Error::BadArgument(Pos::at(s), "bad length for curve25519 key.".into())
             })?;
-            Ok(Curve25519Public(arry.into()))
+            Ok(Self(arry.into()))
         }
     }
 
     impl From<Curve25519Public> for PublicKey {
-        fn from(w: Curve25519Public) -> PublicKey {
+        fn from(w: Curve25519Public) -> Self {
             w.0
         }
     }
@@ -158,12 +158,12 @@ mod ed25519impl {
             let key = Ed25519Identity::from_bytes(b64.as_bytes()).ok_or_else(|| {
                 Error::BadArgument(Pos::at(s), "bad value for ed25519 key.".into())
             })?;
-            Ok(Ed25519Public(key))
+            Ok(Self(key))
         }
     }
 
     impl From<Ed25519Public> for Ed25519Identity {
-        fn from(pk: Ed25519Public) -> Ed25519Identity {
+        fn from(pk: Ed25519Public) -> Self {
             pk.0
         }
     }
@@ -184,17 +184,17 @@ mod timeimpl {
 
     impl std::str::FromStr for Iso8601TimeSp {
         type Err = Error;
-        fn from_str(s: &str) -> Result<Iso8601TimeSp> {
+        fn from_str(s: &str) -> Result<Self> {
             use chrono::{DateTime, NaiveDateTime, Utc};
             let d = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
                 .map_err(|e| Error::BadArgument(Pos::at(s), format!("invalid time: {}", e)))?;
             let dt = DateTime::<Utc>::from_utc(d, Utc);
-            Ok(Iso8601TimeSp(dt.into()))
+            Ok(Self(dt.into()))
         }
     }
 
     impl From<Iso8601TimeSp> for SystemTime {
-        fn from(t: Iso8601TimeSp) -> SystemTime {
+        fn from(t: Iso8601TimeSp) -> Self {
             t.0
         }
     }
@@ -211,7 +211,7 @@ mod rsa {
     pub(crate) struct RsaPublic(PublicKey, Pos);
 
     impl From<RsaPublic> for PublicKey {
-        fn from(k: RsaPublic) -> PublicKey {
+        fn from(k: RsaPublic) -> Self {
             k.0
         }
     }
@@ -220,7 +220,7 @@ mod rsa {
             let key = PublicKey::from_der(b).ok_or_else(|| {
                 Error::BadObjectVal(Pos::None, "unable to decode RSA public key".into())
             })?;
-            Ok(RsaPublic(key, pos))
+            Ok(Self(key, pos))
         }
     }
     impl RsaPublic {
@@ -314,19 +314,19 @@ mod fingerprint {
     pub(crate) struct LongIdent(RsaIdentity);
 
     impl From<SpFingerprint> for RsaIdentity {
-        fn from(f: SpFingerprint) -> RsaIdentity {
+        fn from(f: SpFingerprint) -> Self {
             f.0
         }
     }
 
     impl From<LongIdent> for RsaIdentity {
-        fn from(f: LongIdent) -> RsaIdentity {
+        fn from(f: LongIdent) -> Self {
             f.0
         }
     }
 
     impl From<Fingerprint> for RsaIdentity {
-        fn from(f: Fingerprint) -> RsaIdentity {
+        fn from(f: Fingerprint) -> Self {
             f.0
         }
     }
@@ -342,23 +342,23 @@ mod fingerprint {
 
     impl std::str::FromStr for SpFingerprint {
         type Err = Error;
-        fn from_str(s: &str) -> Result<SpFingerprint> {
+        fn from_str(s: &str) -> Result<Self> {
             let ident = parse_hex_ident(&s.replace(' ', "")).map_err(|e| e.at_pos(Pos::at(s)))?;
-            Ok(SpFingerprint(ident))
+            Ok(Self(ident))
         }
     }
 
     impl std::str::FromStr for Fingerprint {
         type Err = Error;
-        fn from_str(s: &str) -> Result<Fingerprint> {
+        fn from_str(s: &str) -> Result<Self> {
             let ident = parse_hex_ident(s).map_err(|e| e.at_pos(Pos::at(s)))?;
-            Ok(Fingerprint(ident))
+            Ok(Self(ident))
         }
     }
 
     impl std::str::FromStr for LongIdent {
         type Err = Error;
-        fn from_str(mut s: &str) -> Result<LongIdent> {
+        fn from_str(mut s: &str) -> Result<Self> {
             if s.starts_with('$') {
                 s = &s[1..];
             }
@@ -366,7 +366,7 @@ mod fingerprint {
                 s = &s[..idx];
             }
             let ident = parse_hex_ident(s)?;
-            Ok(LongIdent(ident))
+            Ok(Self(ident))
         }
     }
 }

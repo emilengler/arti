@@ -79,11 +79,11 @@ impl PortRange {
     fn new_unchecked(lo: u16, hi: u16) -> Self {
         assert!(lo != 0);
         assert!(lo <= hi);
-        PortRange { lo, hi }
+        Self { lo, hi }
     }
     /// Create a port range containing all ports.
     pub fn new_all() -> Self {
-        PortRange::new_unchecked(1, 65535)
+        Self::new_unchecked(1, 65535)
     }
     /// Create a new PortRange.
     ///
@@ -92,7 +92,7 @@ impl PortRange {
     /// Returns None if lo is greater than hi, or if either is zero.
     pub fn new(lo: u16, hi: u16) -> Option<Self> {
         if lo != 0 && lo <= hi {
-            Some(PortRange { lo, hi })
+            Some(Self { lo, hi })
         } else {
             None
         }
@@ -156,7 +156,7 @@ impl FromStr for PortRange {
             let v = s.parse::<u16>().map_err(|_| PolicyError::InvalidPort)?;
             (v, v)
         };
-        PortRange::new(lo, hi).ok_or(PolicyError::InvalidRange)
+        Self::new(lo, hi).ok_or(PolicyError::InvalidRange)
     }
 }
 

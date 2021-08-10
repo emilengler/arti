@@ -64,8 +64,8 @@ impl Extent {
     /// within `haystack`.
     ///
     /// Return None if `needle` is not in fact a slice of `haystack`.
-    pub(crate) fn new(haystack: &str, needle: &str) -> Option<Extent> {
-        str_offset(haystack, needle).map(|offset| Extent {
+    pub(crate) fn new(haystack: &str, needle: &str) -> Option<Self> {
+        str_offset(haystack, needle).map(|offset| Self {
             offset,
             length: needle.len(),
             sliceptr: haystack.as_ptr(),

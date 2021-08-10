@@ -196,7 +196,7 @@ impl<T: Keyword> SectionRules<T> {
         let n = T::n_vals();
         let mut rules = Vec::with_capacity(n);
         rules.resize(n, None);
-        SectionRules { rules }
+        Self { rules }
     }
 
     /// Add a rule to this SectionRules, based on a TokenFmtBuilder.

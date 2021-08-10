@@ -62,7 +62,7 @@ pub struct HsNtorHkdfKeyGenerator {
 impl HsNtorHkdfKeyGenerator {
     /// Create a new key generator to expand a given seed
     pub fn new(seed: SecretBytes) -> Self {
-        HsNtorHkdfKeyGenerator { seed }
+        Self { seed }
     }
 }
 

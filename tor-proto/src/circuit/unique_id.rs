@@ -19,7 +19,7 @@ pub struct UniqId {
 impl UniqId {
     /// Construct a new circuit UniqId from its parts
     pub(crate) fn new(chan: usize, circ: usize) -> Self {
-        UniqId { chan, circ }
+        Self { chan, circ }
     }
 }
 

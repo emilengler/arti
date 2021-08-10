@@ -214,7 +214,7 @@ struct OpenEntry<B: AbstractCircBuilder> {
 impl<B: AbstractCircBuilder> OpenEntry<B> {
     /// Make a new OpenEntry for a given circuit and spec.
     fn new(spec: B::Spec, circ: Arc<B::Circ>) -> Self {
-        OpenEntry {
+        Self {
             spec,
             circ,
             dirty_since: None,
@@ -329,7 +329,7 @@ impl<B: AbstractCircBuilder> PendingEntry<B> {
         let tentative_assignment = sync::Mutex::new(circ_spec.clone());
         let (sender, receiver) = oneshot::channel();
         let receiver = receiver.shared();
-        let entry = PendingEntry {
+        let entry = Self {
             circ_spec,
             tentative_assignment,
             receiver,
@@ -406,7 +406,7 @@ struct CircList<B: AbstractCircBuilder> {
 impl<B: AbstractCircBuilder> CircList<B> {
     /// Make a new empty `CircList`
     fn new() -> Self {
-        CircList {
+        Self {
             open_circs: HashMap::new(),
             pending_circs: PtrWeakHashSet::new(),
             pending_requests: PtrWeakHashSet::new(),
@@ -548,7 +548,7 @@ enum Action<B: AbstractCircBuilder> {
 impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
     /// Construct a new AbstractCircMgr.
     pub(crate) fn new(builder: B, runtime: R, timing: RequestTiming) -> Self {
-        AbstractCircMgr {
+        Self {
             builder,
             runtime,
             timing,

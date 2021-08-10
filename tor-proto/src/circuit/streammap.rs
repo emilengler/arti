@@ -68,7 +68,7 @@ impl StreamMap {
                 break v;
             }
         };
-        StreamMap {
+        Self {
             m: HashMap::new(),
             next_stream_id,
         }

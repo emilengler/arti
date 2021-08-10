@@ -49,7 +49,7 @@ impl OwnedChanTarget {
     where
         C: ChanTarget + ?Sized,
     {
-        OwnedChanTarget {
+        Self {
             addrs: target.addrs().to_vec(),
             ed_identity: *target.ed_identity(),
             rsa_identity: *target.rsa_identity(),
@@ -76,8 +76,8 @@ impl OwnedCircTarget {
         chan_target: OwnedChanTarget,
         ntor_onion_key: pk::curve25519::PublicKey,
         protovers: tor_protover::Protocols,
-    ) -> OwnedCircTarget {
-        OwnedCircTarget {
+    ) -> Self {
+        Self {
             chan_target,
             ntor_onion_key,
             protovers,
@@ -89,7 +89,7 @@ impl OwnedCircTarget {
     where
         C: CircTarget + ?Sized,
     {
-        OwnedCircTarget {
+        Self {
             chan_target: OwnedChanTarget::from_chan_target(target),
             ntor_onion_key: *target.ntor_onion_key(),
             // TODO: I don't like having to clone here.  Our underlying

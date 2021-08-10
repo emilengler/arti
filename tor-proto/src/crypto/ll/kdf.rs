@@ -54,7 +54,7 @@ pub(crate) struct ShakeKdf();
 impl LegacyKdf {
     /// Instantiate a LegacyKdf.
     pub(crate) fn new(idx: u8) -> Self {
-        LegacyKdf { idx }
+        Self { idx }
     }
 }
 impl Kdf for LegacyKdf {
@@ -102,7 +102,7 @@ impl Kdf for Ntor1Kdf<'_, '_> {
 impl ShakeKdf {
     /// Instantiate a ShakeKdf.
     pub(crate) fn new() -> Self {
-        ShakeKdf()
+        Self()
     }
 }
 impl Kdf for ShakeKdf {

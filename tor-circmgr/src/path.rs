@@ -96,14 +96,14 @@ pub(crate) enum OwnedPath {
 
 impl<'a> TryFrom<&TorPath<'a>> for OwnedPath {
     type Error = crate::Error;
-    fn try_from(p: &TorPath<'a>) -> Result<OwnedPath> {
+    fn try_from(p: &TorPath<'a>) -> Result<Self> {
         use TorPathInner::*;
 
         Ok(match &p.inner {
-            FallbackOneHop(h) => OwnedPath::ChannelOnly(OwnedChanTarget::from_chan_target(*h)),
-            OneHop(h) => OwnedPath::Normal(vec![OwnedCircTarget::from_circ_target(h)]),
+            FallbackOneHop(h) => Self::ChannelOnly(OwnedChanTarget::from_chan_target(*h)),
+            OneHop(h) => Self::Normal(vec![OwnedCircTarget::from_circ_target(h)]),
             Path(p) if !p.is_empty() => {
-                OwnedPath::Normal(p.iter().map(OwnedCircTarget::from_circ_target).collect())
+                Self::Normal(p.iter().map(OwnedCircTarget::from_circ_target).collect())
             }
             Path(_) => {
                 return Err(Error::NoRelays("Path with no entries!".into()));

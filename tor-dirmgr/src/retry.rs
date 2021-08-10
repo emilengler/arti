@@ -57,7 +57,7 @@ impl RetryDelay {
     /// used instead, since that's what the C tor implementation does.
     pub fn from_msec(base_delay_msec: u32) -> Self {
         let low_bound_ms = base_delay_msec.clamp(MIN_LOW_BOUND, MAX_LOW_BOUND);
-        RetryDelay {
+        Self {
             last_delay_ms: 0,
             low_bound_ms,
         }
@@ -69,7 +69,7 @@ impl RetryDelay {
     pub fn from_duration(d: Duration) -> Self {
         let msec = d.as_millis();
         let msec = std::cmp::min(msec, MAX_LOW_BOUND as u128) as u32;
-        RetryDelay::from_msec(msec)
+        Self::from_msec(msec)
     }
 
     /// Helper: Return a lower and upper bound for the next delay to
@@ -105,7 +105,7 @@ impl RetryDelay {
 
 impl Default for RetryDelay {
     fn default() -> Self {
-        RetryDelay::from_msec(0)
+        Self::from_msec(0)
     }
 }
 
@@ -125,7 +125,7 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
     fn default() -> Self {
-        RetryConfig::new(3, Duration::from_millis(1000))
+        Self::new(3, Duration::from_millis(1000))
     }
 }
 
@@ -140,7 +140,7 @@ impl RetryConfig {
         let num = attempts
             .try_into()
             .unwrap_or_else(|_| 1.try_into().unwrap());
-        RetryConfig { num, initial_delay }
+        Self { num, initial_delay }
     }
 
     /// Return an iterator to use over all the supported attempts for

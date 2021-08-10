@@ -26,7 +26,7 @@ impl<R: Runtime> MockSleepRuntime<R> {
     /// its view of time with a [`MockSleepProvider`].
     pub fn new(runtime: R) -> Self {
         let sleep = MockSleepProvider::new(SystemTime::now());
-        MockSleepRuntime { runtime, sleep }
+        Self { runtime, sleep }
     }
 
     /// Return a reference to the underlying runtime.

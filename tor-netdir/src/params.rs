@@ -77,7 +77,7 @@ pub struct NetParameters {
 
 impl Default for NetParameters {
     fn default() -> Self {
-        NetParameters {
+        Self {
             bw_weight_scale: BoundedInt32::checked_new(10000).unwrap(),
             cbt_abandon_quantile: Percentage::new(BoundedInt32::checked_new(99).unwrap()),
             cbt_initial_timeout: IntegerMilliseconds::new(

@@ -38,6 +38,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 mod builder;
 mod err;
@@ -71,7 +72,7 @@ impl<R: Runtime> ChanMgr<R> {
     pub fn new(runtime: R) -> Self {
         let builder = builder::ChanBuilder::new(runtime);
         let mgr = mgr::AbstractChanMgr::new(builder);
-        ChanMgr { mgr }
+        Self { mgr }
     }
 
     /// Try to get a suitable channel to the provided `target`,

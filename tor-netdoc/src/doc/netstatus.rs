@@ -103,7 +103,7 @@ impl Lifetime {
         valid_until: time::SystemTime,
     ) -> Result<Self> {
         if valid_after < fresh_until && fresh_until < valid_until {
-            Ok(Lifetime {
+            Ok(Self {
                 valid_after,
                 fresh_until,
                 valid_until,
@@ -151,7 +151,7 @@ impl<T> NetParams<T> {
     /// Create a new empty list of NetParams.
     #[allow(unused)]
     pub(crate) fn new() -> Self {
-        NetParams {
+        Self {
             params: HashMap::new(),
         }
     }
@@ -178,7 +178,7 @@ where
         D: Deserializer<'de>,
     {
         let params = HashMap::deserialize(deserializer)?;
-        Ok(NetParams { params })
+        Ok(Self { params })
     }
 }
 
@@ -222,8 +222,8 @@ impl ConsensusFlavor {
     /// document.
     pub fn from_opt_name(name: Option<&str>) -> Result<Self> {
         match name {
-            Some("microdesc") => Ok(ConsensusFlavor::Microdesc),
-            Some("ns") | None => Ok(ConsensusFlavor::Ns),
+            Some("microdesc") => Ok(Self::Microdesc),
+            Some("ns") | None => Ok(Self::Ns),
             _ => Err(Error::BadDocumentType),
         }
     }
@@ -730,7 +730,7 @@ impl ProtoStatus {
         sec: &Section<'_, NetstatusKwd>,
         recommend_token: NetstatusKwd,
         required_token: NetstatusKwd,
-    ) -> Result<ProtoStatus> {
+    ) -> Result<Self> {
         /// Helper: extract a Protocols entry from an item's arguments.
         fn parse(t: Option<&Item<'_, NetstatusKwd>>) -> Result<Protocols> {
             if let Some(item) = t {
@@ -744,7 +744,7 @@ impl ProtoStatus {
 
         let recommended = parse(sec.get(recommend_token))?;
         let required = parse(sec.get(required_token))?;
-        Ok(ProtoStatus {
+        Ok(Self {
             recommended,
             required,
         })
@@ -782,13 +782,13 @@ where
             .filter(|p| !p.is_empty())
             .map(parse_pair)
             .collect::<Result<HashMap<_, _>>>()?;
-        Ok(NetParams { params })
+        Ok(Self { params })
     }
 }
 
 impl CommonHeader {
     /// Extract the CommonHeader members from a single header section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<CommonHeader> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Self> {
         use NetstatusKwd::*;
 
         {
@@ -858,7 +858,7 @@ impl CommonHeader {
             None
         };
 
-        Ok(CommonHeader {
+        Ok(Self {
             flavor,
             lifetime,
             client_versions,
@@ -882,13 +882,13 @@ impl SharedRandVal {
         let n_reveals: u8 = item.parse_arg(0)?;
         let val: B64 = item.parse_arg(1)?;
         let value = val.into();
-        Ok(SharedRandVal { n_reveals, value })
+        Ok(Self { n_reveals, value })
     }
 }
 
 impl ConsensusHeader {
     /// Parse the ConsensusHeader members from a provided section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<ConsensusHeader> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Self> {
         use NetstatusKwd::*;
 
         let status: &str = sec.required(VOTE_STATUS)?.arg(0).unwrap_or("");
@@ -912,7 +912,7 @@ impl ConsensusHeader {
             .map(|i| SharedRandVal::from_item(i))
             .transpose()?;
 
-        Ok(ConsensusHeader {
+        Ok(Self {
             hdr,
             consensus_method,
             shared_rand_prev,
@@ -934,7 +934,7 @@ impl DirSource {
         let dir_port = item.parse_arg(4)?;
         let or_port = item.parse_arg(5)?;
 
-        Ok(DirSource {
+        Ok(Self {
             nickname,
             identity,
             address,
@@ -947,7 +947,7 @@ impl DirSource {
 
 impl ConsensusVoterInfo {
     /// Parse a single ConsensusVoterInfo from a voter info section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<ConsensusVoterInfo> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Self> {
         use NetstatusKwd::*;
         if sec.first_item().unwrap().kwd() != DIR_SOURCE {
             return Err(Error::Internal(sec.first_item().unwrap().pos()));
@@ -958,7 +958,7 @@ impl ConsensusVoterInfo {
 
         let vote_digest = sec.required(VOTE_DIGEST)?.parse_arg::<B16>(0)?.into();
 
-        Ok(ConsensusVoterInfo {
+        Ok(Self {
             dir_source,
             contact,
             vote_digest,
@@ -970,31 +970,31 @@ impl std::str::FromStr for RelayFlags {
     type Err = std::convert::Infallible;
     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         Ok(match s {
-            "Authority" => RelayFlags::AUTHORITY,
-            "BadExit" => RelayFlags::BAD_EXIT,
-            "Exit" => RelayFlags::EXIT,
-            "Fast" => RelayFlags::FAST,
-            "Guard" => RelayFlags::GUARD,
-            "HSDir" => RelayFlags::HSDIR,
-            "NoEdConsensus" => RelayFlags::NO_ED_CONSENSUS,
-            "Stable" => RelayFlags::STABLE,
-            "StaleDesc" => RelayFlags::STALE_DESC,
-            "Running" => RelayFlags::RUNNING,
-            "Valid" => RelayFlags::VALID,
-            "V2Dir" => RelayFlags::V2DIR,
-            _ => RelayFlags::empty(),
+            "Authority" => Self::AUTHORITY,
+            "BadExit" => Self::BAD_EXIT,
+            "Exit" => Self::EXIT,
+            "Fast" => Self::FAST,
+            "Guard" => Self::GUARD,
+            "HSDir" => Self::HSDIR,
+            "NoEdConsensus" => Self::NO_ED_CONSENSUS,
+            "Stable" => Self::STABLE,
+            "StaleDesc" => Self::STALE_DESC,
+            "Running" => Self::RUNNING,
+            "Valid" => Self::VALID,
+            "V2Dir" => Self::V2DIR,
+            _ => Self::empty(),
         })
     }
 }
 
 impl RelayFlags {
     /// Parse a relay-flags entry from an "s" line.
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<RelayFlags> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Self> {
         if item.kwd() != NetstatusKwd::RS_S {
             return Err(Error::Internal(item.pos()));
         }
         // These flags are implicit.
-        let mut flags: RelayFlags = RelayFlags::RUNNING | RelayFlags::VALID;
+        let mut flags: Self = Self::RUNNING | Self::VALID;
 
         let mut prev: Option<&str> = None;
         for s in item.args() {
@@ -1017,14 +1017,14 @@ impl RelayFlags {
 }
 
 impl Default for RelayWeight {
-    fn default() -> RelayWeight {
-        RelayWeight::Unmeasured(0)
+    fn default() -> Self {
+        Self::Unmeasured(0)
     }
 }
 
 impl RelayWeight {
     /// Parse a routerweight from a "w" line.
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<RelayWeight> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Self> {
         if item.kwd() != NetstatusKwd::RS_W {
             return Err(Error::Internal(item.pos()));
         }
@@ -1035,13 +1035,13 @@ impl RelayWeight {
         let unmeas = params.params.get("Unmeasured");
 
         let bw = match bw {
-            None => return Ok(RelayWeight::Unmeasured(0)),
+            None => return Ok(Self::Unmeasured(0)),
             Some(b) => *b,
         };
 
         match unmeas {
-            None | Some(0) => Ok(RelayWeight::Measured(bw)),
-            Some(1) => Ok(RelayWeight::Unmeasured(bw)),
+            None | Some(0) => Ok(Self::Measured(bw)),
+            Some(1) => Ok(Self::Unmeasured(bw)),
             _ => Err(Error::BadArgument(
                 item.pos(),
                 "unmeasured value".to_string(),
@@ -1052,7 +1052,7 @@ impl RelayWeight {
 
 impl Footer {
     /// Parse a directory footer from a footer section.
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Footer> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Self> {
         use NetstatusKwd::*;
         sec.required(DIRECTORY_FOOTER)?;
 
@@ -1062,7 +1062,7 @@ impl Footer {
             .unwrap_or("")
             .parse()?;
 
-        Ok(Footer { weights })
+        Ok(Self { weights })
     }
 }
 
@@ -1080,7 +1080,7 @@ enum SigCheckResult {
 
 impl Signature {
     /// Parse a Signature from a directory-signature section
-    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Signature> {
+    fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Self> {
         if item.kwd() != NetstatusKwd::DIRECTORY_SIGNATURE {
             return Err(Error::Internal(item.pos()));
         }
@@ -1104,7 +1104,7 @@ impl Signature {
         };
         let signature = item.obj("SIGNATURE")?;
 
-        Ok(Signature {
+        Ok(Self {
             digestname,
             key_ids,
             signature,
@@ -1282,7 +1282,7 @@ impl<RS: RouterStatus + ParseRouterStatus> Consensus<RS> {
 
         let footer = Self::take_footer(r)?;
 
-        let consensus = Consensus {
+        let consensus = Self {
             header,
             voters,
             relays,
@@ -1369,7 +1369,7 @@ impl<RS> UnvalidatedConsensus<RS> {
     ///
     /// Without knowing this number, we can't validate the signature.
     pub fn set_n_authorities(self, n_authorities: u16) -> Self {
-        UnvalidatedConsensus {
+        Self {
             n_authorities: Some(n_authorities),
             ..self
         }

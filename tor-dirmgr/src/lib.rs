@@ -37,6 +37,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 pub mod authority;
 mod bootstrap;
@@ -166,7 +167,7 @@ impl<R: Runtime> DirMgr<R> {
         runtime: R,
         circmgr: Arc<CircMgr<R>>,
     ) -> Result<Arc<NetDir>> {
-        let dirmgr = DirMgr::bootstrap_from_config(config, runtime, circmgr).await?;
+        let dirmgr = Self::bootstrap_from_config(config, runtime, circmgr).await?;
         Ok(dirmgr.netdir())
     }
 
@@ -182,7 +183,7 @@ impl<R: Runtime> DirMgr<R> {
         runtime: R,
         circmgr: Arc<CircMgr<R>>,
     ) -> Result<Arc<Self>> {
-        let dirmgr = Arc::new(DirMgr::from_config(config, runtime.clone(), Some(circmgr))?);
+        let dirmgr = Arc::new(Self::from_config(config, runtime.clone(), Some(circmgr))?);
 
         // Try to load from the cache.
         let have_directory = dirmgr
@@ -376,7 +377,7 @@ impl<R: Runtime> DirMgr<R> {
         let netdir = SharedMutArc::new();
         let netdir_consensus_changed = AtomicBool::new(false);
         let publisher = event::Publisher::new();
-        Ok(DirMgr {
+        Ok(Self {
             config,
             store,
             netdir,

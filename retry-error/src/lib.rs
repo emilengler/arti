@@ -54,6 +54,7 @@
 #![warn(clippy::trait_duplication_in_bounds)]
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![warn(clippy::use_self)]
 
 use std::error::Error;
 use std::fmt::{Debug, Display, Error as FmtError, Formatter};
@@ -104,7 +105,7 @@ impl<E> RetryError<E> {
     /// [`Error`]s have been pushed into it, it doesn't represent an
     /// actual failure.
     pub fn in_attempt_to<T: Into<String>>(doing: T) -> Self {
-        RetryError {
+        Self {
             doing: doing.into(),
             errors: Vec::new(),
             n_errors: 0,
@@ -176,15 +177,15 @@ impl Attempt {
     /// Extend this attempt by a single additional failure.
     fn grow(&mut self) {
         *self = match *self {
-            Attempt::Single(idx) => Attempt::Range(idx, idx + 1),
-            Attempt::Range(first, last) => Attempt::Range(first, last + 1),
+            Self::Single(idx) => Self::Range(idx, idx + 1),
+            Self::Range(first, last) => Self::Range(first, last + 1),
         };
     }
 }
 
 impl<E: Clone> Clone for RetryError<E> {
-    fn clone(&self) -> RetryError<E> {
-        RetryError {
+    fn clone(&self) -> Self {
+        Self {
             doing: self.doing.clone(),
             errors: self.errors.clone(),
             n_errors: self.n_errors,

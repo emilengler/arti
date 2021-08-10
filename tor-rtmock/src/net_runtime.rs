@@ -26,7 +26,7 @@ impl<R: Runtime> MockNetRuntime<R> {
     /// Create a new runtime that wraps `runtime`, but overrides
     /// its view of the network with a [`MockNetProvider`], `net`.
     pub fn new(runtime: R, net: MockNetProvider) -> Self {
-        MockNetRuntime { runtime, net }
+        Self { runtime, net }
     }
 
     /// Return a reference to the underlying runtime.

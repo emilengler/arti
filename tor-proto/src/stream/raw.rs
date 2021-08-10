@@ -29,7 +29,7 @@ pub struct RawCellStream {
 impl RawCellStream {
     /// Internal: build a new RawCellStream.
     pub(crate) fn new(target: StreamTarget, receiver: mpsc::Receiver<RelayMsg>) -> Self {
-        RawCellStream {
+        Self {
             target: Mutex::new(target),
             receiver: Mutex::new(receiver),
             stream_ended: AtomicBool::new(false),

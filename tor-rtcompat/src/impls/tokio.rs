@@ -29,9 +29,9 @@ mod net {
         s: Compat<TokioTcpStream>,
     }
     impl From<TokioTcpStream> for TcpStream {
-        fn from(s: TokioTcpStream) -> TcpStream {
+        fn from(s: TokioTcpStream) -> Self {
             let s = s.compat();
-            TcpStream { s }
+            Self { s }
         }
     }
     impl AsyncRead for TcpStream {
@@ -126,9 +126,9 @@ mod tls {
 
     impl TryFrom<native_tls::TlsConnectorBuilder> for TlsConnector {
         type Error = native_tls::Error;
-        fn try_from(builder: native_tls::TlsConnectorBuilder) -> native_tls::Result<TlsConnector> {
+        fn try_from(builder: native_tls::TlsConnectorBuilder) -> native_tls::Result<Self> {
             let connector = builder.build()?.into();
-            Ok(TlsConnector { connector })
+            Ok(Self { connector })
         }
     }
 
@@ -295,7 +295,7 @@ impl From<tokio_crate::runtime::Handle> for TokioRuntimeHandle {
 
 impl SpawnBlocking for async_executors::TokioTp {
     fn block_on<F: Future>(&self, f: F) -> F::Output {
-        async_executors::TokioTp::block_on(self, f)
+        Self::block_on(self, f)
     }
 }
 

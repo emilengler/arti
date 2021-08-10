@@ -135,7 +135,7 @@ pub struct ProviderBuilder {
 impl MockNetwork {
     /// Make a new MockNetwork with no active listeners.
     pub fn new() -> Arc<Self> {
-        Arc::new(MockNetwork {
+        Arc::new(Self {
             listening: Mutex::new(HashMap::new()),
         })
     }

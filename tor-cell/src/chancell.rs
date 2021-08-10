@@ -34,7 +34,7 @@ impl From<u32> for CircId {
     }
 }
 impl From<CircId> for u32 {
-    fn from(id: CircId) -> u32 {
+    fn from(id: CircId) -> Self {
         id.0
     }
 }
@@ -116,28 +116,28 @@ impl ChanCmd {
         // Version 1 of the channel protocol had no variable-length
         // cells, but that's obsolete.  In version 2, only the VERSIONS
         // cell was variable-length.
-        self == ChanCmd::VERSIONS || self.0 >= 128_u8
+        self == Self::VERSIONS || self.0 >= 128_u8
     }
     /// Return what kind of circuit ID this command expects.
     fn allows_circid(self) -> CircIdReq {
         match self {
-            ChanCmd::PADDING
-            | ChanCmd::NETINFO
-            | ChanCmd::PADDING_NEGOTIATE
-            | ChanCmd::VERSIONS
-            | ChanCmd::VPADDING
-            | ChanCmd::CERTS
-            | ChanCmd::AUTH_CHALLENGE
-            | ChanCmd::AUTHENTICATE => CircIdReq::WantZero,
-            ChanCmd::CREATE
-            | ChanCmd::CREATED
-            | ChanCmd::RELAY
-            | ChanCmd::DESTROY
-            | ChanCmd::CREATE_FAST
-            | ChanCmd::CREATED_FAST
-            | ChanCmd::RELAY_EARLY
-            | ChanCmd::CREATE2
-            | ChanCmd::CREATED2 => CircIdReq::WantNonZero,
+            Self::PADDING
+            | Self::NETINFO
+            | Self::PADDING_NEGOTIATE
+            | Self::VERSIONS
+            | Self::VPADDING
+            | Self::CERTS
+            | Self::AUTH_CHALLENGE
+            | Self::AUTHENTICATE => CircIdReq::WantZero,
+            Self::CREATE
+            | Self::CREATED
+            | Self::RELAY
+            | Self::DESTROY
+            | Self::CREATE_FAST
+            | Self::CREATED_FAST
+            | Self::RELAY_EARLY
+            | Self::CREATE2
+            | Self::CREATED2 => CircIdReq::WantNonZero,
             _ => CircIdReq::Any,
         }
     }
@@ -164,7 +164,7 @@ pub struct ChanCell {
 impl ChanCell {
     /// Construct a new channel cell.
     pub fn new(circid: CircId, msg: msg::ChanMsg) -> Self {
-        ChanCell { circid, msg }
+        Self { circid, msg }
     }
     /// Return the circuit ID for this cell.
     pub fn circid(&self) -> CircId {

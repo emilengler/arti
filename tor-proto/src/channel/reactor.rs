@@ -103,7 +103,7 @@ where
         let oneshots = stream::FuturesUnordered::new();
         oneshots.push(closeflag);
         let control = stream::select(control, oneshots);
-        Reactor {
+        Self {
             control: control.fuse(),
             input: input.fuse(),
             channel: Arc::downgrade(channel),

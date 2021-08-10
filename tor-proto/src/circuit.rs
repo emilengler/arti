@@ -122,8 +122,8 @@ pub struct CircParameters {
 }
 
 impl Default for CircParameters {
-    fn default() -> CircParameters {
-        CircParameters {
+    fn default() -> Self {
+        Self {
             initial_send_window: 1000,
             extend_by_ed25519_id: true,
         }
@@ -251,7 +251,7 @@ struct CircHop {
 impl CircHop {
     /// Construct a new (sender-side) view of a circuit hop.
     fn new(auth_sendme_optional: bool, initial_window: u16) -> Self {
-        CircHop {
+        Self {
             auth_sendme_optional,
             sendwindow: sendme::CircSendWindow::new(initial_window),
         }
@@ -880,7 +880,7 @@ impl PendingClientCirc {
         circ_closed: Option<CircDestroyHandle>,
         input: mpsc::Receiver<ClientCircChanMsg>,
         unique_id: UniqId,
-    ) -> (PendingClientCirc, reactor::Reactor) {
+    ) -> (Self, reactor::Reactor) {
         let crypto_out = OutboundClientCrypt::new();
         let (sendclosed, recvclosed) = oneshot::channel::<CtrlMsg>();
         // Should this be bounded, really? XXX
@@ -904,7 +904,7 @@ impl PendingClientCirc {
             unique_id,
         };
         let circuit = Arc::new(circuit);
-        let pending = PendingClientCirc {
+        let pending = Self {
             recvcreated: createdreceiver,
             circ: Arc::clone(&circuit),
         };

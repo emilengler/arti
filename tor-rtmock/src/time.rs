@@ -73,7 +73,7 @@ impl MockSleepProvider {
             wallclock,
             sleepers,
         };
-        MockSleepProvider {
+        Self {
             state: Arc::new(Mutex::new(state)),
         }
     }

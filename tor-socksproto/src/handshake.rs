@@ -64,7 +64,7 @@ pub struct Action {
 impl SocksHandshake {
     /// Construct a new SocksHandshake in its initial state
     pub fn new() -> Self {
-        SocksHandshake {
+        Self {
             state: State::Initial,
             socks5_auth: None,
             handshake: None,
@@ -293,12 +293,12 @@ impl SocksRequest {
 }
 
 impl Readable for SocksAddr {
-    fn take_from(r: &mut Reader<'_>) -> BytesResult<SocksAddr> {
+    fn take_from(r: &mut Reader<'_>) -> BytesResult<Self> {
         let atype = r.take_u8()?;
         match atype {
             1 => {
                 let ip4: std::net::Ipv4Addr = r.extract()?;
-                Ok(SocksAddr::Ip(ip4.into()))
+                Ok(Self::Ip(ip4.into()))
             }
             3 => {
                 let hlen = r.take_u8()?;
@@ -309,11 +309,11 @@ impl Readable for SocksAddr {
                 let hostname = hostname
                     .try_into()
                     .map_err(|_| BytesError::BadMessage("hostname too long"))?;
-                Ok(SocksAddr::Hostname(hostname))
+                Ok(Self::Hostname(hostname))
             }
             4 => {
                 let ip6: std::net::Ipv6Addr = r.extract()?;
-                Ok(SocksAddr::Ip(ip6.into()))
+                Ok(Self::Ip(ip6.into()))
             }
             _ => Err(BytesError::BadMessage("unrecognized address type.")),
         }

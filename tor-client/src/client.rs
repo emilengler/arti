@@ -133,7 +133,7 @@ impl<R: Runtime> TorClient<R> {
         state_cfg: PathBuf,
         dir_cfg: DirMgrConfig,
         circ_cfg: CircMgrConfig,
-    ) -> Result<TorClient<R>> {
+    ) -> Result<Self> {
         let statemgr = tor_persist::FsStateMgr::from_path(state_cfg)?;
         let chanmgr = Arc::new(tor_chanmgr::ChanMgr::new(runtime.clone()));
         let circmgr = Arc::new(tor_circmgr::CircMgr::new(
@@ -162,7 +162,7 @@ impl<R: Runtime> TorClient<R> {
             Arc::downgrade(&circmgr),
         ))?;
 
-        Ok(TorClient {
+        Ok(Self {
             runtime,
             circmgr,
             dirmgr,

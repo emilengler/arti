@@ -23,8 +23,8 @@ pub struct DocumentText {
 }
 
 impl From<InputString> for DocumentText {
-    fn from(s: InputString) -> DocumentText {
-        DocumentText { s }
+    fn from(s: InputString) -> Self {
+        Self { s }
     }
 }
 
@@ -42,7 +42,7 @@ impl DocumentText {
 
     /// Create a new DocumentText holding the provided string.
     pub(crate) fn from_string(s: String) -> Self {
-        DocumentText {
+        Self {
             s: InputString::Utf8(s),
         }
     }
@@ -94,14 +94,14 @@ impl InputString {
                 memmap2::Mmap::map(&f)
             };
             if let Ok(m) = mapping {
-                return Ok(InputString::MappedBytes(m));
+                return Ok(Self::MappedBytes(m));
             }
         }
         use std::io::{BufReader, Read};
         let mut f = BufReader::new(f);
         let mut result = String::new();
         f.read_to_string(&mut result)?;
-        Ok(InputString::Utf8(result))
+        Ok(Self::Utf8(result))
     }
 }
 
@@ -117,14 +117,14 @@ impl AsRef<[u8]> for InputString {
 }
 
 impl From<String> for InputString {
-    fn from(s: String) -> InputString {
-        InputString::Utf8(s)
+    fn from(s: String) -> Self {
+        Self::Utf8(s)
     }
 }
 
 impl From<Vec<u8>> for InputString {
-    fn from(v: Vec<u8>) -> InputString {
-        InputString::UncheckedBytes(v)
+    fn from(v: Vec<u8>) -> Self {
+        Self::UncheckedBytes(v)
     }
 }
 

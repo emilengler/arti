@@ -89,7 +89,7 @@ impl SqliteStore {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE
         };
         let conn = rusqlite::Connection::open_with_flags(&sqlpath, flags)?;
-        let mut store = SqliteStore::from_conn(conn, &blobpath)?;
+        let mut store = Self::from_conn(conn, &blobpath)?;
         store.sql_path = Some(sqlpath);
         store.lockfile = Some(lockfile);
         Ok(store)
@@ -104,7 +104,7 @@ impl SqliteStore {
         P: AsRef<Path>,
     {
         let path = path.as_ref().to_path_buf();
-        let mut result = SqliteStore {
+        let mut result = Self {
             conn,
             path,
             lockfile: None,
@@ -641,7 +641,7 @@ struct Unlinker {
 impl Unlinker {
     /// Make a new Unlinker for a given filename.
     fn new<P: AsRef<Path>>(p: P) -> Self {
-        Unlinker {
+        Self {
             p: Some(p.as_ref().to_path_buf()),
         }
     }

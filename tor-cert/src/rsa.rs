@@ -55,7 +55,7 @@ impl RsaCrosscert {
         d.update(signed_portion);
         let digest = d.finalize().into();
 
-        let cc = RsaCrosscert {
+        let cc = Self {
             subject_key,
             exp_hours,
             digest,

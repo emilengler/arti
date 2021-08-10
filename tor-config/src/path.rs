@@ -51,7 +51,7 @@ pub enum Error {
 impl CfgPath {
     /// Create a new configuration path
     pub fn new(s: String) -> Self {
-        CfgPath(s)
+        Self(s)
     }
 
     /// Return the path on disk designated by this path.

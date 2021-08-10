@@ -25,7 +25,7 @@ pub struct RelayFamily(Vec<RsaIdentity>);
 impl RelayFamily {
     /// Return a new empty RelayFamily.
     pub fn new() -> Self {
-        RelayFamily(Vec::new())
+        Self(Vec::new())
     }
 
     /// Does this family include the given relay?
@@ -42,7 +42,7 @@ impl RelayFamily {
 
 impl Default for RelayFamily {
     fn default() -> Self {
-        RelayFamily::new()
+        Self::new()
     }
 }
 
@@ -54,7 +54,7 @@ impl std::str::FromStr for RelayFamily {
             .map(|e| e.parse::<LongIdent>().map(|v| v.into()))
             .filter(Result::is_ok)
             .collect();
-        Ok(RelayFamily(v?))
+        Ok(Self(v?))
     }
 }
 

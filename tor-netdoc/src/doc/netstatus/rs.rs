@@ -43,13 +43,13 @@ pub struct NsConsensusRouterStatus {
 
 impl From<GenericRouterStatus<RdDigest>> for NsConsensusRouterStatus {
     fn from(rs: GenericRouterStatus<RdDigest>) -> Self {
-        NsConsensusRouterStatus { rs }
+        Self { rs }
     }
 }
 
 impl From<GenericRouterStatus<MdDigest>> for MdConsensusRouterStatus {
     fn from(rs: GenericRouterStatus<MdDigest>) -> Self {
-        MdConsensusRouterStatus { rs }
+        Self { rs }
     }
 }
 
@@ -184,9 +184,9 @@ impl ParseRouterStatus for MdConsensusRouterStatus {
         ConsensusFlavor::Microdesc
     }
 
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<MdConsensusRouterStatus> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Self> {
         let rs = GenericRouterStatus::from_section(sec, true)?;
-        Ok(MdConsensusRouterStatus { rs })
+        Ok(Self { rs })
     }
 }
 
@@ -210,9 +210,9 @@ impl ParseRouterStatus for NsConsensusRouterStatus {
         ConsensusFlavor::Ns
     }
 
-    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<NsConsensusRouterStatus> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>) -> Result<Self> {
         let rs = GenericRouterStatus::from_section(sec, false)?;
-        Ok(NsConsensusRouterStatus { rs })
+        Ok(Self { rs })
     }
 }
 
@@ -224,7 +224,7 @@ trait FromRsString: Sized {
 }
 
 impl FromRsString for MdDigest {
-    fn decode(s: &str) -> Result<MdDigest> {
+    fn decode(s: &str) -> Result<Self> {
         s.parse::<B64>()?
             .check_len(32..=32)?
             .as_bytes()
@@ -234,7 +234,7 @@ impl FromRsString for MdDigest {
 }
 
 impl FromRsString for RdDigest {
-    fn decode(s: &str) -> Result<RdDigest> {
+    fn decode(s: &str) -> Result<Self> {
         s.parse::<B64>()?
             .check_len(20..=20)?
             .as_bytes()
@@ -251,10 +251,7 @@ where
     ///
     /// Requires that the section obeys the right SectionRules,
     /// matching microdesc_format.
-    fn from_section(
-        sec: &Section<'_, NetstatusKwd>,
-        microdesc_format: bool,
-    ) -> Result<GenericRouterStatus<D>> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>, microdesc_format: bool) -> Result<Self> {
         use NetstatusKwd::*;
         // R line
         let r_item = sec.required(RS_R)?;
@@ -320,7 +317,7 @@ where
             D::decode(r_item.required_arg(2)?)?
         };
 
-        Ok(GenericRouterStatus {
+        Ok(Self {
             nickname,
             identity,
             published,

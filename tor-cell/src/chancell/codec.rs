@@ -41,7 +41,7 @@ pub struct ChannelCodec {
 impl ChannelCodec {
     /// Create a new ChannelCodec with a given link protocol version
     pub fn new(link_version: u16) -> Self {
-        ChannelCodec { link_version }
+        Self { link_version }
     }
 
     /// Write the given cell into the provided BytesMut object.

@@ -50,7 +50,7 @@ pub enum Error {
 
 impl From<TimeoutError> for Error {
     fn from(_: TimeoutError) -> Self {
-        Error::DirTimeout
+        Self::DirTimeout
     }
 }
 
