@@ -33,7 +33,7 @@ pub struct AuthCertBuilder {
 impl AuthCertBuilder {
     /// Make a new AuthCertBuilder
     pub(crate) fn new() -> Self {
-        AuthCertBuilder {
+        Self {
             address: None,
             identity_key: None,
             signing_key: None,

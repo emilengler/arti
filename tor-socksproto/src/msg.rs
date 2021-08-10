@@ -112,7 +112,7 @@ impl SocksCmd {
     fn recognized(self) -> bool {
         matches!(
             self,
-            SocksCmd::CONNECT | SocksCmd::RESOLVE | SocksCmd::RESOLVE_PTR
+            Self::CONNECT | Self::RESOLVE | Self::RESOLVE_PTR
         )
     }
 
@@ -120,7 +120,7 @@ impl SocksCmd {
     fn requires_port(self) -> bool {
         matches!(
             self,
-            SocksCmd::CONNECT | SocksCmd::BIND | SocksCmd::UDP_ASSOCIATE
+            Self::CONNECT | Self::BIND | Self::UDP_ASSOCIATE
         )
     }
 }
@@ -129,7 +129,7 @@ impl SocksStatus {
     /// Convert this status into a value for use with SOCKS4 or SOCKS4a.
     pub(crate) fn into_socks4_status(self) -> u8 {
         match self {
-            SocksStatus::SUCCEEDED => 0x5A,
+            Self::SUCCEEDED => 0x5A,
             _ => 0x5B,
         }
     }
@@ -137,11 +137,11 @@ impl SocksStatus {
 
 impl TryFrom<String> for SocksHostname {
     type Error = Error;
-    fn try_from(s: String) -> Result<SocksHostname> {
+    fn try_from(s: String) -> Result<Self> {
         if s.len() > 255 {
             Err(Error::Syntax)
         } else {
-            Ok(SocksHostname(s))
+            Ok(Self(s))
         }
     }
 }
@@ -153,7 +153,7 @@ impl AsRef<str> for SocksHostname {
 }
 
 impl From<SocksHostname> for String {
-    fn from(s: SocksHostname) -> String {
+    fn from(s: SocksHostname) -> Self {
         s.0
     }
 }
@@ -182,7 +182,7 @@ impl SocksRequest {
             return Err(Error::Syntax);
         }
 
-        Ok(SocksRequest {
+        Ok(Self {
             version,
             cmd,
             addr,

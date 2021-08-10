@@ -55,8 +55,8 @@ mod net {
     }
     impl IncomingStreams {
         /// Create a new IncomingStreams from a TcpListener.
-        pub fn from_listener(lis: TcpListener) -> IncomingStreams {
-            IncomingStreams {
+        pub fn from_listener(lis: TcpListener) -> Self {
+            Self {
                 state: Some(IncomingStreamsState::Ready(lis)),
             }
         }
@@ -88,13 +88,13 @@ mod net {
         type TcpStream = TcpStream;
         type Incoming = IncomingStreams;
         async fn accept(&self) -> IoResult<(Self::TcpStream, SocketAddr)> {
-            TcpListener::accept(self).await
+            Self::accept(self).await
         }
         fn incoming(self) -> IncomingStreams {
             IncomingStreams::from_listener(self)
         }
         fn local_addr(&self) -> IoResult<SocketAddr> {
-            TcpListener::local_addr(self)
+            Self::local_addr(self)
         }
     }
 
@@ -133,9 +133,9 @@ mod tls {
 
     impl TryFrom<native_tls::TlsConnectorBuilder> for TlsConnector {
         type Error = std::convert::Infallible;
-        fn try_from(builder: native_tls::TlsConnectorBuilder) -> Result<TlsConnector, Self::Error> {
+        fn try_from(builder: native_tls::TlsConnectorBuilder) -> Result<Self, Self::Error> {
             let connector = builder.into();
-            Ok(TlsConnector { connector })
+            Ok(Self { connector })
         }
     }
 
@@ -201,7 +201,7 @@ impl SleepProvider for async_executors::AsyncStd {
 
 impl SpawnBlocking for async_executors::AsyncStd {
     fn block_on<F: Future>(&self, f: F) -> F::Output {
-        async_executors::AsyncStd::block_on(f)
+        Self::block_on(f)
     }
 }
 

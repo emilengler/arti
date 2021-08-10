@@ -40,7 +40,7 @@ pub struct RouterStatusBuilder<D> {
 impl<D: Clone> RouterStatusBuilder<D> {
     /// Construct a new RouterStatusBuilder.
     pub(crate) fn new() -> Self {
-        RouterStatusBuilder {
+        Self {
             nickname: None,
             identity: None,
             published: None,

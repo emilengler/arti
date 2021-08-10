@@ -42,7 +42,7 @@ pub struct MicrodescBuilder {
 impl MicrodescBuilder {
     /// Create a new MicrodescBuilder.
     pub(crate) fn new() -> Self {
-        MicrodescBuilder {
+        Self {
             tap_onion_key: None,
             ntor_onion_key: None,
             family: RelayFamily::new(),

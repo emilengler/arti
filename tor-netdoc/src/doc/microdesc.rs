@@ -195,7 +195,7 @@ static MICRODESC_RULES: Lazy<SectionRules<MicrodescKwd>> = Lazy::new(|| {
 
 impl Default for MicrodescAnnotation {
     fn default() -> Self {
-        MicrodescAnnotation { last_listed: None }
+        Self { last_listed: None }
     }
 }
 
@@ -205,7 +205,7 @@ impl MicrodescAnnotation {
     #[allow(dead_code)]
     fn parse_from_reader(
         reader: &mut NetDocReader<'_, MicrodescKwd>,
-    ) -> Result<MicrodescAnnotation> {
+    ) -> Result<Self> {
         use MicrodescKwd::*;
 
         let mut items = reader.pause_at(|item| item.is_ok_with_non_annotation());
@@ -216,13 +216,13 @@ impl MicrodescAnnotation {
             Some(item) => Some(item.args_as_str().parse::<Iso8601TimeSp>()?.into()),
         };
 
-        Ok(MicrodescAnnotation { last_listed })
+        Ok(Self { last_listed })
     }
 }
 
 impl Microdesc {
     /// Parse a string into a new microdescriptor.
-    pub fn parse(s: &str) -> Result<Microdesc> {
+    pub fn parse(s: &str) -> Result<Self> {
         let mut items = crate::parse::tokenize::NetDocReader::new(s);
         let (result, _) = Self::parse_from_reader(&mut items).map_err(|e| e.within(s))?;
         items.should_be_exhausted()?;
@@ -232,7 +232,7 @@ impl Microdesc {
     /// Extract a single microdescriptor from a NetDocReader.
     fn parse_from_reader(
         reader: &mut NetDocReader<'_, MicrodescKwd>,
-    ) -> Result<(Microdesc, Option<Extent>)> {
+    ) -> Result<(Self, Option<Extent>)> {
         use MicrodescKwd::*;
         let s = reader.str();
 
@@ -327,7 +327,7 @@ impl Microdesc {
 
         let location = Extent::new(s, text);
 
-        let md = Microdesc {
+        let md = Self {
             sha256,
             tap_onion_key,
             ntor_onion_key,
