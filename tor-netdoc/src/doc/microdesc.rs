@@ -203,9 +203,7 @@ impl MicrodescAnnotation {
     /// Extract a (possibly empty) microdescriptor annotation from a
     /// reader.
     #[allow(dead_code)]
-    fn parse_from_reader(
-        reader: &mut NetDocReader<'_, MicrodescKwd>,
-    ) -> Result<Self> {
+    fn parse_from_reader(reader: &mut NetDocReader<'_, MicrodescKwd>) -> Result<Self> {
         use MicrodescKwd::*;
 
         let mut items = reader.pause_at(|item| item.is_ok_with_non_annotation());

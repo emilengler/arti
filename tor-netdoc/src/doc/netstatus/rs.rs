@@ -251,10 +251,7 @@ where
     ///
     /// Requires that the section obeys the right SectionRules,
     /// matching microdesc_format.
-    fn from_section(
-        sec: &Section<'_, NetstatusKwd>,
-        microdesc_format: bool,
-    ) -> Result<Self> {
+    fn from_section(sec: &Section<'_, NetstatusKwd>, microdesc_format: bool) -> Result<Self> {
         use NetstatusKwd::*;
         // R line
         let r_item = sec.required(RS_R)?;

@@ -110,18 +110,12 @@ caret_int! {
 impl SocksCmd {
     /// Return true if this is a supported command.
     fn recognized(self) -> bool {
-        matches!(
-            self,
-            Self::CONNECT | Self::RESOLVE | Self::RESOLVE_PTR
-        )
+        matches!(self, Self::CONNECT | Self::RESOLVE | Self::RESOLVE_PTR)
     }
 
     /// Return true if this is a command for which we require a port.
     fn requires_port(self) -> bool {
-        matches!(
-            self,
-            Self::CONNECT | Self::BIND | Self::UDP_ASSOCIATE
-        )
+        matches!(self, Self::CONNECT | Self::BIND | Self::UDP_ASSOCIATE)
     }
 }
 
