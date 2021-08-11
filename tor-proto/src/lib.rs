@@ -7,7 +7,7 @@
 //! implement [Tor](https://www.torproject.org/) in Rust.
 //! Most people shouldn't use this crate directly,
 //! since its APIs are needlessly low-level for most purposes, and it is
-//! easy to miuse them in an incsecure or privacy-violating way.
+//! easy to misuse them in an insecure or privacy-violating way.
 //!
 //! Most people should use the [`tor-client`] crate instead.  This crate is
 //! of interest mainly for those that want to access the Tor protocols at
@@ -107,6 +107,7 @@
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
 #![allow(clippy::unnecessary_wraps)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub mod channel;

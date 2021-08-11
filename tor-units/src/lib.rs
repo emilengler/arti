@@ -10,6 +10,7 @@
 //! In particular, it provides:
 //!   * a bounded i32 with both checked and clamping constructors,
 //!   * an integer milliseconds wrapper with conversion to [`Duration`]
+//!   * an integer seconds wrapper with conversion to [`Duration`]
 //!   * a percentage wrapper, to prevent accidental failure
 //!     to divide by 100.
 //!   * a SendMeVersion which can be compared only.
@@ -35,6 +36,7 @@
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 use derive_more::{Add, Display, Div, From, FromStr, Mul};
@@ -105,7 +107,7 @@ impl<const LOWER: i32, const UPPER: i32> BoundedInt32<LOWER, UPPER> {
     }
 
     /// If `val` is within range, return a new `BoundedInt32` wrapping
-    /// it; othwerwise, clamp it to the upper or lower bound as
+    /// it; otherwise, clamp it to the upper or lower bound as
     /// appropriate.
     pub fn saturating_new(val: i32) -> Self {
         Self::unchecked_new(Self::clamp(val))
@@ -281,6 +283,31 @@ impl<T: TryInto<u64>> TryFrom<IntegerMilliseconds<T>> for Duration {
     type Error = <T as TryInto<u64>>::Error;
     fn try_from(val: IntegerMilliseconds<T>) -> Result<Self, <T as TryInto<u64>>::Error> {
         Ok(Self::from_millis(val.value.try_into()?))
+    }
+}
+
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
+/// This type represents an integer number of seconds.
+///
+/// The underlying type should implement TryInto<u64>.
+pub struct IntegerSeconds<T> {
+    /// Interior Value. Should Implement TryInto<u64> to be useful.
+    value: T,
+}
+
+impl<T: TryInto<u64>> IntegerSeconds<T> {
+    /// Public Constructor
+    pub fn new(value: T) -> Self {
+        IntegerSeconds { value }
+    }
+}
+
+impl<T: TryInto<u64>> TryFrom<IntegerSeconds<T>> for Duration {
+    type Error = <T as TryInto<u64>>::Error;
+    fn try_from(val: IntegerSeconds<T>) -> Result<Self, <T as TryInto<u64>>::Error> {
+        Ok(Self::from_secs(val.value.try_into()?))
     }
 }
 

@@ -35,6 +35,7 @@
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub mod authority;
@@ -91,12 +92,6 @@ pub use storage::DocumentText;
 ///     writing to the cache, and it takes responsibility for fetching
 ///     data from the network and updating the directory with new
 ///     directory information.
-///
-/// # Limitations
-///
-/// Because of portability issues in [`fslock::LockFile`], you might
-/// get weird results if you run two of these in the same process with
-/// the same underlying cache.
 pub struct DirMgr<R: Runtime> {
     /// Configuration information: where to find directories, how to
     /// validate them, and so on.
@@ -423,7 +418,7 @@ impl<R: Runtime> DirMgr<R> {
         self.publisher.subscribe()
     }
 
-    /// Try to load the text of a signle document described by `doc` from
+    /// Try to load the text of a single document described by `doc` from
     /// storage.
     pub async fn text(&self, doc: &DocId) -> Result<Option<DocumentText>> {
         let mut result = HashMap::new();
@@ -641,7 +636,7 @@ trait DirState: Send {
     /// 'true' if there as any change in this state.
     ///
     /// This method receives a copy of the original request, and
-    /// should reject any documents that do not purtain to it.
+    /// should reject any documents that do not pertain to it.
     ///
     /// If `storage` is provided, then we should write any accepted documents
     /// into `storage` so they can be saved in a cache.

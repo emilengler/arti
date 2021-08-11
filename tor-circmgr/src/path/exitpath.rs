@@ -1,9 +1,9 @@
 //! Code for building paths to an exit relay.
 
 use super::TorPath;
-use crate::{DirInfo, Error, Result, TargetPort};
+use crate::{DirInfo, Error, PathConfig, Result, TargetPort};
 use rand::Rng;
-use tor_netdir::{NetDir, Relay, WeightRole};
+use tor_netdir::{NetDir, Relay, SubnetConfig, WeightRole};
 
 /// Internal representation of PathBuilder.
 enum ExitPathBuilderInner<'a> {
@@ -53,26 +53,44 @@ impl<'a> ExitPathBuilder<'a> {
 
     /// Try to create and return a path corresponding to the requirements of
     /// this builder.
-    pub fn pick_path<R: Rng>(&self, rng: &mut R, netdir: DirInfo<'a>) -> Result<TorPath<'a>> {
+    pub fn pick_path<R: Rng>(
+        &self,
+        rng: &mut R,
+        netdir: DirInfo<'a>,
+        config: &PathConfig,
+    ) -> Result<TorPath<'a>> {
         // TODO: implement guards
         let netdir = match netdir {
             DirInfo::Fallbacks(_) => return Err(Error::NeedConsensus),
             DirInfo::Directory(d) => d,
         };
+        let subnet_config = &config.enforce_distance;
         let exit = self.pick_exit(rng, netdir)?;
 
         let middle = netdir
-            .pick_relay(rng, WeightRole::Middle, |r| !r.in_same_family(&exit))
+            .pick_relay(rng, WeightRole::Middle, |r| {
+                relays_can_share_circuit(r, &exit, subnet_config)
+            })
             .ok_or_else(|| Error::NoRelays("No middle relay found".into()))?;
 
         let entry = netdir
             .pick_relay(rng, WeightRole::Guard, |r| {
-                !r.in_same_family(&middle) && !r.in_same_family(&exit)
+                relays_can_share_circuit(r, &middle, subnet_config)
+                    && relays_can_share_circuit(r, &exit, subnet_config)
             })
             .ok_or_else(|| Error::NoRelays("No entry relay found".into()))?;
 
         Ok(TorPath::new_multihop(vec![entry, middle, exit]))
     }
+}
+
+/// Returns true if both relays can appear together in the same circuit.
+fn relays_can_share_circuit(a: &Relay<'_>, b: &Relay<'_>, subnet_config: &SubnetConfig) -> bool {
+    // XXX: features missing from original implementation:
+    // - option NodeFamilySets
+    // see: src/feature/nodelist/nodelist.c:nodes_in_same_family()
+
+    !a.in_same_family(b) && !a.in_same_subnet(b, subnet_config)
 }
 
 #[cfg(test)]
@@ -96,9 +114,10 @@ mod test {
         assert!(r1.ed_identity() != r3.ed_identity());
         assert!(r2.ed_identity() != r3.ed_identity());
 
-        assert!(!r1.in_same_family(r2));
-        assert!(!r1.in_same_family(r3));
-        assert!(!r2.in_same_family(r3));
+        let subnet_config = SubnetConfig::default();
+        assert!(relays_can_share_circuit(r1, r2, &subnet_config));
+        assert!(relays_can_share_circuit(r1, r3, &subnet_config));
+        assert!(relays_can_share_circuit(r2, r3, &subnet_config));
     }
 
     #[test]
@@ -107,10 +126,11 @@ mod test {
         let netdir = testnet::construct_netdir();
         let ports = vec![TargetPort::ipv4(443), TargetPort::ipv4(1119)];
         let dirinfo = (&netdir).into();
+        let config = PathConfig::default();
 
         for _ in 0..1000 {
             let path = ExitPathBuilder::from_target_ports(ports.clone())
-                .pick_path(&mut rng, dirinfo)
+                .pick_path(&mut rng, dirinfo, &config)
                 .unwrap();
 
             assert_same_path_when_owned(&path);
@@ -126,9 +146,10 @@ mod test {
 
         let chosen = netdir.by_id(&[0x20; 32].into()).unwrap();
 
+        let config = PathConfig::default();
         for _ in 0..1000 {
             let path = ExitPathBuilder::from_chosen_exit(chosen.clone())
-                .pick_path(&mut rng, dirinfo)
+                .pick_path(&mut rng, dirinfo, &config)
                 .unwrap();
             assert_same_path_when_owned(&path);
             if let TorPathInner::Path(p) = path.inner {

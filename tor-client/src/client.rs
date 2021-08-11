@@ -4,7 +4,7 @@
 //! Once the client is bootstrapped, you can make anonymous
 //! connections ("streams") over the Tor network using
 //! `TorClient::connect()`.
-use tor_circmgr::{IsolationToken, TargetPort};
+use tor_circmgr::{CircMgrConfig, IsolationToken, TargetPort};
 use tor_dirmgr::{DirEvent, DirMgrConfig};
 use tor_proto::circuit::{ClientCirc, IpVersionPreference};
 use tor_proto::stream::DataStream;
@@ -13,12 +13,13 @@ use tor_rtcompat::{Runtime, SleepProviderExt};
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
 use std::net::IpAddr;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
-use log::info;
+use log::{debug, error, info};
 
 /// An active client session on the Tor network.
 ///
@@ -48,7 +49,7 @@ pub struct ConnectPrefs {
 }
 
 impl ConnectPrefs {
-    /// Construct a new ConnnectPrefs.
+    /// Construct a new ConnectPrefs.
     pub fn new() -> Self {
         Self::default()
     }
@@ -63,7 +64,7 @@ impl ConnectPrefs {
     /// Indicate that a stream may only be made over IPv6.
     ///
     /// When this option is set, we will only pick exit relays that
-    /// suppport IPv6, and we will tell them to only give us IPv6
+    /// support IPv6, and we will tell them to only give us IPv6
     /// connections.
     pub fn ipv6_only(&mut self) -> &mut Self {
         self.ip_ver_pref = IpVersionPreference::Ipv6Only;
@@ -82,7 +83,7 @@ impl ConnectPrefs {
     /// Indicate that a stream may only be made over IPv4.
     ///
     /// When this option is set, we will only pick exit relays that
-    /// suppport IPv4, and we will tell them to only give us IPv4
+    /// support IPv4, and we will tell them to only give us IPv4
     /// connections.
     pub fn ipv4_only(&mut self) -> &mut Self {
         self.ip_ver_pref = IpVersionPreference::Ipv4Only;
@@ -117,26 +118,33 @@ impl ConnectPrefs {
         self.isolation_group
     }
 
-    // TODO: Add some way to be IPFlexible, and require exit to suppport both.
+    // TODO: Add some way to be IPFlexible, and require exit to support both.
 }
 
 impl<R: Runtime> TorClient<R> {
-    /// Bootstrap a network connection configured by `dircfg`.
+    /// Bootstrap a network connection configured by `dir_cfg` and `circ_cfg`.
     ///
     /// Return a client once there is enough directory material to
     /// connect safely over the Tor network.
-    pub async fn bootstrap(runtime: R, dircfg: DirMgrConfig) -> Result<TorClient<R>> {
+    // TODO: Make a ClientConfig to combine DirMgrConfig and circ_cfg
+    // and state_cfg.
+    pub async fn bootstrap(
+        runtime: R,
+        state_cfg: PathBuf,
+        dir_cfg: DirMgrConfig,
+        circ_cfg: CircMgrConfig,
+    ) -> Result<TorClient<R>> {
+        let statemgr = tor_persist::FsStateMgr::from_path(state_cfg)?;
         let chanmgr = Arc::new(tor_chanmgr::ChanMgr::new(runtime.clone()));
-        let circmgr = Arc::new(tor_circmgr::CircMgr::new(
-            runtime.clone(),
-            Arc::clone(&chanmgr),
-        ));
+        let circmgr = tor_circmgr::CircMgr::new(circ_cfg, statemgr, &runtime, Arc::clone(&chanmgr));
         let dirmgr = tor_dirmgr::DirMgr::bootstrap_from_config(
-            dircfg,
+            dir_cfg,
             runtime.clone(),
             Arc::clone(&circmgr),
         )
         .await?;
+
+        circmgr.update_network_parameters(dirmgr.netdir().params());
 
         // Launch a daemon task to inform the circmgr about new
         // network parameters.
@@ -144,6 +152,11 @@ impl<R: Runtime> TorClient<R> {
             dirmgr.events(),
             Arc::downgrade(&circmgr),
             Arc::downgrade(&dirmgr),
+        ))?;
+
+        runtime.spawn(flush_state_to_disk(
+            runtime.clone(),
+            Arc::downgrade(&circmgr),
         ))?;
 
         Ok(TorClient {
@@ -281,6 +294,12 @@ impl<R: Runtime> TorClient<R> {
 
         Ok(circ)
     }
+
+    /// Try to flush persistent state into storage.
+    fn update_persistent_state(&self) -> Result<()> {
+        self.circmgr.update_persistent_state()?;
+        Ok(())
+    }
 }
 
 /// Whenever a [`DirEvent::NewConsensus`] arrives on `events`, update
@@ -300,9 +319,49 @@ async fn keep_circmgr_params_updated<R: Runtime>(
             if let (Some(cm), Some(dm)) = (Weak::upgrade(&circmgr), Weak::upgrade(&dirmgr)) {
                 cm.update_network_parameters(dm.netdir().params());
             } else {
-                // A weak upgrade failed; time to break.
+                debug!("Circmgr or dirmgr has disappeared; task exiting.");
                 break;
             }
+        }
+    }
+}
+
+/// Run forever, periodically telling `circmgr` to update its persistent
+/// state.
+///
+/// Exit when we notice that `circmgr` has been dropped.
+///
+/// This is a daemon task: it runs indefinitely in the background.
+async fn flush_state_to_disk<R: Runtime>(runtime: R, circmgr: Weak<tor_circmgr::CircMgr<R>>) {
+    // TODO: Consider moving this into tor-circmgr after we have more
+    // experience with the state system.
+
+    loop {
+        if let Some(circmgr) = Weak::upgrade(&circmgr) {
+            if let Err(e) = circmgr.update_persistent_state() {
+                error!("Unable to flush circmgr state: {}", e);
+                break;
+            }
+        } else {
+            debug!("Circmgr has disappeared; task exiting.");
+            break;
+        }
+        // XXXX This delay is probably too small.
+        //
+        // Also, we probably don't even want a fixed delay here.  Instead,
+        // we should be updating more frequently when the data is volatile
+        // or has important info to save, and not at all when there are no
+        // changes.
+        runtime.sleep(Duration::from_secs(60)).await;
+    }
+}
+
+impl<R: Runtime> Drop for TorClient<R> {
+    // TODO: Consider moving this into tor-circmgr after we have more
+    // experience with the state system.
+    fn drop(&mut self) {
+        if let Err(e) = self.update_persistent_state() {
+            error!("Unable to flush state on client exit: {}", e);
         }
     }
 }

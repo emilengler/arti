@@ -43,6 +43,7 @@
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 use tor_chanmgr::ChanMgr;
@@ -50,37 +51,37 @@ use tor_netdir::{fallback::FallbackDir, NetDir};
 use tor_proto::circuit::{CircParameters, ClientCirc, UniqId};
 use tor_rtcompat::Runtime;
 
+use futures::task::SpawnExt;
 use log::warn;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 pub mod build;
+mod config;
 mod err;
 mod impls;
 mod mgr;
 pub mod path;
+mod state;
 mod timeouts;
 mod usage;
 
 pub use err::Error;
 pub use usage::{IsolationToken, TargetPort};
 
+pub use config::{
+    CircMgrConfig, CircMgrConfigBuilder, CircuitTiming, CircuitTimingBuilder, PathConfig,
+    PathConfigBuilder, RequestTiming, RequestTimingBuilder,
+};
+
 use usage::TargetCircUsage;
 
 /// A Result type as returned from this crate.
 pub type Result<T> = std::result::Result<T, Error>;
 
-/// How long do we let a circuit be dirty before we won't hand it out any
-/// more?
-///
-/// TODO: this should be an option.
-///
-/// TODO: The rules should be different for different kinds of circuits.
-const MAX_CIRC_DIRTINESS: Duration = Duration::from_secs(60 * 15);
-
 /// Represents what we know about the Tor network.
 ///
-/// This can either be a comlete directory, or a list of fallbacks.
+/// This can either be a complete directory, or a list of fallbacks.
 ///
 /// Not every DirInfo can be used to build every kind of circuit:
 /// if you try to build a path with an inadequate DirInfo, you'll get a
@@ -139,14 +140,56 @@ impl<'a> DirInfo<'a> {
 pub struct CircMgr<R: Runtime> {
     /// The underlying circuit manager object that implements our behavior.
     mgr: Arc<mgr::AbstractCircMgr<build::CircuitBuilder<R>, R>>,
+
+    /// A state manager for recording timeout history and guard information.
+    ///
+    /// (Right now there is only one implementation of CircStateMgr, but I
+    /// think we'll want to have more before too much time is up. In any
+    /// case I don't want to parameterize on this type.)
+    storage: state::DynStateMgr,
 }
 
 impl<R: Runtime> CircMgr<R> {
     /// Construct a new circuit manager.
-    pub fn new(runtime: R, chanmgr: Arc<ChanMgr<R>>) -> Self {
-        let builder = build::CircuitBuilder::new(runtime.clone(), chanmgr);
-        let mgr = mgr::AbstractCircMgr::new(builder, runtime);
-        CircMgr { mgr: Arc::new(mgr) }
+    pub fn new<SM>(
+        config: CircMgrConfig,
+        storage: SM,
+        runtime: &R,
+        chanmgr: Arc<ChanMgr<R>>,
+    ) -> Arc<Self>
+    where
+        SM: tor_persist::StateMgr + Send + Sync + 'static,
+    {
+        let CircMgrConfig {
+            path_config,
+            request_timing,
+            circuit_timing,
+        } = config;
+
+        let storage: state::DynStateMgr = Arc::new(storage);
+
+        let builder =
+            build::CircuitBuilder::new(runtime.clone(), chanmgr, path_config, Arc::clone(&storage));
+        let mgr =
+            mgr::AbstractCircMgr::new(builder, runtime.clone(), request_timing, circuit_timing);
+        let circmgr = Arc::new(CircMgr {
+            mgr: Arc::new(mgr),
+            storage,
+        });
+
+        runtime
+            .spawn(continually_expire_circuits(
+                runtime.clone(),
+                Arc::downgrade(&circmgr),
+            ))
+            .unwrap(); //XXXX unwrap is not so good here!
+
+        circmgr
+    }
+
+    /// Flush state to the state manager, if there is any unsaved state.
+    pub fn update_persistent_state(&self) -> Result<()> {
+        self.mgr.peek_builder().save_state()
     }
 
     /// Reconfigure this circuit manager using the latest set of
@@ -154,13 +197,14 @@ impl<R: Runtime> CircMgr<R> {
     ///
     /// (NOTE: for now, this only affects circuit timeout estimation.)
     pub fn update_network_parameters(&self, p: &tor_netdir::params::NetParameters) {
+        self.mgr.update_network_parameters(p);
         self.mgr.peek_builder().update_network_parameters(p);
     }
 
     /// Return a circuit suitable for sending one-hop BEGINDIR streams,
     /// launching it if necessary.
     pub async fn get_or_launch_dir(&self, netdir: DirInfo<'_>) -> Result<Arc<ClientCirc>> {
-        self.expire_dirty_circuits();
+        self.expire_circuits();
         let usage = TargetCircUsage::Dir;
         self.mgr.get_or_launch(&usage, netdir).await
     }
@@ -173,7 +217,7 @@ impl<R: Runtime> CircMgr<R> {
         ports: &[TargetPort],
         isolation_group: IsolationToken,
     ) -> Result<Arc<ClientCirc>> {
-        self.expire_dirty_circuits();
+        self.expire_circuits();
         let ports = ports.iter().map(Clone::clone).collect();
         let usage = TargetCircUsage::Exit {
             ports,
@@ -192,9 +236,34 @@ impl<R: Runtime> CircMgr<R> {
     ///
     /// Expired circuits are not closed while they still have users,
     /// but they are no longer given out for new requests.
-    fn expire_dirty_circuits(&self) {
-        let cutoff = self.mgr.peek_runtime().now() - MAX_CIRC_DIRTINESS;
-        self.mgr.expire_dirty_before(cutoff);
+    fn expire_circuits(&self) {
+        // TODO: I would prefer not to call this at every request, but it
+        // should be fine for now.
+        let now = self.mgr.peek_runtime().now();
+        self.mgr.expire_circs(now);
+    }
+}
+
+/// Periodically expire any circuits that should no longer be given
+/// out for requests.
+///
+/// Exit when we find that `circmgr` is dropped.
+///
+/// This is a daemon task: it runs indefinitely in the background.
+async fn continually_expire_circuits<R: Runtime>(runtime: R, circmgr: Weak<CircMgr<R>>) {
+    // TODO: This is too long for accuracy and too short for
+    // efficiency.  Instead we should have a more clever scheduling
+    // algorithm somehow that gets updated when we have new or newly
+    // dirty circuits only.
+    let interval = Duration::from_secs(5);
+
+    loop {
+        runtime.sleep(interval).await;
+        if let Some(cm) = Weak::upgrade(&circmgr) {
+            cm.expire_circuits();
+        } else {
+            break;
+        }
     }
 }
 
