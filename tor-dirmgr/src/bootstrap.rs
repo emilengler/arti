@@ -35,7 +35,7 @@ async fn load_all<R: Runtime>(
 async fn fetch_single<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     request: ClientRequest,
-) -> Result<(ClientRequest, DirResponse)> {
+) -> Result<(ClientRequest, DirResponse<String>)> {
     let circmgr = dirmgr.circmgr()?;
     let cur_netdir = dirmgr.opt_netdir();
     let dirinfo = match cur_netdir {
@@ -57,7 +57,7 @@ async fn fetch_multiple<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     missing: Vec<DocId>,
     parallelism: usize,
-) -> Result<Vec<(ClientRequest, DirResponse)>> {
+) -> Result<Vec<(ClientRequest, DirResponse<String>)>> {
     let mut requests = Vec::new();
     for (_type, query) in docid::partition_by_type(missing.into_iter()) {
         requests.extend(dirmgr.query_into_requests(query).await?);
@@ -65,11 +65,12 @@ async fn fetch_multiple<R: Runtime>(
 
     // TODO: instead of waiting for all the queries to finish, we
     // could stream the responses back or something.
-    let responses: Vec<Result<(ClientRequest, DirResponse)>> = futures::stream::iter(requests)
-        .map(|query| fetch_single(Arc::clone(&dirmgr), query))
-        .buffer_unordered(parallelism)
-        .collect()
-        .await;
+    let responses: Vec<Result<(ClientRequest, DirResponse<String>)>> =
+        futures::stream::iter(requests)
+            .map(|query| fetch_single(Arc::clone(&dirmgr), query))
+            .buffer_unordered(parallelism)
+            .collect()
+            .await;
 
     let mut useful_responses = Vec::new();
     for r in responses {
@@ -146,7 +147,7 @@ async fn download_attempt<R: Runtime>(
     let missing = state.missing_docs();
     let fetched = fetch_multiple(Arc::clone(dirmgr), missing, parallelism).await?;
     for (client_req, dir_response) in fetched {
-        let text = String::from_utf8(dir_response.into_output())?;
+        let text = dir_response.into_output();
         match dirmgr.expand_response_text(&client_req, text).await {
             Ok(text) => {
                 let outcome = state
