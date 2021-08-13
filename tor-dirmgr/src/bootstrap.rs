@@ -184,9 +184,9 @@ async fn download_attempt<R: Runtime>(
     parallelism: usize,
 ) -> Result<bool> {
     let missing = state.missing_docs();
-    let fetched = fetch_multiple(Arc::clone(dirmgr), missing).await?;
     let state = Arc::new(Mutex::new(state)); // State will be locked to add a response
-    let changed = fetched
+    let changed = fetch_multiple(Arc::clone(dirmgr), missing)
+        .await?
         .map(|fut| {
             fut.then(|s| handle_download_response(Arc::clone(dirmgr), Arc::clone(&state), s))
         })
