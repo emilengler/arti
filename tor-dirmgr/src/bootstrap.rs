@@ -185,12 +185,12 @@ async fn download_attempt<R: Runtime>(
 ) -> Result<bool> {
     let missing = state.missing_docs();
     let fetched = fetch_multiple(Arc::clone(dirmgr), missing).await?;
-    let state = Arc::new(Mutex::new(state));
+    let state = Arc::new(Mutex::new(state)); // State will be locked to add a response
     let changed = fetched
         .map(|fut| {
             fut.then(|s| handle_download_response(Arc::clone(dirmgr), Arc::clone(&state), s))
         })
-        .buffer_unordered(parallelism)
+        .buffer_unordered(parallelism) // Request and handle responses concurrently
         .fold(false, |a, changed_now| async move { a | changed_now })
         .await;
     Ok(changed)
