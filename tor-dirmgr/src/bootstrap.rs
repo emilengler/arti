@@ -132,6 +132,45 @@ pub(crate) async fn load<R: Runtime>(
     Ok(state)
 }
 
+/// Helper: feed response into state object
+async fn handle_download_response<R: Runtime>(
+    dirmgr: Arc<DirMgr<R>>,
+    state: Arc<Mutex<&mut Box<dyn DirState>>>,
+    response: Option<(ClientRequest, DirResponse)>,
+) -> bool {
+    match response {
+        Some((client_req, dir_response)) => {
+            let text = dir_response.into_output();
+            match dirmgr.expand_response_text(&client_req, text).await {
+                Ok(text) => {
+                    let outcome = {
+                        // Lock state for shortest duration possible
+                        let mut state = state.lock().await;
+                        state
+                            .add_from_download(&text, &client_req, Some(&dirmgr.store))
+                            .await
+                    };
+                    dirmgr.notify().await;
+                    match outcome {
+                        Ok(b) => b,
+                        Err(e) => {
+                            // TODO: in this case we might want to stop using this source.
+                            warn!("error while adding directory info: {}", e);
+                            false
+                        }
+                    }
+                }
+                Err(e) => {
+                    // TODO: in this case we might want to stop using this source.
+                    warn!("Error when expanding directory text: {}", e);
+                    false
+                }
+            }
+        }
+        None => false,
+    }
+}
+
 /// Helper: Make a set of download attempts for the current directory state,
 /// and on success feed their results into the state object.
 ///
@@ -149,46 +188,7 @@ async fn download_attempt<R: Runtime>(
     let state = Arc::new(Mutex::new(state));
     let changed = fetched
         .map(|fut| {
-            fut.then(|s| {
-                let dirmgr = Arc::clone(dirmgr);
-                let state = Arc::clone(&state);
-                async move {
-                    match s {
-                        Some((client_req, dir_response)) => {
-                            let text = dir_response.into_output();
-                            match dirmgr.expand_response_text(&client_req, text).await {
-                                Ok(text) => {
-                                    let outcome = {
-                                        let mut state = state.lock().await;
-                                        state
-                                            .add_from_download(
-                                                &text,
-                                                &client_req,
-                                                Some(&dirmgr.store),
-                                            )
-                                            .await
-                                    };
-                                    dirmgr.notify().await;
-                                    match outcome {
-                                        Ok(b) => b,
-                                        Err(e) => {
-                                            // TODO: in this case we might want to stop using this source.
-                                            warn!("error while adding directory info: {}", e);
-                                            false
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    // TODO: in this case we might want to stop using this source.
-                                    warn!("Error when expanding directory text: {}", e);
-                                    false
-                                }
-                            }
-                        }
-                        None => false,
-                    }
-                }
-            })
+            fut.then(|s| handle_download_response(Arc::clone(dirmgr), Arc::clone(&state), s))
         })
         .buffer_unordered(parallelism)
         .fold(false, |a, changed_now| async move { a | changed_now })
