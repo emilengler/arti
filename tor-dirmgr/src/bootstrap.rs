@@ -50,9 +50,15 @@ async fn fetch_single<R: Runtime>(
 }
 
 /// Launch a set of download requests for a set of missing objects in
-/// `missing`, and return each request along with the response it received.
+/// `missing`, and return a future for each request that resolves to
+/// the request and its response.
 ///
-/// Don't launch more than `parallelism` requests at once.
+/// This function returns a stream of futures which enables
+/// a call to [`futures::StreamExt::buffer_unordered`]
+/// on the returned stream to launch as many requests concurrently as desired.
+/// To chain additional computation onto the returned futures map over
+/// the stream and call [`futures::FutureExt::then`] on each future.
+/// This enables concurrent requests and concurrent handling of responses.
 async fn fetch_multiple<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     missing: Vec<DocId>,
