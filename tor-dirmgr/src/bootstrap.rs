@@ -138,43 +138,33 @@ async fn handle_download_response<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     state: Arc<Mutex<&mut Box<dyn DirState>>>,
     response: Option<(ClientRequest, DirResponse)>,
-) -> bool {
+) -> Result<bool> {
     match response {
         Some((client_req, dir_response)) => {
-            let text = if let Ok(text) = String::from_utf8(dir_response.into_output()) {
-                text
-            } else {
-                // TODO: in this case we might want to stop using this source.
-                warn!("Non-UTF-8 directory response");
-                return false;
-            };
-            match dirmgr.expand_response_text(&client_req, text).await {
-                Ok(text) => {
-                    let outcome = {
-                        // Lock state for shortest duration possible
-                        let mut state = state.lock().await;
-                        state
-                            .add_from_download(&text, &client_req, Some(&dirmgr.store))
-                            .await
-                    };
-                    dirmgr.notify().await;
-                    match outcome {
-                        Ok(b) => b,
-                        Err(e) => {
-                            // TODO: in this case we might want to stop using this source.
-                            warn!("error while adding directory info: {}", e);
-                            false
-                        }
-                    }
-                }
-                Err(e) => {
+            let text = String::from_utf8(dir_response.into_output())?;
+            let text = dirmgr
+                .expand_response_text(&client_req, text)
+                .await
+                .map_err(|e| {
                     // TODO: in this case we might want to stop using this source.
                     warn!("Error when expanding directory text: {}", e);
-                    false
-                }
-            }
+                    e
+                })?;
+            let outcome = {
+                // Lock state for shortest duration possible
+                let mut state = state.lock().await;
+                state
+                    .add_from_download(&text, &client_req, Some(&dirmgr.store))
+                    .await
+            };
+            dirmgr.notify().await;
+            outcome.map_err(|e| {
+                // TODO: in this case we might want to stop using this source.
+                warn!("error while adding directory info: {}", e);
+                e
+            })
         }
-        None => false,
+        None => Ok(false),
     }
 }
 
@@ -195,7 +185,12 @@ async fn download_attempt<R: Runtime>(
     let changed = fetch_multiple(Arc::clone(dirmgr), missing)
         .await?
         .map(|fut| {
-            fut.then(|s| handle_download_response(Arc::clone(dirmgr), Arc::clone(&state), s))
+            fut.then(|s| async {
+                // TODO: we might want to stop using this source on error
+                handle_download_response(Arc::clone(dirmgr), Arc::clone(&state), s)
+                    .await
+                    .unwrap_or(false)
+            })
         })
         .buffer_unordered(parallelism) // Request and handle responses concurrently
         .fold(false, |a, changed_now| async move { a | changed_now })
