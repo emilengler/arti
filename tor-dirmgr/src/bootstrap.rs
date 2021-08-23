@@ -144,6 +144,8 @@ async fn handle_download_response<R: Runtime>(
             let text = if let Ok(text) = String::from_utf8(dir_response.into_output()) {
                 text
             } else {
+                // TODO: in this case we might want to stop using this source.
+                warn!("Non-UTF-8 directory response");
                 return false;
             };
             match dirmgr.expand_response_text(&client_req, text).await {
