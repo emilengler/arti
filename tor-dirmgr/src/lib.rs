@@ -644,7 +644,7 @@ trait DirState: Send {
     fn add_from_cache(&mut self, docs: HashMap<DocId, DocumentText>) -> Result<bool>;
 
     /// Add information that we have just downloaded to this state; returns
-    /// 'true' if there as any change in this state.
+    /// 'true' if there is any change in this state.
     ///
     /// This method receives a copy of the original request, and
     /// should reject any documents that do not pertain to it.
