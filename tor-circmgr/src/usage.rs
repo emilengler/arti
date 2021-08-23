@@ -55,19 +55,28 @@ impl TargetPort {
     }
 }
 
-/// This type represent a token used to isolate unrelated streams on different circuits.
+/// A token used to isolate unrelated streams on different circuits.
 ///
-/// Tokens created with [`IsolationToken::new`] are all different from one another, and different
-/// from tokens created with [`IsolationToken::default`], however tokens created with [`IsolationToken::default`]
-/// are all equals.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+/// When two streams are associated with different isolation tokens, they
+/// can never share the same circuit.
+///
+/// Tokens created with [`IsolationToken::new`] are all different from
+/// one another, and different from tokens created with
+/// [`IsolationToken::no_isolation`]. However, tokens created with
+/// [`IsolationToken::no_isolation`] are all equal to one another.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct IsolationToken(u64);
 
+#[allow(clippy::new_without_default)]
 impl IsolationToken {
-    /// Create a new IsolationToken which is different from all other tokens this function created.
+    /// Create a new IsolationToken, unequal to any other token this function
+    /// has created.
     ///
     /// # Panics
-    /// Panics after 2^64 calls to prevent looping.
+    ///
+    /// Panics if we have already allocated 2^64 isolation tokens: in that
+    /// case, we have exhausted the space of possible tokens, and it is
+    /// no longer possible to ensure isolation.
     pub fn new() -> Self {
         /// Internal counter used to generate different tokens each time
         static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -76,6 +85,15 @@ impl IsolationToken {
         let token = COUNTER.fetch_add(1, Ordering::Relaxed);
         assert!(token < u64::MAX);
         IsolationToken(token)
+    }
+
+    /// Create a new IsolationToken equal to every other token created
+    /// with this function, but different from all tokens created with
+    /// `new`.
+    ///
+    /// This can be used when no isolation is wanted for some streams.
+    pub fn no_isolation() -> Self {
+        IsolationToken(0)
     }
 }
 
@@ -93,6 +111,11 @@ impl ExitPolicy {
         let policy = if p.ipv6 { &self.v6 } else { &self.v4 };
         policy.allows_port(p.port)
     }
+
+    /// Returns true if this policy allows any ports at all.
+    fn allows_some_port(&self) -> bool {
+        self.v4.allows_some_port() || self.v6.allows_some_port()
+    }
 }
 
 /// The purpose for which a circuit is being created.
@@ -105,11 +128,16 @@ pub(crate) enum TargetCircUsage {
     Dir,
     /// Use to exit to one or more ports.
     Exit {
-        /// List of ports the circuit has to allow
+        /// List of ports the circuit has to allow.
+        ///
+        /// If this list of ports is empty, then the circuit doesn't need
+        /// to support any particular port, but it still needs to be an exit.
         ports: Vec<TargetPort>,
         /// Isolation group the circuit shall be part of
         isolation_group: IsolationToken,
     },
+    /// For a circuit is only used for the purpose of building it.
+    TimeoutTesting,
 }
 
 /// The purposes for which a circuit is usable.
@@ -128,6 +156,8 @@ pub(crate) enum SupportedCircUsage {
         /// isolation group.
         isolation_group: Option<IsolationToken>,
     },
+    /// This circuit is not suitable for any usage.
+    NoUsage,
 }
 
 impl TargetCircUsage {
@@ -137,6 +167,7 @@ impl TargetCircUsage {
         &self,
         rng: &mut R,
         netdir: crate::DirInfo<'a>,
+        config: &crate::PathConfig,
     ) -> Result<(TorPath<'a>, SupportedCircUsage)> {
         match self {
             TargetCircUsage::Dir => {
@@ -147,7 +178,8 @@ impl TargetCircUsage {
                 ports: p,
                 isolation_group,
             } => {
-                let path = ExitPathBuilder::from_target_ports(p.clone()).pick_path(rng, netdir)?;
+                let path =
+                    ExitPathBuilder::from_target_ports(p.clone()).pick_path(rng, netdir, config)?;
                 let policy = path
                     .exit_policy()
                     .expect("ExitPathBuilder gave us a one-hop circuit?");
@@ -158,6 +190,19 @@ impl TargetCircUsage {
                         isolation_group: Some(*isolation_group),
                     },
                 ))
+            }
+            TargetCircUsage::TimeoutTesting => {
+                let path = ExitPathBuilder::for_timeout_testing().pick_path(rng, netdir, config)?;
+                let policy = path.exit_policy();
+                let usage = match policy {
+                    Some(policy) if policy.allows_some_port() => SupportedCircUsage::Exit {
+                        policy,
+                        isolation_group: None,
+                    },
+                    _ => SupportedCircUsage::NoUsage,
+                };
+
+                Ok((path, usage))
             }
         }
     }
@@ -183,6 +228,7 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
                 i1.map(|i1| i1 == *i2).unwrap_or(true)
                     && p2.iter().all(|port| p1.allows_port(*port))
             }
+            (Exit { .. } | NoUsage, TargetCircUsage::TimeoutTesting) => true,
             (_, _) => false,
         }
     }
@@ -208,6 +254,7 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
             (Exit { .. }, TargetCircUsage::Exit { .. }) => {
                 Err(Error::UsageNotSupported("Bad isolation".into()))
             }
+            (Exit { .. } | NoUsage, TargetCircUsage::TimeoutTesting) => Ok(()),
             (_, _) => Err(Error::UsageNotSupported("Incompatible usage".into())),
         }
     }
@@ -220,7 +267,7 @@ mod test {
 
     #[test]
     fn exit_policy() {
-        let network = testnet::construct_netdir();
+        let network = testnet::construct_netdir().unwrap_if_sufficient().unwrap();
 
         // Nodes with ID 0x0a through 0x13 and 0x1e through 0x27 are
         // exits.  Odd-numbered ones allow only ports 80 and 443;
@@ -254,7 +301,7 @@ mod test {
         assert!(!ep_full.allows_port(TargetPort::ipv6(80)));
 
         // Check is_supported_by while we're here.
-        // TODO: Make sure that if BadExit is set, this fnuction returns no
+        // TODO: Make sure that if BadExit is set, this function returns no
         assert!(TargetPort::ipv4(80).is_supported_by(&web_exit));
         assert!(!TargetPort::ipv6(80).is_supported_by(&web_exit));
     }
@@ -402,13 +449,16 @@ mod test {
     fn buildpath() {
         use crate::mgr::AbstractSpec;
         let mut rng = rand::thread_rng();
-        let netdir = testnet::construct_netdir();
+        let netdir = testnet::construct_netdir().unwrap_if_sufficient().unwrap();
         let di = (&netdir).into();
+        let config = crate::PathConfig::default();
 
         // Only doing basic tests for now.  We'll test the path
         // building code a lot more closely in the tests for TorPath
         // and friends.
-        let (p_dir, u_dir) = TargetCircUsage::Dir.build_path(&mut rng, di).unwrap();
+        let (p_dir, u_dir) = TargetCircUsage::Dir
+            .build_path(&mut rng, di, &config)
+            .unwrap();
         assert!(matches!(u_dir, SupportedCircUsage::Dir));
         assert_eq!(p_dir.len(), 1);
 
@@ -417,7 +467,7 @@ mod test {
             ports: vec![TargetPort::ipv4(995)],
             isolation_group,
         };
-        let (p_exit, u_exit) = exit_usage.build_path(&mut rng, di).unwrap();
+        let (p_exit, u_exit) = exit_usage.build_path(&mut rng, di, &config).unwrap();
         assert!(matches!(
             u_exit,
             SupportedCircUsage::Exit {

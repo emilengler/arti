@@ -5,13 +5,13 @@ use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
-use log::{error, info, warn};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::Result as IoResult;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::{error, info, warn};
 
 use tor_client::{ConnectPrefs, IsolationToken, TorClient};
 use tor_rtcompat::{Runtime, TcpListener, TimeoutError};
@@ -29,7 +29,7 @@ fn stream_preference(req: &SocksRequest, addr: &str) -> ConnectPrefs {
     } else if addr.parse::<Ipv6Addr>().is_ok() {
         // If they asked for an IPv6 address correctly, nothing else will do.
         prefs.ipv6_only();
-    } else if req.version() == 4 {
+    } else if req.version() == tor_socksproto::SocksVersion::V4 {
         // SOCKS4 and SOCKS4a only support IPv4
         prefs.ipv4_only();
     } else {

@@ -18,6 +18,7 @@ use tor_chanmgr::ChanMgr;
 use tor_linkspec::{ChanTarget, OwnedChanTarget, OwnedCircTarget};
 use tor_proto::circuit::{CircParameters, ClientCirc, PendingClientCirc};
 use tor_rtcompat::{Runtime, SleepProviderExt};
+use tracing::warn;
 
 /// Represents an objects that can be constructed in a circuit-like way.
 ///
@@ -247,15 +248,46 @@ impl<
 pub struct CircuitBuilder<R: Runtime> {
     /// The underlying [`Builder`] object
     builder: Arc<Builder<R, Arc<ClientCirc>, ParetoTimeoutEstimator>>,
+    /// Configuration for how to choose paths for circuits.
+    path_config: crate::PathConfig,
+    /// State-manager object to use in storing current state.
+    #[allow(dead_code)]
+    storage: crate::state::DynStateMgr,
 }
 
 impl<R: Runtime> CircuitBuilder<R> {
     /// Construct a new [`CircuitBuilder`].
-    pub fn new(runtime: R, chanmgr: Arc<ChanMgr<R>>) -> Self {
-        let timeouts = ParetoTimeoutEstimator::default();
+    // TODO: eventually I'd like to make this a public function, but
+    // DynStateMgr is private.
+    pub(crate) fn new(
+        runtime: R,
+        chanmgr: Arc<ChanMgr<R>>,
+        path_config: crate::PathConfig,
+        storage: crate::state::DynStateMgr,
+    ) -> Self {
+        let timeouts = match storage.load_timeout_data() {
+            Ok(Some(v)) => ParetoTimeoutEstimator::from_state(v),
+            Ok(None) => ParetoTimeoutEstimator::default(),
+            Err(e) => {
+                warn!("Unable to load timeout state: {}", e);
+                ParetoTimeoutEstimator::default()
+            }
+        };
+
         CircuitBuilder {
             builder: Arc::new(Builder::new(runtime, chanmgr, timeouts)),
+            path_config,
+            storage,
         }
+    }
+
+    /// Flush state to the state manager.
+    pub fn save_state(&self) -> Result<()> {
+        // TODO: someday we'll want to only do this if there is something
+        // changed.
+        let _ignore = self.storage.try_lock()?; // XXXX don't ignore.
+        let state = self.builder.timeouts.build_state();
+        self.storage.save_timeout_data(&state)
     }
 
     /// Reconfigure this builder using the latest set of network parameters.
@@ -291,6 +323,16 @@ impl<R: Runtime> CircuitBuilder<R> {
         let owned = path.try_into()?;
         self.build_owned(owned, params, rng).await
     }
+
+    /// Return the path configuration used by this builder.
+    pub(crate) fn path_config(&self) -> &crate::PathConfig {
+        &self.path_config
+    }
+
+    /// Return true if this builder is currently learning timeout info.
+    pub(crate) fn learning_timeouts(&self) -> bool {
+        self.builder.timeouts.learning_timeouts()
+    }
 }
 
 /// Helper function: spawn a future as a background task, and run it with
@@ -315,12 +357,17 @@ where
 {
     let (snd, rcv) = oneshot::channel();
     let rt = runtime.clone();
+    // We create these futures now, since we want them to look at the current
+    // time when they decide when to expire.
+    let inner_timeout_future = rt.timeout(abandon, fut);
+    let outer_timeout_future = rt.timeout(timeout, rcv);
+
     runtime.spawn(async move {
-        let result = rt.timeout(abandon, fut).await;
+        let result = inner_timeout_future.await;
         let _ignore_cancelled_error = snd.send(result);
     })?;
 
-    let outcome = runtime.timeout(timeout, rcv).await;
+    let outcome = outer_timeout_future.await;
     // 4 layers of error to collapse:
     //     One from the receiver being cancelled.
     //     One from the outer timeout.
@@ -526,6 +573,9 @@ mod test {
         }
         fn timeouts(&self, _action: &Action) -> (Duration, Duration) {
             (Duration::from_secs(3), Duration::from_secs(100))
+        }
+        fn learning_timeouts(&self) -> bool {
+            false
         }
     }
 

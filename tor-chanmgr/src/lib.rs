@@ -6,13 +6,13 @@
 //! [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
 //! implement [Tor](https://www.torproject.org/) in Rust.
 //!
-//! In Tor, a Channel is a connection to a Tor relay.  It can be
+//! In Tor, a channel is a connection to a Tor relay.  It can be
 //! direct via TLS, or indirect via TLS over a pluggable transport.
 //! (For now, only direct channels are supported.)
 //!
 //! Since a channel can be used for more than one circuit, it's
 //! important to reuse channels when possible.  This crate implements
-//! a [`ChanMg`r] type that can be used to create channels on demand,
+//! a [`ChanMgr`] type that can be used to create channels on demand,
 //! and return existing channels when they already exist.
 
 #![deny(missing_docs)]
@@ -20,6 +20,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -27,15 +28,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 mod builder;
@@ -58,7 +62,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// A Type that remembers a set of live channels, and launches new
 /// ones on request.
 ///
-/// Use the [ChanMgr::get_or_launch] function to craete a new channel, or
+/// Use the [ChanMgr::get_or_launch] function to create a new channel, or
 /// get one if it exists.
 pub struct ChanMgr<R: Runtime> {
     /// Internal channel manager object that does the actual work.

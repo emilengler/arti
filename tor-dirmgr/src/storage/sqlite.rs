@@ -40,8 +40,6 @@ pub(crate) struct SqliteStore {
     ///
     /// (sqlite supports that with connection locking, but we want to
     /// be a little more coarse-grained here)
-    // XXXX This can behave oddly or fail if this process already has
-    // XXXX another instance of this file; see fslock documentation.
     lockfile: Option<fslock::LockFile>,
 }
 
@@ -69,23 +67,17 @@ impl SqliteStore {
         let blobpath = path.join("dir_blobs/");
         let lockpath = path.join("dir.lock");
 
-        #[cfg(target_family = "unix")]
         if !readonly {
-            std::fs::DirBuilder::new()
-                .recursive(true)
-                .mode(0o700)
-                .create(&blobpath)
-                .with_context(|| format!("Creating directory at {:?}", &blobpath))?;
-        }
-        #[cfg(not(target_family = "unix"))]
-        if !readonly {
-            std::fs::DirBuilder::new()
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(target_family = "unix")]
+            builder.mode(0o700);
+            builder
                 .recursive(true)
                 .create(&blobpath)
                 .with_context(|| format!("Creating directory at {:?}", &blobpath))?;
         }
 
-        let mut lockfile = fslock::LockFile::open(&lockpath)?;
+        let mut lockfile = fslock::LockFile::open_excl(&lockpath)?;
         if !readonly && !lockfile.try_lock()? {
             readonly = true; // we couldn't get the lock!
         };
@@ -132,7 +124,7 @@ impl SqliteStore {
 
     /// Try to upgrade from a read-only connection to a read-write connection.
     ///
-    /// Return true on succcess; false if another process had the lock.
+    /// Return true on success; false if another process had the lock.
     pub(crate) fn upgrade_to_readwrite(&mut self) -> Result<bool> {
         if self.is_readonly() && self.sql_path.is_some() {
             let lf = self.lockfile.as_mut().unwrap();
@@ -242,7 +234,7 @@ impl SqliteStore {
         Ok(result)
     }
 
-    /// Read a blob from disk, mmapping it if possible.
+    /// Read a blob from disk, mapping it if possible.
     fn read_blob<P>(&self, path: P) -> Result<InputString>
     where
         P: AsRef<Path>,
@@ -858,7 +850,7 @@ const INSERT_EXTDOC: &str = "
   VALUES ( ?, datetime('now'), ?, ?, ? );
 ";
 
-/// Qury: Add a new consensus.
+/// Query: Add a new consensus.
 const INSERT_CONSENSUS: &str = "
   INSERT OR REPLACE INTO Consensuses
     ( valid_after, fresh_until, valid_until, flavor, pending, sha3_of_signed_part, digest )

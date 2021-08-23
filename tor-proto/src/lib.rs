@@ -7,7 +7,7 @@
 //! implement [Tor](https://www.torproject.org/) in Rust.
 //! Most people shouldn't use this crate directly,
 //! since its APIs are needlessly low-level for most purposes, and it is
-//! easy to miuse them in an incsecure or privacy-violating way.
+//! easy to misuse them in an insecure or privacy-violating way.
 //!
 //! Most people should use the [`tor-client`] crate instead.  This crate is
 //! of interest mainly for those that want to access the Tor protocols at
@@ -24,8 +24,8 @@
 //! each corresponding roughly to an application-level request.
 //!
 //! This crate implements the logic, protocols, and cryptography that
-//! implement these [channel::Channel]s, [circuit::ClientCirc]s, and
-//! [stream::DataStream]s.  It uses rust async code and future-related
+//! implement these [`channel::Channel`]s, [`circuit::ClientCirc`]s, and
+//! [`stream::DataStream`]s.  It uses rust async code and future-related
 //! traits, and is intended to work with (nearly) any executor
 //! implementation that complies with the futures API.  It should also
 //! work with nearly any TLS implementation that exposes AsyncRead and
@@ -45,10 +45,10 @@
 //!
 //! In order to create channels and circuits, you'll need to know
 //! about some Tor relays, and expose their information via
-//! [tor_linkspec::ChanTarget] and [tor_linkspec::CircTarget].
-//! Currently, the [tor-netdir] crate is the easiest way to do so.
+//! [`tor_linkspec::ChanTarget`] and [`tor_linkspec::CircTarget`].
+//! Currently, the [`tor-netdir`] crate is the easiest way to do so.
 //!
-//! For an example of this crate in action, see the `tor-client`
+//! For an example of this crate in action, see the [`tor-client`]
 //! library, or the `arti` CLI.
 //!
 //! # Design notes
@@ -90,6 +90,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -97,9 +98,11 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
@@ -107,6 +110,7 @@
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
 #![allow(clippy::unnecessary_wraps)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub mod channel;

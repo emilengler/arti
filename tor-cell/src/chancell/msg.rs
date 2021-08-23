@@ -529,7 +529,7 @@ caret_int! {
         PROTOCOL = 1,
         /// Internal error.
         INTERNAL = 2,
-        /// Client sent a TRUNCATE commant.
+        /// Client sent a TRUNCATE command.
         REQUESTED = 3,
         /// Relay is hibernating and not accepting requests
         HIBERNATING = 4,
@@ -600,8 +600,8 @@ fn take_one_netinfo_addr(r: &mut Reader<'_>) -> Result<Option<IpAddr>> {
             (&mut bytes[..]).copy_from_slice(abody);
             Ok(Some(IpAddr::V6(bytes.into())))
         }
-        (0x04, _) => Ok(None), // TODO SPEC this is ignored.
-        (0x06, _) => Ok(None), // TODO SPEC this is ignored.
+        (0x04, _) => Ok(None),
+        (0x06, _) => Ok(None),
         (_, _) => Ok(None),
     }
 }
@@ -679,14 +679,19 @@ pub struct Versions {
 }
 impl Versions {
     /// Construct a new Versions message using a provided list of link
-    /// protocols
-    pub fn new<B>(vs: B) -> Self
+    /// protocols.
+    ///
+    /// Returns an error if the list of versions is too long.
+    pub fn new<B>(vs: B) -> crate::Result<Self>
     where
         B: Into<Vec<u16>>,
     {
         let versions = vs.into();
-        assert!(versions.len() < (std::u16::MAX / 2) as usize);
-        Self { versions }
+        if versions.len() < (std::u16::MAX / 2) as usize {
+            Ok(Self { versions })
+        } else {
+            Err(crate::Error::CantEncode)
+        }
     }
     /// Encode this VERSIONS cell in the manner expected for a handshake.
     ///
@@ -750,6 +755,20 @@ pub struct PaddingNegotiate {
     /// Suggested upper-bound value for inter-packet timeout in msec.
     // XXXX is that right?
     ito_high_ms: u16,
+}
+impl PaddingNegotiate {
+    /// Create a new PaddingNegotiate message.
+    ///
+    /// If `start` is true, this is a message to enable padding. Otherwise
+    /// this is a message to disable padding.
+    pub fn new(start: bool, ito_low_ms: u16, ito_high_ms: u16) -> Self {
+        let command = if start { 2 } else { 1 };
+        Self {
+            command,
+            ito_low_ms,
+            ito_high_ms,
+        }
+    }
 }
 impl Body for PaddingNegotiate {
     fn into_message(self) -> ChanMsg {

@@ -41,7 +41,7 @@
 //! [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
 //! implement [Tor](https://www.torproject.org/) in Rust.
 //!
-//! # Futureproofing note:
+//! # Futureproofing note
 //!
 //! There are two pending proposals to remove the one-to-one
 //! correspondence between relay cells and relay messages.
@@ -54,7 +54,7 @@
 //! on the other hand, would allow multiple relay messages to be
 //! packed into a single RELAY cell.
 //!
-//! The distinction betweeen RelayCell and RelayMsg is meant in part
+//! The distinction between RelayCell and RelayMsg is meant in part
 //! to future-proof arti against these proposals if they are adopted.
 //!
 //! # Limitations
@@ -64,13 +64,14 @@
 //! There isn't enough documentation.
 //!
 //! This is the first part of the project I started working on, and
-//! probably reflects the most naive understranding of Rust.
+//! probably reflects the most naive understanding of Rust.
 
 #![deny(missing_docs)]
 #![warn(noop_method_call)]
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -78,15 +79,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub mod chancell;

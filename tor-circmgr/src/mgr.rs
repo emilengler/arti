@@ -22,6 +22,7 @@
 //    - Error from pick_action()
 //    - Error reported by restrict_mut?
 
+use crate::config::{CircuitTiming, RequestTiming};
 use crate::{DirInfo, Error, Result};
 
 use retry_error::RetryError;
@@ -32,12 +33,13 @@ use futures::channel::{mpsc, oneshot};
 use futures::future::{FutureExt, Shared};
 use futures::stream::{FuturesUnordered, StreamExt};
 use futures::task::SpawnExt;
-use log::{info, log};
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::fmt::Debug;
 use std::hash::Hash;
 use std::sync::{self, Arc, Weak};
 use std::time::{Duration, Instant};
+use tracing::{debug, info};
 use weak_table::PtrWeakHashSet;
 
 mod streams;
@@ -57,7 +59,7 @@ mod streams;
 /// If an `AbstractSpec` A allows every operation described in a
 /// `Usage` B, we say that A "supports" B.
 ///
-/// If one `AbstractSpec` A supports every opertion suppored by
+/// If one `AbstractSpec` A supports every operation supported by
 /// another `AbstractSpec` B, we say that A "contains" B.
 ///
 /// Some circuits can be used for either of two operations, but not both.
@@ -73,7 +75,7 @@ pub(crate) trait AbstractSpec: Clone + Debug {
     /// Return true if this spec permits the usage described by `other`.
     ///
     /// If this function returns `true`, then it is okay to use a circuit
-    /// with this spec for the target usage desribed by `other`.
+    /// with this spec for the target usage described by `other`.
     fn supports(&self, other: &Self::Usage) -> bool;
 
     /// Change the value of this spec based on the circuit having
@@ -198,6 +200,47 @@ pub(crate) trait AbstractCircBuilder: Send + Sync {
         let _ = usage; // default implementation ignores this.
         1
     }
+
+    /// Return true if we are currently attempting to learn circuit
+    /// timeouts by building testing circuits.
+    fn learning_timeouts(&self) -> bool;
+}
+
+/// Enumeration to track the expiration state of a circuit.
+///
+/// A circuit an either be unused (at which point it should expire if it is
+/// _still unused_ by a certain time, or dirty (at which point it should
+/// expire after a certain duration).
+///
+/// All circuits start out "unused" and become "dirty" when their spec
+/// is first restricted -- that is, when they are first handed out to be
+/// used for a request.
+enum ExpirationInfo {
+    /// The circuit has never been used.
+    Unused {
+        /// A time when the circuit should expire.
+        use_before: Instant,
+    },
+    /// The circuit has been used (or at least, restricted for use with a
+    /// request) at least once.
+    Dirty {
+        /// The time at which this circuit's spec was first restricted.
+        dirty_since: Instant,
+    },
+}
+
+impl ExpirationInfo {
+    /// Return an ExpirationInfo for a newly created circuit.
+    fn new(use_before: Instant) -> Self {
+        ExpirationInfo::Unused { use_before }
+    }
+
+    /// Mark this ExpirationInfo as dirty, if it is not already dirty.
+    fn mark_dirty(&mut self, now: Instant) {
+        if matches!(self, ExpirationInfo::Unused { .. }) {
+            *self = ExpirationInfo::Dirty { dirty_since: now };
+        }
+    }
 }
 
 /// An entry for an open circuit held by an `AbstractCircMgr`.
@@ -206,17 +249,21 @@ struct OpenEntry<B: AbstractCircBuilder> {
     spec: B::Spec,
     /// The circuit under management.
     circ: Arc<B::Circ>,
-    /// The time at which this circuit's spec was first restricted.
-    dirty_since: Option<Instant>,
+    /// When does this circuit expire?
+    ///
+    /// (Note that expired circuits are removed from the manager,
+    /// which does not actually close them until there are no more
+    /// references to them.)
+    expiration: ExpirationInfo,
 }
 
 impl<B: AbstractCircBuilder> OpenEntry<B> {
     /// Make a new OpenEntry for a given circuit and spec.
-    fn new(spec: B::Spec, circ: Arc<B::Circ>) -> Self {
+    fn new(spec: B::Spec, circ: Arc<B::Circ>, expiration: ExpirationInfo) -> Self {
         OpenEntry {
             spec,
             circ,
-            dirty_since: None,
+            expiration,
         }
     }
 
@@ -235,7 +282,7 @@ impl<B: AbstractCircBuilder> OpenEntry<B> {
         now: Instant,
     ) -> Result<()> {
         self.spec.restrict_mut(usage)?;
-        self.dirty_since.get_or_insert(now);
+        self.expiration.mark_dirty(now);
         Ok(())
     }
 
@@ -263,11 +310,13 @@ impl<B: AbstractCircBuilder> OpenEntry<B> {
         slice.choose_mut(&mut rng).expect("Input list was empty")
     }
 
-    /// Return true if this circuit has been marked as dirty before `cutoff`.
-    fn marked_dirty_before(&self, when: Instant) -> bool {
-        match self.dirty_since {
-            Some(dirty) => dirty < when,
-            None => false,
+    /// Return true if this circuit has been marked as dirty before
+    /// `dirty_cutoff`, or if it is an unused circuit set to expire before
+    /// `unused_cutoff`.
+    fn should_expire(&self, unused_cutoff: Instant, dirty_cutoff: Instant) -> bool {
+        match self.expiration {
+            ExpirationInfo::Unused { use_before } => use_before <= unused_cutoff,
+            ExpirationInfo::Dirty { dirty_since } => dirty_since <= dirty_cutoff,
         }
     }
 }
@@ -451,10 +500,14 @@ impl<B: AbstractCircBuilder> CircList<B> {
         self.open_circs.remove(id)
     }
 
-    /// Remove every open circuit marked as dirty before `cutoff`.
-    fn expire_dirty_before(&mut self, cutoff: Instant) {
+    /// Remove circuits based on expiration times.
+    ///
+    /// We remove every unused circuit that is set to expire by
+    /// `unused_cutoff`, and every dirty circuit that has been dirty
+    /// since before `dirty_cutoff`.
+    fn expire_circs(&mut self, unused_cutoff: Instant, dirty_cutoff: Instant) {
         self.open_circs
-            .retain(|_k, v| !v.marked_dirty_before(cutoff))
+            .retain(|_k, v| !v.should_expire(unused_cutoff, dirty_cutoff));
     }
 
     /// Add `pending` to the set of in-progress circuits.
@@ -501,6 +554,33 @@ impl<B: AbstractCircBuilder> CircList<B> {
     }
 }
 
+/// Timing information for circuits that have been built but never used.
+///
+/// Currently taken from the network parameters.
+struct UnusedTimings {
+    /// Minimum lifetime of a circuit created while learning
+    /// circuit timeouts.
+    learning: Duration,
+    /// Minimum lifetime of a circuit created while not learning
+    /// circuit timeouts.
+    not_learning: Duration,
+}
+
+// This isn't really fallible, given the definition of the underlying
+// types.
+#[allow(clippy::fallible_impl_from)]
+impl From<&tor_netdir::params::NetParameters> for UnusedTimings {
+    fn from(v: &tor_netdir::params::NetParameters) -> Self {
+        UnusedTimings {
+            learning: v
+                .unused_client_circ_timeout_while_learning_cbt
+                .try_into()
+                .unwrap(),
+            not_learning: v.unused_client_circ_timeout.try_into().unwrap(),
+        }
+    }
+}
+
 /// Abstract implementation for circuit management.
 ///
 /// The algorithm provided here is fairly simple. In its simplest form:
@@ -528,6 +608,14 @@ pub(crate) struct AbstractCircMgr<B: AbstractCircBuilder, R: Runtime> {
     /// A CircList to manage our list of circuits, requests, and
     /// pending circuits.
     circs: sync::Mutex<CircList<B>>,
+
+    /// Configured timing and retry rules for attaching requests to circuits.
+    request_timing: RequestTiming,
+    /// Configured information about when to expire circuits.
+    circuit_timing: CircuitTiming,
+
+    /// Minimum lifetime of an unused circuit.
+    unused_timing: sync::Mutex<UnusedTimings>,
 }
 
 /// An action to take in order to satisfy a request for a circuit.
@@ -544,12 +632,29 @@ enum Action<B: AbstractCircBuilder> {
 
 impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
     /// Construct a new AbstractCircMgr.
-    pub(crate) fn new(builder: B, runtime: R) -> Self {
+    pub(crate) fn new(
+        builder: B,
+        runtime: R,
+        request_timing: RequestTiming,
+        circuit_timing: CircuitTiming,
+    ) -> Self {
+        let circs = sync::Mutex::new(CircList::new());
+        let dflt_params = tor_netdir::params::NetParameters::default();
+        let unused_timing = (&dflt_params).into();
         AbstractCircMgr {
             builder,
             runtime,
-            circs: sync::Mutex::new(CircList::new()),
+            circs,
+            request_timing,
+            circuit_timing,
+            unused_timing: sync::Mutex::new(unused_timing),
         }
+    }
+
+    /// Reconfigure this manager using the latest set of network parameters.
+    pub(crate) fn update_network_parameters(&self, p: &tor_netdir::params::NetParameters) {
+        let mut u = self.unused_timing.lock().unwrap();
+        *u = p.into();
     }
 
     /// Return a circuit suitable for use with a given `usage`,
@@ -562,11 +667,9 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         usage: &<B::Spec as AbstractSpec>::Usage,
         dir: DirInfo<'_>,
     ) -> Result<Arc<B::Circ>> {
-        // TODO: Timeouts and retries should be configurable, and possibly
-        // even an argument to this function?
-        let wait_for_circ = Duration::from_secs(60);
+        let wait_for_circ = self.request_timing.request_timeout;
         let timeout_at = self.runtime.now() + wait_for_circ;
-        let max_tries: usize = 32;
+        let max_tries = self.request_timing.request_max_retries;
 
         let mut retry_err =
             RetryError /* ::<Box<Error>> */::in_attempt_to("find or build a circuit");
@@ -729,7 +832,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         };
 
         // Insert ourself into the list of pending requests, and make a
-        // stream for us to listn on for notification from pending circuits
+        // stream for us to listen on for notification from pending circuits
         // other than those we are pending on.
         let (pending_request, additional_stream) = {
             let (send, recv) = mpsc::channel(8);
@@ -771,17 +874,17 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
                         }
                         Err(e) => {
                             // TODO: as below, improve this log message.
-                            let level = match src {
-                                streams::Source::Left => log::Level::Info,
-                                _ => log::Level::Debug,
-                            };
-                            log!(
-                                level,
-                                "{:?} suggested we use {:?}, but restrictions failed: {:?}",
-                                src,
-                                id,
-                                &e
-                            );
+                            if src == streams::Source::Left {
+                                info!(
+                                    "{:?} suggested we use {:?}, but restrictions failed: {:?}",
+                                    src, id, &e
+                                );
+                            } else {
+                                debug!(
+                                    "{:?} suggested we use {:?}, but restrictions failed: {:?}",
+                                    src, id, &e
+                                );
+                            }
                             if src == streams::Source::Left {
                                 retry_error.push(e)
                             }
@@ -802,6 +905,32 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         drop(pending_request);
 
         Err(retry_error)
+    }
+
+    /// Launch a managed circuit for a target usage, without checking
+    /// whether one already exists or is pending.
+    ///
+    /// Return a listener that will be informed when the circuit is done.
+    pub(crate) fn launch_by_usage(
+        self: Arc<Self>,
+        dir: DirInfo<'_>,
+        usage: &<B::Spec as AbstractSpec>::Usage,
+    ) -> Result<Shared<oneshot::Receiver<PendResult<B>>>> {
+        // XXXX duplicate code with pick_action
+        let (plan, bspec) = self.builder.plan_circuit(usage, dir)?;
+        let (pending, sender) = PendingEntry::new(bspec);
+        let pending = Arc::new(pending);
+        self.circs
+            .lock()
+            .unwrap()
+            .add_pending_circ(Arc::clone(&pending));
+        let plan = CircBuildPlan {
+            plan,
+            sender,
+            pending,
+        };
+
+        Ok(self.launch(usage, plan))
     }
 
     /// Actually launch a circuit in a background task.
@@ -839,7 +968,8 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
                         // assignment.
                         //
                         // new_spec.restrict_mut(&usage_copy).unwrap();
-                        let open_ent = OpenEntry::new(new_spec.clone(), circ);
+                        let use_before = self.pick_use_before_time();
+                        let open_ent = OpenEntry::new(new_spec.clone(), circ, use_before);
                         {
                             let mut list = self.circs.lock().expect("poisoned lock");
                             list.add_open(open_ent);
@@ -882,9 +1012,9 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         wait_on_future
     }
 
-    /// Remove the cicuit with a given `id` from this manager.
+    /// Remove the circuit with a given `id` from this manager.
     ///
-    /// After this fnuction is called, that cicuit will no longer be handed
+    /// After this function is called, that circuit will no longer be handed
     /// out to any future requests.
     ///
     /// Return None if we have no circuit with the given ID.
@@ -893,14 +1023,21 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         list.take_open(id).map(|e| e.circ)
     }
 
-    /// Expire every circuit that was marked as dirty at a time before
-    /// `cutoff`.
+    /// Expire circuits according to the rules in `config` and the
+    /// current time `now`.
     ///
     /// Expired circuits will not be automatically closed, but they will
     /// no longer be given out for new circuits.
-    pub(crate) fn expire_dirty_before(&self, cutoff: Instant) {
+    pub(crate) fn expire_circs(&self, now: Instant) {
         let mut list = self.circs.lock().expect("poisoned lock");
-        list.expire_dirty_before(cutoff)
+        let dirty_cutoff = now - self.circuit_timing.max_dirtiness;
+        list.expire_circs(now, dirty_cutoff)
+    }
+
+    /// Return the number of open circuits held by this circuit manager.
+    pub(crate) fn n_circs(&self) -> usize {
+        let list = self.circs.lock().expect("poisoned lock");
+        list.open_circs.len()
     }
 
     /// Get a reference to this manager's runtime.
@@ -911,6 +1048,27 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
     /// Get a reference to this manager's builder.
     pub(crate) fn peek_builder(&self) -> &B {
         &self.builder
+    }
+
+    /// Pick a time when a new circuit should expire if it has not yet
+    /// been used.
+    fn pick_use_before_time(&self) -> ExpirationInfo {
+        let delay = {
+            let timings = self.unused_timing.lock().unwrap();
+            if self.builder.learning_timeouts() {
+                timings.learning
+            } else {
+                // TODO: In Tor, this calculation also depends on
+                // stuff related to predicted ports and channel
+                // padding.
+                use rand::Rng;
+                let mut rng = rand::thread_rng();
+                rng.gen_range(timings.not_learning..timings.not_learning * 2)
+            }
+        };
+
+        let now = self.runtime.now();
+        ExpirationInfo::new(now + delay)
     }
 }
 
@@ -1070,6 +1228,10 @@ mod test {
                 FakeOp::NoPlan => unreachable!(),
             }
         }
+
+        fn learning_timeouts(&self) -> bool {
+            false
+        }
     }
 
     impl<RT: Runtime> FakeBuilder<RT> {
@@ -1108,7 +1270,12 @@ mod test {
 
             let builder = FakeBuilder::new(&rt);
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
 
             let webports = FakeSpec::new(vec![80_u16, 443]);
 
@@ -1169,7 +1336,12 @@ mod test {
             let builder = FakeBuilder::new(&rt);
             builder.set(ports.clone(), vec![FakeOp::Fail, FakeOp::Timeout]);
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
             assert!(matches!(c1, Err(Error::RequestFailed(_))));
@@ -1187,7 +1359,12 @@ mod test {
                 ],
             );
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
             assert!(matches!(c1, Err(Error::RequestFailed(_))));
@@ -1205,7 +1382,12 @@ mod test {
             let builder = FakeBuilder::new(&rt);
             builder.set(ports.clone(), vec![FakeOp::NoPlan; 2000]);
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
             assert!(matches!(c1, Err(Error::RequestFailed(_))));
@@ -1222,7 +1404,12 @@ mod test {
             let builder = FakeBuilder::new(&rt);
             builder.set(ports.clone(), vec![FakeOp::Fail; 1000]);
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
             assert!(matches!(c1, Err(Error::RequestFailed(_))));
@@ -1236,7 +1423,7 @@ mod test {
             let ports = FakeSpec::new(vec![80_u16, 443]);
 
             // The first time this is called, it will build a circuit
-            // with the wrong spec.  (A circuit biudler should never
+            // with the wrong spec.  (A circuit builder should never
             // actually _do_ that, but it's something we code for.)
             let builder = FakeBuilder::new(&rt);
             builder.set(
@@ -1244,7 +1431,12 @@ mod test {
                 vec![FakeOp::WrongSpec(FakeSpec::new(vec![22_u16]))],
             );
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
             assert!(matches!(c1, Ok(_)));
@@ -1262,7 +1454,12 @@ mod test {
             let builder = FakeBuilder::new(&rt);
             builder.set(ports.clone(), vec![FakeOp::Fail, FakeOp::Fail]);
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
 
             let (c1, c2) = rt
                 .wait_for(futures::future::join(
@@ -1283,10 +1480,15 @@ mod test {
         tor_rtcompat::test_with_one_runtime!(|rt| async {
             let rt = MockSleepRuntime::new(rt);
             let builder = FakeBuilder::new(&rt);
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
 
             let ports = FakeSpec::new(vec![443_u16]);
-            // Set our isolation so that iso1 and iso2 can't share a cicuit,
+            // Set our isolation so that iso1 and iso2 can't share a circuit,
             // but no_iso can share a circuit with either.
             let iso1 = ports.clone().isolated(1);
             let iso2 = ports.clone().isolated(2);
@@ -1346,7 +1548,12 @@ mod test {
             let builder = FakeBuilder::new(&rt);
             builder.set(ports1.clone(), vec![FakeOp::Timeout]);
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
             // Note that ports2 will be wider than ports1, so the second
             // request will have to launch a new circuit.
 
@@ -1376,7 +1583,12 @@ mod test {
             // other circuits that will use it.
             let rt = MockSleepRuntime::new(rt);
             let builder = FakeBuilder::new(&rt);
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                CircuitTiming::default(),
+            ));
 
             let ports1 = FakeSpec::new(vec![80_u16, 443]);
             let ports2 = FakeSpec::new(vec![80_u16]);
@@ -1409,11 +1621,23 @@ mod test {
     #[test]
     fn expiration() {
         tor_rtcompat::test_with_one_runtime!(|rt| async {
+            use crate::config::CircuitTimingBuilder;
             // Now let's make some circuits -- one dirty, one clean, and
             // make sure that one expires and one doesn't.
             let rt = MockSleepRuntime::new(rt);
             let builder = FakeBuilder::new(&rt);
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone()));
+
+            let circuit_timing = CircuitTimingBuilder::default()
+                .set_max_dirtiness(Duration::from_secs(15))
+                .build()
+                .unwrap();
+
+            let mgr = Arc::new(AbstractCircMgr::new(
+                builder,
+                rt.clone(),
+                RequestTiming::default(),
+                circuit_timing,
+            ));
 
             let imap = FakeSpec::new(vec![993_u16]);
             let pop = FakeSpec::new(vec![995_u16]);
@@ -1428,16 +1652,17 @@ mod test {
             assert!(ok.is_ok());
             let pop1 = pop1.unwrap();
 
-            rt.advance(Duration::from_secs(15)).await;
-            let expiration_cutoff = mgr.peek_runtime().now();
+            rt.advance(Duration::from_secs(30)).await;
             rt.advance(Duration::from_secs(15)).await;
             let imap1 = rt.wait_for(mgr.get_or_launch(&imap, di())).await.unwrap();
 
             // This should expire the pop circuit, since it came from
             // get_or_launch() [which marks the circuit as being
             // used].  It should not expire the imap circuit, since
-            // it was not dity until 15 seconds after the cutoff.
-            mgr.expire_dirty_before(expiration_cutoff);
+            // it was not dirty until 15 seconds after the cutoff.
+            let now = rt.now();
+
+            mgr.expire_circs(now);
 
             let (pop2, imap2) = rt
                 .wait_for(futures::future::join(

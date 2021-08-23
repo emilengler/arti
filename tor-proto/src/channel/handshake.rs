@@ -23,7 +23,7 @@ use digest::Digest;
 
 use super::CellFrame;
 
-use log::{debug, trace};
+use tracing::{debug, trace};
 
 /// A list of the link protocols that we support.
 // We only support version 4 for now, since we don't do padding right.
@@ -105,7 +105,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> OutboundClientHandshake
         trace!("{}: sending versions", self.unique_id);
         // Send versions cell
         {
-            let my_versions = msg::Versions::new(LINK_PROTOCOLS);
+            let my_versions = msg::Versions::new(LINK_PROTOCOLS)?;
             self.tls.write(&my_versions.encode_for_handshake()).await?;
             self.tls.flush().await?;
         }
@@ -169,7 +169,13 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> OutboundClientHandshake
                     certs = Some(c);
                 }
                 Netinfo(n) => {
-                    assert!(netinfo.is_none());
+                    if netinfo.is_some() {
+                        // This should be impossible, since we would
+                        // exit this loop on the first netinfo cell.
+                        return Err(Error::InternalError(
+                            "Somehow tried to record a duplicate NETINFO cell".into(),
+                        ));
+                    }
                     netinfo = Some(n);
                     break;
                 }
@@ -188,7 +194,7 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> OutboundClientHandshake
             (Some(_), None) => Err(Error::ChanProto("Missing netinfo or closed stream".into())),
             (None, _) => Err(Error::ChanProto("Missing certs cell".into())),
             (Some(certs_cell), Some(netinfo_cell)) => {
-                trace!("{}: receieved handshake, ready to verify.", self.unique_id);
+                trace!("{}: received handshake, ready to verify.", self.unique_id);
                 Ok(UnverifiedChannel {
                     link_protocol,
                     tls,

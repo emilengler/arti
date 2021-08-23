@@ -16,7 +16,7 @@
 //!
 //! There are two intended users for this crate.  First, producers
 //! like [`tor-dirmgr`] create [`NetDir`] objects fill them with
-//! information from the Tor nettwork directory.  Later, consumers
+//! information from the Tor network directory.  Later, consumers
 //! like [`tor-circmgr`] use [`NetDir`]s to select relays for random
 //! paths through the Tor network.
 //!
@@ -30,6 +30,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -37,15 +38,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 mod err;
@@ -63,9 +67,11 @@ use tor_netdoc::doc::microdesc::{MdDigest, Microdesc};
 use tor_netdoc::doc::netstatus::{self, MdConsensus, RouterStatus};
 use tor_netdoc::types::policy::PortPolicy;
 
-use log::warn;
+use serde::Deserialize;
 use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::Arc;
+use tracing::warn;
 
 pub use err::Error;
 pub use weight::WeightRole;
@@ -73,6 +79,55 @@ pub use weight::WeightRole;
 pub type Result<T> = std::result::Result<T, Error>;
 
 use params::NetParameters;
+
+/// Configuration for determining when two relays have addresses "too close" in
+/// the network.
+///
+/// Used by [`Relay::in_same_subnet()`].
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct SubnetConfig {
+    /// Consider IPv4 nodes in the same /x to be the same family.
+    subnets_family_v4: u8,
+    /// Consider IPv6 nodes in the same /x to be the same family.
+    subnets_family_v6: u8,
+}
+
+impl Default for SubnetConfig {
+    fn default() -> Self {
+        Self {
+            subnets_family_v4: 16,
+            subnets_family_v6: 32,
+        }
+    }
+}
+
+impl SubnetConfig {
+    /// Are two addresses in the same subnet according to this configuration
+    fn addrs_in_same_subnet(&self, a: &IpAddr, b: &IpAddr) -> bool {
+        match (a, b) {
+            (IpAddr::V4(a), IpAddr::V4(b)) => {
+                let bits = self.subnets_family_v4;
+                if bits > 32 {
+                    return false;
+                }
+                let a = u32::from_be_bytes(a.octets());
+                let b = u32::from_be_bytes(b.octets());
+                (a >> (32 - bits)) == (b >> (32 - bits))
+            }
+            (IpAddr::V6(a), IpAddr::V6(b)) => {
+                let bits = self.subnets_family_v6;
+                if bits > 128 {
+                    return false;
+                }
+                let a = u128::from_be_bytes(a.octets());
+                let b = u128::from_be_bytes(b.octets());
+                (a >> (128 - bits)) == (b >> (128 - bits))
+            }
+            _ => false,
+        }
+    }
+}
 
 /// Internal type: either a microdescriptor, or the digest for a
 /// microdescriptor that we want.
@@ -83,7 +138,7 @@ use params::NetParameters;
 enum MdEntry {
     /// The digest for a microdescriptor that is wanted
     /// but not present.
-    // TODO: I'd like to make thtis a reference, but that's nontrivial.
+    // TODO: I'd like to make this a reference, but that's nontrivial.
     Absent(MdDigest),
     /// A microdescriptor that we have.
     Present(Arc<Microdesc>),
@@ -195,7 +250,7 @@ pub trait MdReceiver {
 
 impl PartialNetDir {
     /// Create a new PartialNetDir with a given consensus, and no
-    /// microdecriptors loaded.
+    /// microdescriptors loaded.
     ///
     /// If `replacement_params` is provided, override network parameters from
     /// the consensus with those from `replacement_params`.
@@ -334,15 +389,19 @@ impl NetDir {
     /// consider relays that match the predicate `usable`.  We weight
     /// this bandwidth according to the provided `role`.
     ///
-    /// Note that this function can return NaN if the consensus contains
-    /// no relays that match the predicate, or if those relays have
-    /// no weighted bandwidth.
+    /// If _no_ matching relays in the consensus have a nonzero
+    /// weighted bandwidth value, we fall back to looking at the
+    /// unweighted fraction of matching relays.
+    ///
+    /// If there are no matching relays in the consensus, we return 0.0.
     fn frac_for_role<'a, F>(&'a self, role: WeightRole, usable: F) -> f64
     where
         F: Fn(&UncheckedRelay<'a>) -> bool,
     {
         let mut total_weight = 0_u64;
         let mut have_weight = 0_u64;
+        let mut have_count = 0_usize;
+        let mut total_count = 0_usize;
 
         for r in self.all_relays() {
             if !usable(&r) {
@@ -350,22 +409,41 @@ impl NetDir {
             }
             let w = self.weights.weight_rs_for_role(r.rs, role);
             total_weight += w;
+            total_count += 1;
             if r.is_usable() {
-                have_weight += w
+                have_weight += w;
+                have_count += 1;
             }
         }
 
-        (have_weight as f64) / (total_weight as f64)
+        if total_weight > 0 {
+            // The consensus lists some weighted bandwidth so return the
+            // fraction of the weighted bandwidth for which we have
+            // descriptors.
+            (have_weight as f64) / (total_weight as f64)
+        } else if total_count > 0 {
+            // The consensus lists no weighted bandwidth for these relays,
+            // but at least it does list relays. Return the fraction of
+            // relays for which it we have descriptors.
+            (have_count as f64) / (total_count as f64)
+        } else {
+            // There are no relays of this kind in the consensus.  Return
+            // 0.0, to avoid dividing by zero and giving NaN.
+            0.0
+        }
     }
     /// Return the estimated fraction of possible paths that we have
     /// enough microdescriptors to build.
-    ///
-    /// NOTE: This function can return NaN if the consensus contained
-    /// zero bandwidth for some type of relay we need.
     fn frac_usable_paths(&self) -> f64 {
-        self.frac_for_role(WeightRole::Guard, |u| u.rs.is_flagged_guard())
-            * self.frac_for_role(WeightRole::Middle, |_| true)
-            * self.frac_for_role(WeightRole::Exit, |u| u.rs.is_flagged_exit())
+        let f_g = self.frac_for_role(WeightRole::Guard, |u| u.rs.is_flagged_guard());
+        let f_m = self.frac_for_role(WeightRole::Middle, |_| true);
+        let f_e = if self.all_relays().any(|u| u.rs.is_flagged_exit()) {
+            self.frac_for_role(WeightRole::Exit, |u| u.rs.is_flagged_exit())
+        } else {
+            // If there are no exits at all, we use f_m here.
+            f_m
+        };
+        f_g * f_m * f_e
     }
     /// Return true if there is enough information in this NetDir to build
     /// multihop circuits.
@@ -379,10 +457,6 @@ impl NetDir {
 
         // What fraction of paths can we build?
         let available = self.frac_usable_paths();
-
-        // TODO: `available` could be NaN if the consensus is sufficiently
-        // messed-up.  If so it's not 100% clear what to fall back on.
-        // What does C Tor do? XXXX-SPEC
 
         available >= min_frac_paths
     }
@@ -490,18 +564,42 @@ impl<'a> Relay<'a> {
                 .protovers()
                 .supports_known_subver(ProtoKind::DirCache, 2)
     }
+    /// Return true if both relays are in the same subnet, as configured by
+    /// `subnet_config`.
+    ///
+    /// Two relays are considered to be in the same subnet if they
+    /// have IPv4 addresses with the same `subnets_family_v4`-bit
+    /// prefix, or if they have IPv6 addresses with the same
+    /// `subnets_family_v6`-bit prefix.
+    pub fn in_same_subnet<'b>(&self, other: &Relay<'b>, subnet_config: &SubnetConfig) -> bool {
+        self.rs.orport_addrs().any(|addr| {
+            other
+                .rs
+                .orport_addrs()
+                .any(|other| subnet_config.addrs_in_same_subnet(&addr.ip(), &other.ip()))
+        })
+    }
     /// Return true if both relays are in the same family.
     ///
     /// (Every relay is considered to be in the same family as itself.)
     pub fn in_same_family<'b>(&self, other: &Relay<'b>) -> bool {
-        // XXX: features missing from original implementation:
-        // - option EnforceDistinctSubnets
-        // - option NodeFamilySets
-        // see: src/feature/nodelist/nodelist.c:nodes_in_same_family()
         if self.same_relay(other) {
             return true;
         }
         self.md.family().contains(other.rsa_id()) && other.md.family().contains(self.rsa_id())
+    }
+
+    /// Return true if there are any ports for which this Relay can be
+    /// used for exit traffic.
+    ///
+    /// (Returns false if this relay doesn't allow exit traffic, or if it
+    /// has been flagged as a bad exit.)
+    pub fn policies_allow_some_port(&self) -> bool {
+        if self.rs.is_flagged_bad_exit() {
+            return false;
+        }
+
+        self.md.ipv4_policy().allows_some_port() || self.md.ipv6_policy().allows_some_port()
     }
 
     /// Return the IPv4 exit policy for this relay. If the relay has been marked BadExit, return an
@@ -530,7 +628,6 @@ impl<'a> Relay<'a> {
     /// Return the IPv6 exit policy declared by this relay. Contrary to [`Relay::ipv6_policy`],
     /// this does not verify if the relay is marked BadExit.
     pub fn ipv6_declared_policy(&self) -> &Arc<PortPolicy> {
-        // XXXX: Return Reject * if the BadExit flag is present.
         self.md.ipv6_policy()
     }
 
@@ -586,7 +683,7 @@ impl<'a> tor_linkspec::CircTarget for Relay<'a> {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::testnet::construct_network;
+    use crate::testnet::*;
     use std::collections::HashSet;
     use std::time::Duration;
 
@@ -768,8 +865,50 @@ mod test {
     }
 
     #[test]
+    fn subnets() {
+        let cfg = SubnetConfig::default();
+
+        fn same_net(cfg: &SubnetConfig, a: &str, b: &str) -> bool {
+            cfg.addrs_in_same_subnet(&a.parse().unwrap(), &b.parse().unwrap())
+        }
+
+        assert!(same_net(&cfg, "127.15.3.3", "127.15.9.9"));
+        assert!(!same_net(&cfg, "127.15.3.3", "127.16.9.9"));
+
+        assert!(!same_net(&cfg, "127.15.3.3", "127::"));
+
+        assert!(same_net(&cfg, "ffff:ffff:90:33::", "ffff:ffff:91:34::"));
+        assert!(!same_net(&cfg, "ffff:ffff:90:33::", "ffff:fffe:91:34::"));
+
+        let cfg = SubnetConfig {
+            subnets_family_v4: 32,
+            subnets_family_v6: 128,
+        };
+        assert!(!same_net(&cfg, "127.15.3.3", "127.15.9.9"));
+        assert!(!same_net(&cfg, "ffff:ffff:90:33::", "ffff:ffff:91:34::"));
+
+        assert!(same_net(&cfg, "127.0.0.1", "127.0.0.1"));
+        assert!(!same_net(&cfg, "127.0.0.1", "127.0.0.2"));
+        assert!(same_net(&cfg, "ffff:ffff:90:33::", "ffff:ffff:90:33::"));
+
+        let cfg = SubnetConfig {
+            subnets_family_v4: 33,
+            subnets_family_v6: 129,
+        };
+        assert!(!same_net(&cfg, "127.0.0.1", "127.0.0.1"));
+        assert!(!same_net(&cfg, "::", "::"));
+    }
+
+    #[test]
     fn relay_funcs() {
-        let (consensus, microdescs) = construct_network();
+        let (consensus, microdescs) = construct_custom_network(|idx, nb| {
+            if idx == 15 {
+                nb.rs.add_or_port("[f0f0::30]:9001".parse().unwrap());
+            } else if idx == 20 {
+                nb.rs.add_or_port("[f0f0::3131]:9001".parse().unwrap());
+            }
+        });
+        let subnet_config = SubnetConfig::default();
         let mut dir = PartialNetDir::new(consensus, None);
         for md in microdescs.into_iter() {
             let wanted = dir.add_microdesc(md.clone());
@@ -782,6 +921,9 @@ mod test {
         let r1 = dir.by_id(&[1; 32].into()).unwrap();
         let r2 = dir.by_id(&[2; 32].into()).unwrap();
         let r3 = dir.by_id(&[3; 32].into()).unwrap();
+        let r10 = dir.by_id(&[10; 32].into()).unwrap();
+        let r15 = dir.by_id(&[15; 32].into()).unwrap();
+        let r20 = dir.by_id(&[20; 32].into()).unwrap();
 
         assert_eq!(r0.id(), &[0; 32].into());
         assert_eq!(r0.rsa_id(), &[0; 20].into());
@@ -802,6 +944,12 @@ mod test {
         assert!(!r2.supports_exit_port_ipv4(80));
         assert!(!r3.supports_exit_port_ipv4(80));
 
+        assert!(!r0.policies_allow_some_port());
+        assert!(!r1.policies_allow_some_port());
+        assert!(!r2.policies_allow_some_port());
+        assert!(!r3.policies_allow_some_port());
+        assert!(r10.policies_allow_some_port());
+
         assert!(r0.in_same_family(&r0));
         assert!(r0.in_same_family(&r1));
         assert!(r1.in_same_family(&r0));
@@ -810,5 +958,78 @@ mod test {
         assert!(!r2.in_same_family(&r0));
         assert!(r2.in_same_family(&r2));
         assert!(r2.in_same_family(&r3));
+
+        assert!(r0.in_same_subnet(&r10, &subnet_config));
+        assert!(r10.in_same_subnet(&r10, &subnet_config));
+        assert!(r0.in_same_subnet(&r0, &subnet_config));
+        assert!(r1.in_same_subnet(&r1, &subnet_config));
+        assert!(!r1.in_same_subnet(&r2, &subnet_config));
+        assert!(!r2.in_same_subnet(&r3, &subnet_config));
+
+        // Make sure IPv6 families work.
+        let subnet_config = SubnetConfig {
+            subnets_family_v4: 128,
+            subnets_family_v6: 96,
+        };
+        assert!(r15.in_same_subnet(&r20, &subnet_config));
+        assert!(!r15.in_same_subnet(&r1, &subnet_config));
+
+        // Make sure that subnet configs can be disabled.
+        let subnet_config = SubnetConfig {
+            subnets_family_v4: 255,
+            subnets_family_v6: 255,
+        };
+        assert!(!r15.in_same_subnet(&r20, &subnet_config));
+    }
+
+    #[test]
+    fn test_badexit() {
+        // make a netdir where relays 10-19 are badexit, and everybody
+        // exits to 443 on IPv6.
+        use tor_netdoc::doc::netstatus::RelayFlags;
+        let netdir = construct_custom_netdir(|idx, nb| {
+            if 10 <= idx && idx < 20 {
+                nb.rs.add_flags(RelayFlags::BAD_EXIT);
+            }
+            nb.md.parse_ipv6_policy("accept 443").unwrap();
+        })
+        .unwrap_if_sufficient()
+        .unwrap();
+
+        let e12 = netdir.by_id(&[12; 32].into()).unwrap();
+        let e32 = netdir.by_id(&[32; 32].into()).unwrap();
+
+        assert!(!e12.supports_exit_port_ipv4(80));
+        assert!(e32.supports_exit_port_ipv4(80));
+
+        assert!(!e12.supports_exit_port_ipv6(443));
+        assert!(e32.supports_exit_port_ipv6(443));
+        assert!(!e32.supports_exit_port_ipv6(555));
+
+        assert!(!e12.policies_allow_some_port());
+        assert!(e32.policies_allow_some_port());
+
+        assert!(!e12.ipv4_policy().allows_some_port());
+        assert!(!e12.ipv6_policy().allows_some_port());
+        assert!(e32.ipv4_policy().allows_some_port());
+        assert!(e32.ipv6_policy().allows_some_port());
+
+        assert!(e12.ipv4_declared_policy().allows_some_port());
+        assert!(e12.ipv6_declared_policy().allows_some_port());
+    }
+
+    #[cfg(feature = "experimental-api")]
+    #[test]
+    fn test_accessors() {
+        let netdir = construct_netdir().unwrap_if_sufficient().unwrap();
+
+        let r4 = netdir.by_id(&[4; 32].into()).unwrap();
+        let r16 = netdir.by_id(&[16; 32].into()).unwrap();
+
+        assert!(!r4.md().ipv4_policy().allows_some_port());
+        assert!(r16.md().ipv4_policy().allows_some_port());
+
+        assert!(!r4.rs().is_flagged_exit());
+        assert!(r16.rs().is_flagged_exit());
     }
 }

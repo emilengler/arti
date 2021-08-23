@@ -19,6 +19,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -26,15 +27,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub mod authority;
@@ -60,8 +64,8 @@ use tor_netdoc::doc::netstatus::ConsensusFlavor;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{channel::oneshot, lock::Mutex, task::SpawnExt};
-use log::{info, warn};
 use tor_rtcompat::{Runtime, SleepProviderExt};
+use tracing::{info, warn};
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -91,12 +95,6 @@ pub use storage::DocumentText;
 ///     writing to the cache, and it takes responsibility for fetching
 ///     data from the network and updating the directory with new
 ///     directory information.
-///
-/// # Limitations
-///
-/// Because of portability issues in [`fslock::LockFile`], you might
-/// get weird results if you run two of these in the same process with
-/// the same underlying cache.
 pub struct DirMgr<R: Runtime> {
     /// Configuration information: where to find directories, how to
     /// validate them, and so on.
@@ -423,14 +421,22 @@ impl<R: Runtime> DirMgr<R> {
         self.publisher.subscribe()
     }
 
-    /// Try to load the text of a signle document described by `doc` from
+    /// Try to load the text of a single document described by `doc` from
     /// storage.
     pub async fn text(&self, doc: &DocId) -> Result<Option<DocumentText>> {
+        use itertools::Itertools;
         let mut result = HashMap::new();
         let query = (*doc).into();
         self.load_documents_into(&query, &mut result).await?;
-        if let Some((docid, doctext)) = result.into_iter().next() {
-            assert_eq!(&docid, doc);
+        let item = result.into_iter().at_most_one().map_err(|_| {
+            Error::CacheCorruption("Found more than one entry in storage for given docid")
+        })?;
+        if let Some((docid, doctext)) = item {
+            if &docid != doc {
+                return Err(
+                    Error::CacheCorruption("Item from storage had incorrect docid.").into(),
+                );
+            }
             Ok(Some(doctext))
         } else {
             Ok(None)
@@ -641,7 +647,7 @@ trait DirState: Send {
     /// 'true' if there as any change in this state.
     ///
     /// This method receives a copy of the original request, and
-    /// should reject any documents that do not purtain to it.
+    /// should reject any documents that do not pertain to it.
     ///
     /// If `storage` is provided, then we should write any accepted documents
     /// into `storage` so they can be saved in a cache.

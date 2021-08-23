@@ -15,9 +15,9 @@ use crate::{
 use futures::StreamExt;
 use futures::{channel::oneshot, Stream};
 use futures::{lock::Mutex, Future, FutureExt};
-use log::{info, warn};
 use tor_dirclient::DirResponse;
 use tor_rtcompat::{Runtime, SleepProviderExt};
+use tracing::{info, warn};
 
 /// Try to read a set of documents from `dirmgr` by ID.
 async fn load_all<R: Runtime>(
@@ -39,7 +39,7 @@ async fn fetch_single<R: Runtime>(
     let circmgr = dirmgr.circmgr()?;
     let cur_netdir = dirmgr.opt_netdir();
     let dirinfo = match cur_netdir {
-        Some(ref nd) => nd.as_ref().into(),
+        Some(ref netdir) => netdir.as_ref().into(),
         None => dirmgr.config.fallbacks().into(),
     };
     let resource =
@@ -133,6 +133,7 @@ pub(crate) async fn load<R: Runtime>(
 }
 
 /// Helper: feed response into state object
+/// Returns 'true' if there is any change in this state.
 async fn handle_download_response<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     state: Arc<Mutex<&mut Box<dyn DirState>>>,
@@ -140,7 +141,11 @@ async fn handle_download_response<R: Runtime>(
 ) -> bool {
     match response {
         Some((client_req, dir_response)) => {
-            let text = dir_response.into_output();
+            let text = if let Ok(text) = String::from_utf8(dir_response.into_output()) {
+                text
+            } else {
+                return false;
+            };
             match dirmgr.expand_response_text(&client_req, text).await {
                 Ok(text) => {
                     let outcome = {

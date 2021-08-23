@@ -25,7 +25,7 @@ use futures::stream::{self, StreamExt};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
-use log::{debug, trace};
+use tracing::{debug, trace};
 
 /// A message telling the reactor to do something.
 pub(super) enum CtrlMsg {
@@ -440,6 +440,7 @@ impl Reactor {
     }
 
     /// Helper: process a destroy cell.
+    #[allow(clippy::unnecessary_wraps)]
     fn handle_destroy_cell(&mut self) -> Result<()> {
         // I think there is nothing more to do here.
         Ok(())

@@ -25,7 +25,7 @@ pub fn create_runtime() -> std::io::Result<impl Runtime> {
 /// # Usage note
 ///
 /// We should never call this from inside other Arti crates, or from
-/// library crates that want to supporet multiple runtimes!  This
+/// library crates that want to support multiple runtimes!  This
 /// function is for Arti _users_ who want to wrap some existing Tokio
 /// runtime as a [`Runtime`].  It is not for library
 /// crates that want to work with multiple runtimes.
@@ -39,6 +39,10 @@ pub fn current_runtime() -> std::io::Result<impl Runtime> {
 }
 
 /// Run a test function using a freshly created tokio runtime.
+///
+/// # Panics
+///
+/// Panics if we can't create a tokio runtime.
 pub fn test_with_runtime<P, F, O>(func: P) -> O
 where
     P: FnOnce(async_executors::TokioTp) -> F,

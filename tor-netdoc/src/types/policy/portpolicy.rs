@@ -85,7 +85,7 @@ impl PortPolicy {
     fn push_policy(&mut self, item: PortRange) -> Result<(), PolicyError> {
         if let Some(prev) = self.allowed.last() {
             // TODO SPEC: We don't enforce this in Tor, but we probably
-            // should.
+            // should.  See torspec#60.
             if prev.hi >= item.lo {
                 return Err(PolicyError::InvalidPolicy);
             } else if prev.hi == item.lo - 1 {
@@ -109,6 +109,20 @@ impl PortPolicy {
     /// Replace this PortPolicy with an interned copy, to save memory.
     pub fn intern(self) -> Arc<Self> {
         POLICY_CACHE.intern(self)
+    }
+    /// Return true if this policy allows any ports at all.
+    ///
+    /// # Example
+    /// ```
+    /// use tor_netdoc::types::policy::PortPolicy;
+    ///
+    /// let policy: PortPolicy = "accept 22".parse().unwrap();
+    /// assert!(policy.allows_some_port());
+    /// let policy2: PortPolicy = "reject 1-65535".parse().unwrap();
+    /// assert!(! policy2.allows_some_port());
+    /// ```
+    pub fn allows_some_port(&self) -> bool {
+        !self.allowed.is_empty()
     }
 }
 

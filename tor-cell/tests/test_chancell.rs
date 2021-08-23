@@ -167,7 +167,7 @@ fn bad_circid_cells() {
 fn versions() {
     // Test the special encoding of the versions cell.  (It's special
     // because it uses a 2-byte circid.
-    let v = msg::Versions::new([4, 5, 6]);
+    let v = msg::Versions::new([4, 5, 6]).unwrap();
     let encoded = v.clone().encode_for_handshake();
     assert_eq!(encoded, hex!("0000 07 0006 0004 0005 0006"));
 
@@ -177,4 +177,8 @@ fn versions() {
     assert_eq!(v.best_shared_link_protocol(&[4, 5, 6, 7]), Some(6));
     assert_eq!(v.best_shared_link_protocol(&[4, 5, 11]), Some(5));
     assert_eq!(v.best_shared_link_protocol(&[4, 5]), Some(5));
+
+    // Try converting into a ChanCell.
+    let cc: ChanCell = v.into();
+    assert_eq!(cc.circid(), 0.into());
 }

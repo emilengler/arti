@@ -18,8 +18,7 @@ yet exists, including:
 
 Additionally, the `AsyncRead` and `AsyncWrite` traits provide by
 [`futures`] are not the same as those provided by `tokio`, and
-require compatibility wrappers to use. (We re-export those of
-[`tokio_util`].
+require compatibility wrappers to use.
 
 To solve these problems, the `tor-rtcompat` crate provides a set
 of traits that represent a runtime's ability to perform these
@@ -40,11 +39,11 @@ traits it provides.
 
 ## Using `tor-rtcompat`
 
-The `tor-rtcompat` crate provide several traits that that
+The `tor-rtcompat` crate provides several traits that
 encapsulate different runtime capabilities.
 
  * A runtime is a [`SpawnBlocking`] if it can block on a future.
- * A runtime if a [`SleepProvider`] if it can make timer futures that
+ * A runtime is a [`SleepProvider`] if it can make timer futures that
    become Ready after a given interval of time.
  * A runtime is a [`TcpProvider`] if it can make and receive TCP
    connections
@@ -56,18 +55,18 @@ above, plus [`futures::task::Spawn`] and [`Send`].
 You can get a [`Runtime`] in several ways:
 
   * If you already have an asynchronous backend (for example, one
-    that you built with tokio, or by running with
-    `#[tokio::main]`, you can wrap it as a [`Runtime`] with
+    that you built with tokio by running with
+    `#[tokio::main]`), you can wrap it as a [`Runtime`] with
     [`current_user_runtime()`].
 
   * If you want to construct a default runtime that you won't be
     using for anything besides Arti, you can use [`create_runtime()`].
 
   * If you want to explicitly construct a runtime with a specific
-    backend, you can do so with `create_async_std_runtime` or
-    [`create_tokio_runtime`].  Or if you have already constructed a
+    backend, you can do so with [`async_std::create_async_std_runtime`] or
+    [`tokio::create_tokio_runtime`].  Or if you have already constructed a
     tokio runtime that you want to use, you can wrap it as a
-    [`Runtime`] explicitly with [`TokioRuntimeHandle`].
+    [`Runtime`] explicitly with [`tokio::TokioRuntimeHandle`].
 
 ## Cargo features
 
@@ -98,7 +97,7 @@ done, we could just provide a single global `block_on` function.
 That simplification would come at a cost, however.  First of all,
 it would make it harder for us to use Rust's "feature" system
 correctly.  Current features are supposed to be _additive only_,
-but if had a single global runtime, then support for diffferent
+but if had a single global runtime, then support for different
 backends would be _mutually exclusive_.  (That is, you couldn't
 have both the tokio and async-std features building at the same
 time.)

@@ -5,7 +5,7 @@
 //! This crate is part of
 //! [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
 //! implement [Tor](https://www.torproject.org/) in Rust.
-//! Tor uses a restricted vesion of the "ed-style" diff format to
+//! Tor uses a restricted version of the "ed-style" diff format to
 //! record the difference between a pair of consensus documents, so that
 //! clients can download only the changes since the last document they
 //! have.
@@ -21,6 +21,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -28,15 +29,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 use std::convert::TryInto;
@@ -233,8 +237,7 @@ impl<'a> DiffCommand<'a> {
                 // This '+1' seems off, but it's what the spec says. I wonder
                 // if the spec is wrong.
                 target.insert_at(*pos + 1, lines)?;
-            } // TODO SPEC: In theory there is an 'InsertHere' command
-              // that we should be implementing, but Tor doesn't use it.
+            }
         };
         Ok(())
     }

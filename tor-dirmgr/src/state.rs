@@ -13,7 +13,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::lock::Mutex;
-use log::{info, warn};
 use rand::Rng;
 use std::collections::{HashMap, HashSet};
 use std::fmt::Debug;
@@ -21,6 +20,7 @@ use std::sync::Weak;
 use std::time::{Duration, SystemTime};
 use tor_netdir::{MdReceiver, NetDir, PartialNetDir};
 use tor_netdoc::doc::netstatus::Lifetime;
+use tracing::{info, warn};
 
 use crate::{
     docmeta::{AuthCertMeta, ConsensusMeta},
@@ -364,7 +364,7 @@ impl<DM: WriteNetDir> DirState for GetCertsState<DM> {
                 }
             } else {
                 // TODO: note the source.
-                warn!("Unparseable certificate received and discared.");
+                warn!("Unparsable certificate received and discarded.");
             }
         }
 
@@ -430,7 +430,7 @@ impl<DM: WriteNetDir> DirState for GetCertsState<DM> {
 /// Final state: we're fetching or loading microdescriptors
 #[derive(Debug, Clone)]
 struct GetMicrodescsState<DM: WriteNetDir> {
-    /// The digests of the microdesscriptors we are missing.
+    /// The digests of the microdescriptors we are missing.
     missing: HashSet<MdDigest>,
     /// The dirmgr to inform about a usable directory.
     writedir: Weak<DM>,
@@ -494,9 +494,9 @@ impl<DM: WriteNetDir> GetMicrodescsState<DM> {
             }
             return self.consider_upgrade();
         } else if let Some(wd) = Weak::upgrade(&self.writedir) {
-            let _ = wd.netdir().mutate(|nd| {
+            let _ = wd.netdir().mutate(|netdir| {
                 for md in mds {
-                    nd.add_microdesc(md);
+                    netdir.add_microdesc(md);
                 }
                 Ok(())
             });
@@ -624,7 +624,7 @@ impl<DM: WriteNetDir> DirState for GetMicrodescsState<DM> {
             // oh hey, this is no longer pending.
             if let Some(store) = storage {
                 let mut store = store.lock().await;
-                info!("marked consensus usable.");
+                info!("Marked consensus usable.");
                 store.mark_consensus_usable(&self.meta)?;
                 // DOCDOC: explain why we're doing this here.
                 store.expire_all()?;

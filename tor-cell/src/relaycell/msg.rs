@@ -200,7 +200,7 @@ impl Default for IpVersionPreference {
 /// If the exit decides to reject the Begin message, or if the TCP
 /// connection fails, the exit should send an End message.
 ///
-/// Clients should reject these messags.
+/// Clients should reject these messages.
 #[derive(Debug, Clone)]
 pub struct Begin {
     /// Ascii string describing target address
@@ -221,7 +221,7 @@ impl Begin {
             return Err(crate::Error::BadStreamAddress);
         }
         let mut addr = addr.to_string();
-        addr.make_ascii_lowercase(); // SPEC: the spec doesn't say to do this.
+        addr.make_ascii_lowercase();
         Ok(Begin {
             addr: addr.into_bytes(),
             port,
@@ -304,9 +304,31 @@ impl Data {
     pub const MAXLEN: usize = CELL_DATA_LEN - 11;
 
     /// Construct a new data cell.
-    pub fn new(inp: &[u8]) -> Self {
-        assert!(inp.len() <= Data::MAXLEN);
-        Data { body: inp.into() }
+    ///
+    /// Returns an error if `inp` is longer than [`Data::MAXLEN`] bytes.
+    pub fn new(inp: &[u8]) -> crate::Result<Self> {
+        if inp.len() > Data::MAXLEN {
+            return Err(crate::Error::CantEncode);
+        }
+        Ok(Self::new_unchecked(inp.into()))
+    }
+
+    /// Construct a new data cell, taking as many bytes from `inp`
+    /// as possible.
+    ///
+    /// Return the data cell, and a slice holding any bytes that
+    /// wouldn't fit (if any).
+    pub fn split_from(inp: &[u8]) -> (Self, &[u8]) {
+        let len = std::cmp::min(inp.len(), Data::MAXLEN);
+        let (data, remainder) = inp.split_at(len);
+        (Self::new_unchecked(data.into()), remainder)
+    }
+
+    /// Construct a new data cell from a provided vector of bytes.
+    ///
+    /// The vector _must_ have fewer than [`Data::MAXLEN`] bytes.
+    fn new_unchecked(body: Vec<u8>) -> Self {
+        Data { body }
     }
 }
 impl From<Data> for Vec<u8> {
@@ -417,7 +439,6 @@ impl Body for End {
     }
     fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
         if r.remaining() == 0 {
-            // TODO SPEC Document this behavior; tor does it too.
             return Ok(End {
                 reason: EndReason::MISC,
                 addr: None,
@@ -429,7 +450,6 @@ impl Body for End {
                 4 | 8 => IpAddr::V4(r.extract()?),
                 16 | 20 => IpAddr::V6(r.extract()?),
                 _ => {
-                    // TODO SPEC document this behavior.
                     // Ignores other message lengths.
                     return Ok(End { reason, addr: None });
                 }
@@ -606,8 +626,6 @@ impl Body for Sendme {
     }
     fn encode_onto(self, w: &mut Vec<u8>) {
         match self.digest {
-            // SPEC: we should be clear in the spec that this is what we
-            // do when linkauth is off.
             None => (),
             Some(mut x) => {
                 w.write_u8(1);
@@ -816,7 +834,7 @@ impl Body for Extended2 {
     }
 }
 
-/// A Truncated messsage is sent to the client when the remaining hops
+/// A Truncated message is sent to the client when the remaining hops
 /// of a circuit have gone away.
 ///
 /// NOTE: Current Tor implementations often treat Truncated messages and
@@ -906,7 +924,7 @@ impl Body for Resolve {
 }
 
 /// Possible response to a DNS lookup
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum ResolvedVal {
     /// We found an IP address

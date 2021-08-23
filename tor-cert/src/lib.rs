@@ -55,6 +55,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -62,15 +63,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub mod rsa;
@@ -87,7 +91,7 @@ caret_int! {
     /// Recognized values for Tor's certificate type field.
     ///
     /// In the names used here, "X_V_Y" means "key X verifying key Y",
-    /// whereas "X_CC_Y" means "key X cros-certifying key Y".  In both
+    /// whereas "X_CC_Y" means "key X cross-certifying key Y".  In both
     /// cases, X is the key that is doing the signing, and Y is the key
     /// or object that is getting signed.
     ///
@@ -249,7 +253,7 @@ enum CertExt {
     Unrecognized(UnrecognizedExt),
 }
 
-/// Any unrecongized extension on a Tor certificate.
+/// Any unrecognized extension on a Tor certificate.
 #[allow(unused)]
 struct UnrecognizedExt {
     /// True iff this extension must be understand in order to validate the
@@ -454,7 +458,7 @@ impl Ed25519Cert {
 
     /// Return the time at which this certificate becomes expired
     pub fn expiry(&self) -> std::time::SystemTime {
-        let d = std::time::Duration::new((self.exp_hours as u64) * 3600, 0);
+        let d = std::time::Duration::new(u64::from(self.exp_hours) * 3600, 0);
         std::time::SystemTime::UNIX_EPOCH + d
     }
 

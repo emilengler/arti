@@ -23,7 +23,7 @@
 //! configuration file to the list of configuration file.  You can use
 //! this multiple times: All files will be loaded and merged.
 //!
-//! '-c <key>=<value>` sets a configuration option to be applied after all
+//! `-c <key>=<value>` sets a configuration option to be applied after all
 //! configuration files are loaded.
 //!
 //! # Configuration
@@ -52,6 +52,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -59,31 +60,38 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
+mod exit;
 mod proxy;
 
 use std::sync::Arc;
 
+use tor_circmgr::CircMgrConfig;
 use tor_client::TorClient;
 use tor_config::CfgPath;
 use tor_dirmgr::{DirMgrConfig, DownloadScheduleConfig, NetworkConfig};
-use tor_rtcompat::SpawnBlocking;
+use tor_rtcompat::{Runtime, SpawnBlocking};
 
 use anyhow::Result;
 use argh::FromArgs;
-use log::{info, warn, LevelFilter};
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::path::PathBuf;
+use tracing::level_filters::LevelFilter;
+use tracing::{info, warn};
 
 #[derive(FromArgs, Debug, Clone)]
 /// Connect to the Tor network, open a SOCKS port, and proxy
@@ -132,6 +140,15 @@ pub struct ArtiConfig {
     /// consensus.
     #[serde(default)]
     override_net_params: HashMap<String, i32>,
+
+    /// Information about how to build paths through the network.
+    path_rules: tor_circmgr::PathConfig,
+
+    /// Information about how to retry requests for circuits.
+    request_timing: tor_circmgr::RequestTiming,
+
+    /// Information about how to expire circuits.
+    circuit_timing: tor_circmgr::CircuitTiming,
 }
 
 /// Configuration for where information should be stored on disk.
@@ -143,7 +160,6 @@ pub struct StorageConfig {
     /// Location on disk for cached directory information
     cache_dir: CfgPath,
     /// Location on disk for less-sensitive persistent state information.
-    #[allow(unused)]
     state_dir: CfgPath,
 }
 
@@ -160,6 +176,36 @@ impl ArtiConfig {
         }
         dircfg.build()
     }
+
+    /// Return a [`CircMgrConfig`] object based on the user's selected
+    /// configuration.
+    fn get_circ_config(&self) -> Result<CircMgrConfig> {
+        let mut builder = tor_circmgr::CircMgrConfigBuilder::default();
+        Ok(builder
+            .set_path_config(self.path_rules.clone())
+            .set_request_timing(self.request_timing.clone())
+            .set_circuit_timing(self.circuit_timing.clone())
+            .build()?)
+    }
+}
+
+/// Run the main loop of the proxy.
+async fn run<R: Runtime>(
+    runtime: R,
+    socks_port: u16,
+    statecfg: PathBuf,
+    dircfg: DirMgrConfig,
+    circcfg: CircMgrConfig,
+) -> Result<()> {
+    use futures::FutureExt;
+    futures::select!(
+        r = exit::wait_for_ctrl_c().fuse() => r,
+        r = async {
+            let client =
+                Arc::new(TorClient::bootstrap(runtime.clone(), statecfg, dircfg, circcfg).await?);
+            proxy::run_socks_proxy(runtime, client, socks_port).await
+        }.fuse() => r,
+    )
 }
 
 fn main() -> Result<()> {
@@ -176,13 +222,15 @@ fn main() -> Result<()> {
     let config: ArtiConfig = cfg.try_into()?;
 
     let filt = if config.trace {
-        LevelFilter::Trace
+        LevelFilter::TRACE
     } else {
-        LevelFilter::Debug
+        LevelFilter::DEBUG
     };
-    simple_logging::log_to_stderr(filt);
+    tracing_subscriber::fmt().with_max_level(filt).init();
 
+    let statecfg = config.storage.state_dir.path()?;
     let dircfg = config.get_dir_config()?;
+    let circcfg = config.get_circ_config()?;
 
     let socks_port = match config.socks_port {
         Some(s) => s,
@@ -198,10 +246,8 @@ fn main() -> Result<()> {
     let runtime = tor_rtcompat::async_std::create_runtime()?;
 
     let rt_copy = runtime.clone();
-    rt_copy.block_on(async {
-        let client = Arc::new(TorClient::bootstrap(runtime.clone(), dircfg).await?);
-        proxy::run_socks_proxy(runtime, client, socks_port).await
-    })
+    rt_copy.block_on(run(runtime, socks_port, statecfg, dircfg, circcfg))?;
+    Ok(())
 }
 
 #[cfg(test)]

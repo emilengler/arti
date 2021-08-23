@@ -18,7 +18,7 @@
 //! in range, and provides default values for any parameters that are
 //! missing.
 
-use tor_units::{BoundedInt32, IntegerMilliseconds, Percentage, SendMeVersion};
+use tor_units::{BoundedInt32, IntegerMilliseconds, IntegerSeconds, Percentage, SendMeVersion};
 
 /// This structure holds recognised configuration parameters. All values are type-safe,
 /// and where applicable clamped to be within range.
@@ -45,7 +45,7 @@ pub struct NetParameters {
     /// Quantile to use when determining the correct circuit timeout value
     /// with our Pareto estimator.
     ///
-    /// (We continue building circuits after this timetout, but only
+    /// (We continue building circuits after this timeout, but only
     /// for build-tim measurement purposes.)
     pub cbt_timeout_quantile: Percentage<BoundedInt32<10, 99>>,
     /// Quantile to use when determining when to abandon circuits completely
@@ -56,23 +56,35 @@ pub struct NetParameters {
     /// Timeout value to use for our Pareto timeout estimator when we have
     /// no initial estimate.
     pub cbt_initial_timeout: IntegerMilliseconds<BoundedInt32<10, { i32::MAX }>>,
+    /// When we don't have a good build-time estimate yet, how long
+    /// (in seconds) do we wait between trying to launch build-time
+    /// testing circuits through the network?
+    pub cbt_testing_delay: IntegerSeconds<BoundedInt32<1, { i32::MAX }>>,
+    /// How many circuits can be open before we will no longer
+    /// consider launching testing circuits to learn average build
+    /// times?
+    pub cbt_max_open_circuits_for_testing: BoundedInt32<0, 14>,
 
     /// The maximum cell window size?
     pub circuit_window: BoundedInt32<100, 1000>,
     /// The decay parameter for circuit priority
     pub circuit_priority_half_life: IntegerMilliseconds<BoundedInt32<1, { i32::MAX }>>,
-    /// Whether to perform circuit extenstions by Ed25519 ID
+    /// Whether to perform circuit extensions by Ed25519 ID
     pub extend_by_ed25519_id: BoundedInt32<0, 1>,
     /// The minimum threshold for circuit patch construction
     pub min_circuit_path_threshold: Percentage<BoundedInt32<25, 95>>,
+
     /// The minimum sendme version to accept.
     pub sendme_accept_min_version: SendMeVersion,
     /// The minimum sendme version to transmit.
     pub sendme_emit_min_version: SendMeVersion,
-    // TODO: We're not ready for these yet. See #145.
-    //pub cbt_testing_delay: BoundedInt32<1, i32::MAX>,
-    //pub cbt_idle_circuit_timeout_while_learning: BoundedInt32<10,60_000>,
-    //pub cbt_max_circuits_when_learning: BoundedInt32<0,14>,
+
+    /// How long should never-used client circuits stay available,
+    /// in the steady state?
+    pub unused_client_circ_timeout: IntegerSeconds<BoundedInt32<60, 86_400>>,
+    /// When we're learning circuit timeouts, how long should never-used client
+    /// circuits stay available?
+    pub unused_client_circ_timeout_while_learning_cbt: IntegerSeconds<BoundedInt32<10, 60_000>>,
 }
 
 impl Default for NetParameters {
@@ -90,6 +102,8 @@ impl Default for NetParameters {
             cbt_num_xm_modes: BoundedInt32::checked_new(10).unwrap(),
             cbt_success_count: BoundedInt32::checked_new(20).unwrap(),
             cbt_timeout_quantile: Percentage::new(BoundedInt32::checked_new(80).unwrap()),
+            cbt_testing_delay: IntegerSeconds::new(BoundedInt32::checked_new(10).unwrap()),
+            cbt_max_open_circuits_for_testing: BoundedInt32::checked_new(10).unwrap(),
             circuit_window: BoundedInt32::checked_new(1000).unwrap(),
             circuit_priority_half_life: IntegerMilliseconds::new(
                 BoundedInt32::checked_new(30000).unwrap(),
@@ -98,6 +112,12 @@ impl Default for NetParameters {
             min_circuit_path_threshold: Percentage::new(BoundedInt32::checked_new(60).unwrap()),
             sendme_accept_min_version: SendMeVersion::new(0),
             sendme_emit_min_version: SendMeVersion::new(0),
+            unused_client_circ_timeout: IntegerSeconds::new(
+                BoundedInt32::checked_new(30 * 60).unwrap(),
+            ),
+            unused_client_circ_timeout_while_learning_cbt: IntegerSeconds::new(
+                BoundedInt32::checked_new(3 * 60).unwrap(),
+            ),
         }
     }
 }
@@ -133,6 +153,10 @@ impl NetParameters {
             "cbtclosequantile" => {
                 self.cbt_abandon_quantile = Percentage::new(BoundedInt32::saturating_from(value));
             }
+            "cbtlearntimeout" => {
+                self.unused_client_circ_timeout_while_learning_cbt =
+                    IntegerSeconds::new(BoundedInt32::saturating_from(value));
+            }
             "cbtmintimeout" => {
                 self.cbt_min_timeout =
                     IntegerMilliseconds::new(BoundedInt32::saturating_from(value));
@@ -140,6 +164,12 @@ impl NetParameters {
             "cbtinitialtimeout" => {
                 self.cbt_initial_timeout =
                     IntegerMilliseconds::new(BoundedInt32::saturating_from(value));
+            }
+            "cbttestfreq" => {
+                self.cbt_testing_delay = IntegerSeconds::new(BoundedInt32::saturating_from(value));
+            }
+            "cbtmaxopencircs" => {
+                self.cbt_max_open_circuits_for_testing = BoundedInt32::saturating_from(value);
             }
             "circwindow" => {
                 self.circuit_window = BoundedInt32::saturating_from(value);
@@ -154,6 +184,10 @@ impl NetParameters {
             "min_paths_for_circs_pct" => {
                 self.min_circuit_path_threshold =
                     Percentage::new(BoundedInt32::saturating_from(value));
+            }
+            "nf_conntimeout_clients" => {
+                self.unused_client_circ_timeout =
+                    IntegerSeconds::new(BoundedInt32::saturating_from(value));
             }
             "sendme_accept_min_version" => {
                 self.sendme_accept_min_version =

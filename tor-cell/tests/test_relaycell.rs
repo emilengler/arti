@@ -1,4 +1,4 @@
-// Tests for encoding/decoding relay messags into relay cell bodies.
+// Tests for encoding/decoding relay messages into relay cell bodies.
 
 use tor_bytes::Error;
 use tor_cell::relaycell::{msg, msg::RelayMsg, RelayCell, RelayCmd, StreamId};
@@ -53,11 +53,29 @@ fn cell(body: &str, id: StreamId, msg: RelayMsg) {
 }
 
 #[test]
+fn bad_rng() {
+    use rand::RngCore;
+    let mut rng = BadRng;
+
+    assert_eq!(rng.next_u32(), 0xf0f0f0f0);
+    assert_eq!(rng.next_u64(), 0xf0f0f0f0f0f0f0f0);
+    let mut buf = [0u8; 19];
+    assert!(rng.try_fill_bytes(&mut buf).is_ok());
+    assert_eq!(
+        &buf,
+        &[
+            0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0, 0xf0,
+            0xf0, 0xf0, 0xf0, 0xf0, 0xf0,
+        ]
+    );
+}
+
+#[test]
 fn test_cells() {
     cell(
         "02 0000 9999 12345678 000c 6e6565642d746f2d6b6e6f77 00000000",
         0x9999.into(),
-        msg::Data::new(&b"need-to-know"[..]).into(),
+        msg::Data::new(&b"need-to-know"[..]).unwrap().into(),
     );
 
     // length too big: 0x1f3 is one byte too many.

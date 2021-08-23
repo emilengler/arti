@@ -40,7 +40,7 @@ where
     } else {
         // This is a bit of an ugly case: We have measured values, but they're
         // all zero.  If this happens, the bandwidth authorities exist but they
-        // very confused: we should fall back to uniform wrighting.
+        // very confused: we should fall back to uniform weighting.
         BandwidthFn::Uniform
     }
 }
@@ -234,7 +234,7 @@ impl WeightSet {
         // we shift, to improve accuracy.  We know that this will be
         // safe, since the inputs are both u32, and so cannot overflow
         // a u64.
-        let router_weight = (router_bw as u64) * (ws.for_role(role) as u64);
+        let router_weight = u64::from(router_bw) * u64::from(ws.for_role(role));
         router_weight >> self.shift
     }
 
@@ -246,7 +246,7 @@ impl WeightSet {
         let total_bw = consensus
             .relays()
             .iter()
-            .map(|rs| bandwidth_fn.apply(rs.weight()) as u64)
+            .map(|rs| u64::from(bandwidth_fn.apply(rs.weight())))
             .sum();
         let p = consensus.bandwidth_weights();
 
@@ -313,7 +313,7 @@ impl WeightSet {
         let w_max = w.iter().map(RelayWeight::max_weight).max().unwrap();
 
         // We want "shift" such that (total * w_max) >> shift <= u64::max
-        let shift = calculate_shift(total_bw, w_max as u64) as u8;
+        let shift = calculate_shift(total_bw, u64::from(w_max)) as u8;
 
         WeightSet {
             bandwidth_fn,
@@ -367,7 +367,7 @@ fn calculate_shift(a: u64, b: u64) -> u32 {
 
 /// Return an upper bound for the log2 of n.
 ///
-/// This function overestimates whenver n is a power of two, but that doesn't
+/// This function overestimates whenever n is a power of two, but that doesn't
 /// much matter for the uses we're giving it here.
 fn log2_upper(n: u64) -> u32 {
     64 - n.leading_zeros()

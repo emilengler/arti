@@ -37,11 +37,11 @@
 //!
 //! # Using `tor-rtcompat`
 //!
-//! The `tor-rtcompat` crate provide several traits that that
+//! The `tor-rtcompat` crate provides several traits that
 //! encapsulate different runtime capabilities.
 //!
 //!  * A runtime is a [`SpawnBlocking`] if it can block on a future.
-//!  * A runtime if a [`SleepProvider`] if it can make timer futures that
+//!  * A runtime is a [`SleepProvider`] if it can make timer futures that
 //!    become Ready after a given interval of time.
 //!  * A runtime is a [`TcpProvider`] if it can make and receive TCP
 //!    connections
@@ -53,8 +53,8 @@
 //! You can get a [`Runtime`] in several ways:
 //!
 //!   * If you already have an asynchronous backend (for example, one
-//!     that you built with tokio, or by running with
-//!     `#[tokio::main]`, you can wrap it as a [`Runtime`] with
+//!     that you built with tokio by running with
+//!     `#[tokio::main]`), you can wrap it as a [`Runtime`] with
 //!     [`current_user_runtime()`].
 //!
 //!   * If you want to construct a default runtime that you won't be
@@ -95,7 +95,7 @@
 //! That simplification would come at a cost, however.  First of all,
 //! it would make it harder for us to use Rust's "feature" system
 //! correctly.  Current features are supposed to be _additive only_,
-//! but if had a single global runtime, then support for diffferent
+//! but if had a single global runtime, then support for different
 //! backends would be _mutually exclusive_.  (That is, you couldn't
 //! have both the tokio and async-std features building at the same
 //! time.)
@@ -111,6 +111,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -118,15 +119,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 pub(crate) mod impls;
@@ -166,7 +170,7 @@ pub mod async_std;
 /// # Usage note
 ///
 /// We should never call this from inside other Arti crates, or from
-/// library crates that want to supporet multiple runtimes!  This
+/// library crates that want to support multiple runtimes!  This
 /// function is for Arti _users_ who want to wrap some existing Tokio
 /// or Async_std runtime as a [`Runtime`].  It is not for library
 /// crates that want to work with multiple runtimes.

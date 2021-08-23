@@ -20,6 +20,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -27,15 +28,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 mod err;
@@ -57,10 +61,10 @@ use futures::io::{
     AsyncBufRead, AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader,
 };
 use futures::FutureExt;
-use log::info;
 use memchr::memchr;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing::info;
 
 pub use err::Error;
 pub use response::{DirResponse, SourceInfo};
@@ -122,7 +126,7 @@ where
 ///
 /// To do this, we send a simple HTTP/1.0 request for the described
 /// object in `req` over `stream`, and then wait for a response.  In
-/// log messatges, we describe the origin of the data as coming from
+/// log messages, we describe the origin of the data as coming from
 /// `source`.
 ///
 /// # Notes
@@ -177,9 +181,7 @@ where
         (_, Ok(()), _) => Ok(()),
     };
 
-    let output = String::from_utf8(result)?;
-
-    Ok(DirResponse::new(200, ok.err(), output, source))
+    Ok(DirResponse::new(200, ok.err(), result, source))
 }
 
 /// Read and parse HTTP/1 headers from `stream`.
@@ -276,9 +278,8 @@ where
     S: AsyncRead + Unpin,
     SP: SleepProvider,
 {
-    let mut buf = [0_u8; 1024];
+    let buffer_window_size = 1024;
     let mut written_total: usize = 0;
-
     // XXXX should be an option and is maybe too long.  Though for some
     // users this may be too short?
     let read_timeout = Duration::from_secs(10);
@@ -286,23 +287,38 @@ where
     futures::pin_mut!(timer);
 
     loop {
+        // allocate buffer for next read
+        result.resize(written_total + buffer_window_size, 0);
+        let buf: &mut [u8] = &mut result[written_total..written_total + buffer_window_size];
+
         let status = futures::select! {
-            status = stream.read(&mut buf[..]).fuse() => status,
+            status = stream.read(buf).fuse() => status,
             _ = timer => {
                 return Err(Error::DirTimeout);
             }
         };
-        let n = match status {
+        let written_in_this_loop = match status {
             Ok(n) => n,
             Err(other) => {
                 return Err(other.into());
             }
         };
-        if n == 0 {
+
+        written_total += written_in_this_loop;
+
+        // exit conditions below
+
+        if written_in_this_loop == 0 {
+            /*
+            in case we read less than `buffer_window_size` in last `read`
+            we need to shrink result because otherwise we'll return those
+            un-read 0s
+            */
+            if written_total < result.len() {
+                result.resize(written_total, 0);
+            }
             return Ok(());
         }
-        result.extend(&buf[..n]);
-        written_total += n;
 
         // TODO: It would be good to detect compression bombs, but
         // that would require access to the internal stream, which
@@ -587,7 +603,7 @@ mod test {
         assert!(response.error().is_none());
         assert!(response.source().is_none());
         let out = response.into_output();
-        assert_eq!(&out, "This is where the descs would go.");
+        assert_eq!(&out, b"This is where the descs would go.");
 
         Ok(())
     }

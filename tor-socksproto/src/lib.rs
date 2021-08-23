@@ -8,7 +8,7 @@
 //!
 //! The `tor-socksproto` crate tries to hide the actual details of the
 //! protocol, and expose a stateful handshake type that eventually
-//! provides a [SocksRequest] or an error.  It is part of
+//! provides a [`SocksRequest`] or an error.  It is part of
 //! [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
 //! implement [Tor](https://www.torproject.org/) in Rust.
 //! At present, it is only used to provide a
@@ -61,6 +61,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -68,15 +69,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 mod err;
@@ -85,7 +89,7 @@ mod msg;
 
 pub use err::Error;
 pub use handshake::{Action, SocksHandshake};
-pub use msg::{SocksAddr, SocksAuth, SocksCmd, SocksRequest, SocksStatus};
+pub use msg::{SocksAddr, SocksAuth, SocksCmd, SocksRequest, SocksStatus, SocksVersion};
 
 /// A Result type for the tor_socksproto crate.
 pub type Result<T> = std::result::Result<T, Error>;

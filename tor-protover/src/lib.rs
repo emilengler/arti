@@ -5,8 +5,8 @@
 //! The Tor system is built out of numerous "subprotocols" that are
 //! versioned more or less independently. The `tor-protover` crate
 //! implements parsing and handling for these subprotocol versions, so
-//! that different Tor instances can one another which which parts of
-//! the protocol they support.
+//! that different Tor instances know which parts of the protocol
+//! they support.
 //!
 //! Subprotocol versions are also used to determine which versions of
 //! the protocol are required to connect to the network (or just
@@ -39,6 +39,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -46,15 +47,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 #![allow(clippy::upper_case_acronyms)]
 
@@ -143,7 +147,7 @@ struct SubprotocolEntry {
 /// A set of supported or required subprotocol versions.
 ///
 /// This type supports both recognized subprotocols (listed in ProtoKind),
-/// and unrecognized subprotcols (stored by name).
+/// and unrecognized subprotocols (stored by name).
 ///
 /// To construct an instance, use the FromStr trait:
 /// ```
@@ -154,7 +158,7 @@ struct SubprotocolEntry {
 pub struct Protocols {
     /// A mapping from protocols' integer encodings to bit-vectors.
     recognized: [u64; N_RECOGNIZED],
-    /// A vector of unrecognized protocol vesions.
+    /// A vector of unrecognized protocol versions.
     unrecognized: Vec<SubprotocolEntry>,
 }
 
@@ -238,7 +242,7 @@ impl Protocols {
         match ent.proto {
             Protocol::Proto(k) => {
                 let idx = k.get() as usize;
-                let bit = 1 << (k.get() as u64);
+                let bit = 1 << u64::from(k.get());
                 if (*foundmask & bit) != 0 {
                     return Err(ParseError::Duplicate);
                 }
@@ -270,7 +274,7 @@ impl Default for Protocols {
 #[derive(Error, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ParseError {
-    /// A protovol version was not in the range 0..=63.
+    /// A protocol version was not in the range 0..=63.
     #[error("protocol version out of range")]
     OutOfRange,
     /// Some subprotocol or protocol version appeared more than once.
@@ -405,7 +409,7 @@ impl std::str::FromStr for Protocols {
 }
 
 /// Given a bitmask, return a list of the bits set in the mask, as a
-/// String in the format expectd by Tor consensus documents.
+/// String in the format expected by Tor consensus documents.
 ///
 /// This implementation constructs ranges greedily.  For example, the
 /// bitmask `0b0111011` will be represented as `0-1,3-5`, and not

@@ -18,6 +18,7 @@ WANT_LINTS = """
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![deny(clippy::missing_docs_in_private_items)]
 #![deny(clippy::ref_option_ref)]
@@ -30,6 +31,9 @@ WANT_LINTS = """
 #![warn(clippy::rc_buffer)]
 #![warn(clippy::trait_duplication_in_bounds)]
 #![warn(clippy::unseparated_literal_suffix)]
+#![deny(clippy::unnecessary_wraps)]
+#![deny(clippy::cast_lossless)]
+#![deny(clippy::missing_panics_doc)]
 """
 WANT_LINTS = [ "%s\n" % w for w in WANT_LINTS.split() ]
 
@@ -41,9 +45,7 @@ SOON="""
 #![deny(clippy::panic)]
 #![deny(clippy::expect_used)]
 #![deny(clippy::checked_conversions)]
-#![deny(clippy::unnecessary_wraps)]
 #![deny(clippy::if_then_some_else_none)]
-#![deny(clippy::implicit_clone)]
 #![deny(missing_debug_implementations)]
 #![deny(unused_crate_dependencies)]
 """
@@ -99,6 +101,10 @@ def main(lints,files):
     if not os.path.exists("./tor-proto/src/lib.rs"):
         print("Run this from the top level of an arti repo.")
         sys.exit(1)
+
+    if not files:
+        print("No files provided.  Example usage:")
+        print("   ./maint/add_warnings.py ./maint/add_warning.py */src/{lib,main}.rs")
 
     for fn in files:
         process(lints, fn)

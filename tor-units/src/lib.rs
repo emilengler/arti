@@ -10,6 +10,7 @@
 //! In particular, it provides:
 //!   * a bounded i32 with both checked and clamping constructors,
 //!   * an integer milliseconds wrapper with conversion to [`Duration`]
+//!   * an integer seconds wrapper with conversion to [`Duration`]
 //!   * a percentage wrapper, to prevent accidental failure
 //!     to divide by 100.
 //!   * a SendMeVersion which can be compared only.
@@ -19,6 +20,7 @@
 #![deny(unreachable_pub)]
 #![deny(clippy::await_holding_lock)]
 #![deny(clippy::cargo_common_metadata)]
+#![deny(clippy::cast_lossless)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
 #![deny(clippy::debug_assert_with_mut_call)]
@@ -26,15 +28,18 @@
 #![deny(clippy::exhaustive_structs)]
 #![deny(clippy::expl_impl_clone_on_copy)]
 #![deny(clippy::fallible_impl_from)]
+#![deny(clippy::implicit_clone)]
 #![deny(clippy::large_stack_arrays)]
 #![warn(clippy::manual_ok_or)]
 #![deny(clippy::missing_docs_in_private_items)]
+#![deny(clippy::missing_panics_doc)]
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::trait_duplication_in_bounds)]
+#![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 
 use derive_more::{Add, Display, Div, From, FromStr, Mul};
@@ -105,7 +110,7 @@ impl<const LOWER: i32, const UPPER: i32> BoundedInt32<LOWER, UPPER> {
     }
 
     /// If `val` is within range, return a new `BoundedInt32` wrapping
-    /// it; othwerwise, clamp it to the upper or lower bound as
+    /// it; otherwise, clamp it to the upper or lower bound as
     /// appropriate.
     pub fn saturating_new(val: i32) -> Self {
         Self::unchecked_new(Self::clamp(val))
@@ -284,6 +289,31 @@ impl<T: TryInto<u64>> TryFrom<IntegerMilliseconds<T>> for Duration {
     }
 }
 
+#[derive(
+    Add, Copy, Clone, Mul, Div, From, FromStr, Display, Debug, PartialEq, Eq, Ord, PartialOrd,
+)]
+/// This type represents an integer number of seconds.
+///
+/// The underlying type should implement TryInto<u64>.
+pub struct IntegerSeconds<T> {
+    /// Interior Value. Should Implement TryInto<u64> to be useful.
+    value: T,
+}
+
+impl<T: TryInto<u64>> IntegerSeconds<T> {
+    /// Public Constructor
+    pub fn new(value: T) -> Self {
+        IntegerSeconds { value }
+    }
+}
+
+impl<T: TryInto<u64>> TryFrom<IntegerSeconds<T>> for Duration {
+    type Error = <T as TryInto<u64>>::Error;
+    fn try_from(val: IntegerSeconds<T>) -> Result<Self, <T as TryInto<u64>>::Error> {
+        Ok(Self::from_secs(val.value.try_into()?))
+    }
+}
+
 /// A SendMe Version
 ///
 /// DOCDOC: Explain why this needs to have its own type, or remove it.
@@ -304,8 +334,8 @@ impl SendMeVersion {
 
 #[cfg(test)]
 mod tests {
-    use crate::BoundedInt32;
-    use crate::Error;
+    use super::*;
+    use std::convert::TryInto;
 
     type TestFoo = BoundedInt32<1, 5>;
     type TestBar = BoundedInt32<-45, 17>;
@@ -345,6 +375,19 @@ mod tests {
     }
 
     #[test]
+    #[should_panic]
+    fn uninhabited_saturating_new() {
+        // This value should be uncreatable.
+        let _: BoundedInt32<10, 5> = BoundedInt32::saturating_new(7);
+    }
+
+    #[test]
+    fn uninhabited_from_string() {
+        let v: Result<BoundedInt32<10, 5>, Error> = BoundedInt32::saturating_from_str("7");
+        assert!(matches!(v, Err(Error::Uninhabited)));
+    }
+
+    #[test]
     fn errors_correct() {
         let x: Result<TestBar, Error> = "1000".parse();
         assert!(x.unwrap_err() == Error::AboveUpperBound(1000, TestBar::UPPER));
@@ -374,7 +417,6 @@ mod tests {
 
     #[test]
     fn bounded_to_u64() {
-        use std::convert::TryInto;
         let b: BoundedInt32<-100, 100> = BoundedInt32::checked_new(77).unwrap();
         let u: u64 = b.try_into().unwrap();
         assert_eq!(u, 77);
@@ -382,5 +424,101 @@ mod tests {
         let b: BoundedInt32<-100, 100> = BoundedInt32::checked_new(-77).unwrap();
         let u: Result<u64, Error> = b.try_into();
         assert!(u.is_err());
+    }
+
+    #[test]
+    fn bounded_to_f64() {
+        let x: BoundedInt32<-100, 100> = BoundedInt32::checked_new(77).unwrap();
+        let f: f64 = x.into();
+        assert_eq!(f, 77.0);
+    }
+
+    #[test]
+    fn bounded_from_i32() {
+        let mut x: Result<BoundedInt32<-100, 100>, Error>;
+
+        x = (50).try_into();
+        let y: i32 = x.unwrap().into();
+        assert_eq!(y, 50);
+
+        x = (1000).try_into();
+        assert!(x.is_err());
+    }
+
+    #[test]
+    fn into_bool() {
+        let zero: BoundedInt32<0, 1> = BoundedInt32::saturating_from(0);
+        let one: BoundedInt32<0, 1> = BoundedInt32::saturating_from(1);
+
+        let f: bool = zero.into();
+        let t: bool = one.into();
+        assert_eq!(f, false);
+        assert_eq!(t, true);
+    }
+
+    #[test]
+    fn into_u8() {
+        let zero: BoundedInt32<0, 255> = BoundedInt32::saturating_from(0);
+        let one: BoundedInt32<0, 255> = BoundedInt32::saturating_from(1);
+        let ninety: BoundedInt32<0, 255> = BoundedInt32::saturating_from(90);
+        let max: BoundedInt32<0, 255> = BoundedInt32::saturating_from(1000);
+
+        let a: u8 = zero.into();
+        let b: u8 = one.into();
+        let c: u8 = ninety.into();
+        let d: u8 = max.into();
+
+        assert_eq!(a, 0);
+        assert_eq!(b, 1);
+        assert_eq!(c, 90);
+        assert_eq!(d, 255);
+    }
+
+    #[test]
+    fn percents() {
+        type Pct = Percentage<u8>;
+        let p = Pct::new(100);
+        assert_eq!(p.as_percent(), 100);
+        assert_eq!(p.as_fraction(), 1.0);
+
+        let p = Pct::new(0);
+        assert_eq!(p.as_percent(), 0);
+        assert_eq!(p.as_fraction(), 0.0);
+
+        let p = Pct::new(25);
+        assert_eq!(p.as_percent(), 25);
+        assert_eq!(p.as_fraction(), 0.25);
+    }
+
+    #[test]
+    fn milliseconds() {
+        type Msec = IntegerMilliseconds<i32>;
+
+        let ms = Msec::new(500);
+        let d: Result<Duration, _> = ms.try_into();
+        assert_eq!(d.unwrap(), Duration::from_millis(500));
+
+        let ms = Msec::new(-100);
+        let d: Result<Duration, _> = ms.try_into();
+        assert!(d.is_err());
+    }
+
+    #[test]
+    fn seconds() {
+        type Sec = IntegerSeconds<i32>;
+
+        let ms = Sec::new(500);
+        let d: Result<Duration, _> = ms.try_into();
+        assert_eq!(d.unwrap(), Duration::from_secs(500));
+
+        let ms = Sec::new(-100);
+        let d: Result<Duration, _> = ms.try_into();
+        assert!(d.is_err());
+    }
+
+    #[test]
+    fn sendme() {
+        let smv = SendMeVersion::new(5);
+        assert_eq!(smv.get(), 5);
     }
 }

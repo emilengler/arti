@@ -24,7 +24,7 @@ use std::convert::TryInto;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
-use log::{debug, trace};
+use tracing::{debug, trace};
 
 /// A message telling the channel reactor to do something.
 #[derive(Debug)]
@@ -238,7 +238,7 @@ where
         }
     }
 
-    /// Give the RELAY cell `msg` to the appropriate circuid.
+    /// Give the RELAY cell `msg` to the appropriate circuit.
     async fn deliver_relay(&mut self, circid: CircId, msg: ChanMsg) -> Result<()> {
         let mut map = self.circs.lock().await;
 
@@ -275,7 +275,7 @@ where
     }
 
     /// Handle a DESTROY cell by removing the corresponding circuit
-    /// from the map, and pasing the destroy cell onward to the circuit.
+    /// from the map, and passing the destroy cell onward to the circuit.
     async fn deliver_destroy(&mut self, circid: CircId, msg: ChanMsg) -> Result<()> {
         let mut map = self.circs.lock().await;
         // Remove the circuit from the map: nothing more can be done with it.
@@ -311,7 +311,7 @@ where
                     // XXXX I think that this one actually means the other side
                     // is closed
                     .map_err(|_| {
-                        Error::InternalError("circuit wan't interested in destroy cell?".into())
+                        Error::InternalError("circuit wasn't interested in destroy cell?".into())
                     })
             }
             // We've sent a destroy; we can leave this circuit removed.
@@ -559,7 +559,7 @@ pub(crate) mod test {
         );
 
         // Can't get handshaking cells while channel is open.
-        let versions_cell = msg::Versions::new([3]).into();
+        let versions_cell = msg::Versions::new([3]).unwrap().into();
         input
             .send(Ok(ChanCell::new(0.into(), versions_cell)))
             .await

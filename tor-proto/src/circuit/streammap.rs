@@ -14,7 +14,7 @@ use std::collections::HashMap;
 
 use rand::Rng;
 
-use log::info;
+use tracing::info;
 
 /// The entry for a stream.
 pub(super) enum StreamEnt {
@@ -177,7 +177,7 @@ impl StreamMap {
                 Ok(Send)
             }
             StreamEnt::EndSent(_) => {
-                panic!("Hang on! We're sending an END on a stream where we alerady sent an END‽");
+                panic!("Hang on! We're sending an END on a stream where we already sent an END‽");
             }
         }
     }
