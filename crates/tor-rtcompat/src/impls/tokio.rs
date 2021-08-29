@@ -102,6 +102,10 @@ mod net {
     }
 }
 
+#[cfg(feature = "tokio-rustls")]
+#[path = "rustls_verifier.rs"]
+mod rustls_verifier;
+
 /// Implement a set of TLS wrappers for use with tokio.
 ///
 /// Right now only tokio_native_tls is supported.
@@ -116,14 +120,24 @@ mod tls {
     use std::net::SocketAddr;
     use std::pin::Pin;
     use std::task::{Context, Poll};
+    #[cfg(feature = "tokio-rustls")]
+    use {
+        rustls::{Session, TLSError},
+        tokio_rustls::webpki::DNSNameRef,
+    };
 
     /// Connection factory for building tls connections with tokio and
     /// native_tls.
     pub struct TlsConnector {
-        /// The inner connector object
+        /// The inner connector object when using native TLS
+        #[cfg(not(feature = "tokio-rustls"))]
         connector: tokio_native_tls::TlsConnector,
+        /// The inner connector object when using Rustls
+        #[cfg(feature = "tokio-rustls")]
+        connector: tokio_rustls::TlsConnector,
     }
 
+    #[cfg(not(feature = "tokio-rustls"))]
     impl TryFrom<native_tls::TlsConnectorBuilder> for TlsConnector {
         type Error = native_tls::Error;
         fn try_from(builder: native_tls::TlsConnectorBuilder) -> native_tls::Result<TlsConnector> {
@@ -132,10 +146,22 @@ mod tls {
         }
     }
 
+    #[cfg(feature = "tokio-rustls")]
+    impl TryFrom<tokio_rustls::TlsConnector> for TlsConnector {
+        type Error = TLSError;
+        fn try_from(connector: tokio_rustls::TlsConnector) -> Result<TlsConnector, TLSError> {
+            Ok(TlsConnector { connector })
+        }
+    }
+
     /// A TLS-over-TCP stream, using Tokio.
     pub struct TlsStream {
-        /// The inner stream object.
+        /// The inner stream object when using native TLS
+        #[cfg(not(feature = "tokio-rustls"))]
         s: Compat<tokio_native_tls::TlsStream<tokio_crate::net::TcpStream>>,
+        /// The inner stream object when using Rustls
+        #[cfg(feature = "tokio-rustls")]
+        s: Compat<tokio_rustls::client::TlsStream<tokio_crate::net::TcpStream>>,
     }
 
     #[async_trait]
@@ -148,6 +174,10 @@ mod tls {
             hostname: &str,
         ) -> IoResult<Self::Conn> {
             let stream = tokio_crate::net::TcpStream::connect(addr).await?;
+
+            #[cfg(feature = "tokio-rustls")]
+            let hostname =
+                DNSNameRef::try_from_ascii_str(hostname).expect("Invalid DNS name error");
 
             let conn = self
                 .connector
@@ -186,6 +216,7 @@ mod tls {
     }
 
     impl crate::traits::CertifiedConn for TlsStream {
+        #[cfg(not(feature = "tokio-rustls"))]
         fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
             let cert = self.s.get_ref().get_ref().peer_certificate();
             match cert {
@@ -197,6 +228,16 @@ mod tls {
                 }
                 Ok(None) => Ok(None),
                 Err(e) => Err(IoError::new(std::io::ErrorKind::Other, e)),
+            }
+        }
+
+        #[cfg(feature = "tokio-rustls")]
+        fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
+            let (_, cs) = self.s.get_ref().get_ref();
+            let certs = cs.get_peer_certificates();
+            match certs {
+                Some(c) => Ok(Some(c[0].as_ref().to_vec())),
+                None => Ok(None),
             }
         }
     }
@@ -223,6 +264,24 @@ macro_rules! implement_traits_for {
             type TlsStream = tls::TlsStream;
             type Connector = tls::TlsConnector;
 
+            #[cfg(feature = "tokio-rustls")]
+            fn tls_connector(&self) -> tls::TlsConnector {
+                let mut config = tokio_rustls::rustls::ClientConfig::new();
+
+                config
+                    .dangerous()
+                    .set_certificate_verifier(std::sync::Arc::new(
+                        rustls_verifier::DummyVerifier {},
+                    ));
+
+                let connector = tokio_rustls::TlsConnector::from(std::sync::Arc::new(config));
+
+                connector
+                    .try_into()
+                    .expect("Couldn't build a rustls TLS connector!")
+            }
+
+            #[cfg(not(feature = "tokio-rustls"))]
             fn tls_connector(&self) -> tls::TlsConnector {
                 let mut builder = native_tls::TlsConnector::builder();
                 // These function names are scary, but they just mean that we

@@ -2,8 +2,6 @@
 //!
 //! This crate helps define a slim API around our async runtime so that we
 //! can easily swap it out.
-//!
-//! We'll probably want to support tokio as well in the future.
 
 use std::convert::TryInto;
 
@@ -111,30 +109,58 @@ mod net {
     }
 }
 
+#[cfg(feature = "async-rustls")]
+#[path = "rustls_verifier.rs"]
+mod rustls_verifier;
+
 /// Implement TLS using async_std and async_native_tls.
 mod tls {
     use async_std_crate::net::TcpStream;
     use async_trait::async_trait;
-    use futures::io::{AsyncRead, AsyncWrite};
 
     use std::convert::TryFrom;
     use std::io::{Error as IoError, Result as IoResult};
     use std::net::SocketAddr;
 
-    /// The TLS-over-TCP type returned by this module.
+    /// The TLS-over-TCP type returned by this module when built with native TLS
     #[allow(unreachable_pub)] // not actually unreachable; depends on features
+    #[cfg(not(feature = "async-rustls"))]
     pub type TlsStream = async_native_tls::TlsStream<TcpStream>;
+
+    /// The TLS-over-TCP type returned by this module when built with Rustls
+    #[allow(unreachable_pub)] // not actually unreachable; depends on features
+    #[cfg(feature = "async-rustls")]
+    pub type TlsStream = async_rustls::client::TlsStream<TcpStream>;
+
+    #[cfg(feature = "async-rustls")]
+    use {
+        async_rustls::webpki::DNSNameRef,
+        rustls::{Session, TLSError},
+    };
 
     /// A connection factory for use with async_std.
     pub struct TlsConnector {
-        /// The internal connector that we're wrapping with a new API
+        /// The internal native TLS connector that we're wrapping with a new API
+        #[cfg(not(feature = "async-rustls"))]
         connector: async_native_tls::TlsConnector,
+        /// The internal Rustls connector that we're wrapping with a new API
+        #[cfg(feature = "async-rustls")]
+        connector: async_rustls::TlsConnector,
     }
 
+    #[cfg(not(feature = "async-rustls"))]
     impl TryFrom<native_tls::TlsConnectorBuilder> for TlsConnector {
         type Error = std::convert::Infallible;
         fn try_from(builder: native_tls::TlsConnectorBuilder) -> Result<TlsConnector, Self::Error> {
             let connector = builder.into();
+            Ok(TlsConnector { connector })
+        }
+    }
+
+    #[cfg(feature = "async-rustls")]
+    impl TryFrom<async_rustls::TlsConnector> for TlsConnector {
+        type Error = TLSError;
+        fn try_from(connector: async_rustls::TlsConnector) -> Result<TlsConnector, TLSError> {
             Ok(TlsConnector { connector })
         }
     }
@@ -150,6 +176,10 @@ mod tls {
         ) -> IoResult<Self::Conn> {
             let stream = TcpStream::connect(addr).await?;
 
+            #[cfg(feature = "async-rustls")]
+            let hostname =
+                DNSNameRef::try_from_ascii_str(hostname).expect("Invalid DNS name error");
+
             let conn = self
                 .connector
                 .connect(hostname, stream)
@@ -159,10 +189,8 @@ mod tls {
         }
     }
 
-    impl<S> crate::traits::CertifiedConn for async_native_tls::TlsStream<S>
-    where
-        S: AsyncRead + AsyncWrite + Unpin,
-    {
+    impl crate::traits::CertifiedConn for TlsStream {
+        #[cfg(not(feature = "async-rustls"))]
         fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
             let cert = self.peer_certificate();
             match cert {
@@ -174,6 +202,16 @@ mod tls {
                 }
                 Ok(None) => Ok(None),
                 Err(e) => Err(IoError::new(std::io::ErrorKind::Other, e)),
+            }
+        }
+
+        #[cfg(feature = "async-rustls")]
+        fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
+            let (_, cs) = self.get_ref();
+            let certs = cs.get_peer_certificates();
+            match certs {
+                Some(c) => Ok(Some(c[0].as_ref().to_vec())),
+                None => Ok(None),
             }
         }
     }
@@ -209,6 +247,7 @@ impl TlsProvider for async_executors::AsyncStd {
     type TlsStream = tls::TlsStream;
     type Connector = tls::TlsConnector;
 
+    #[cfg(not(feature = "async-rustls"))]
     fn tls_connector(&self) -> tls::TlsConnector {
         let mut builder = native_tls::TlsConnector::builder();
         // These function names are scary, but they just mean that we
@@ -220,5 +259,20 @@ impl TlsProvider for async_executors::AsyncStd {
             .danger_accept_invalid_hostnames(true);
 
         builder.try_into().expect("Couldn't build a TLS connector!")
+    }
+
+    #[cfg(feature = "async-rustls")]
+    fn tls_connector(&self) -> tls::TlsConnector {
+        let mut config = async_rustls::rustls::ClientConfig::new();
+
+        config
+            .dangerous()
+            .set_certificate_verifier(std::sync::Arc::new(rustls_verifier::DummyVerifier {}));
+
+        let connector = async_rustls::TlsConnector::from(std::sync::Arc::new(config));
+
+        connector
+            .try_into()
+            .expect("Couldn't build a rustls TLS connector!")
     }
 }
