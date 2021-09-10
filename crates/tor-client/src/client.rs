@@ -4,7 +4,7 @@
 //! Once the client is bootstrapped, you can make anonymous
 //! connections ("streams") over the Tor network using
 //! `TorClient::connect()`.
-use tor_circmgr::{CircMgrConfig, IsolationInfo, TargetPort};
+use tor_circmgr::{CircMgrConfig, IsolationFlag, IsolationInfo, TargetPort};
 use tor_dirmgr::{DirEvent, DirMgrConfig};
 use tor_proto::circuit::{ClientCirc, IpVersionPreference};
 use tor_proto::stream::DataStream;
@@ -22,6 +22,10 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use tracing::{debug, error, info, warn};
 
+/// Parameters for a TorClient.
+///
+/// For now, it only includes the isolation information that can be used to set isolation flags for
+/// streams on a proxy connection.
 #[derive(Clone)]
 struct Parameters {
     isolation_info: IsolationInfo,
@@ -123,20 +127,39 @@ impl Default for ConnectPrefs {
 }
 
 impl Parameters {
-    /// DOCDOC
+    /// Return a new parameter object. The isolation information in it is NOT isolated and thus
+    /// streams can be shared with other clients.
     fn new() -> Self {
         Self {
             isolation_info: IsolationInfo::new(),
         }
     }
 
-    /// DOCDOC
+    /// Return a reference to the isolation info objet.
     fn isolation_info(&self) -> &IsolationInfo {
         &self.isolation_info
+    }
+
+    /// Return a mutable reference to the isolation info objet.
+    fn isolation_info_mut(&mut self) -> &mut IsolationInfo {
+        &mut self.isolation_info
     }
 }
 
 impl<R: Runtime> TorClient<R> {
+    /// Return a new client that is isolated from the others.
+    pub fn new_isolated(&self) -> Self {
+        let mut client = self.clone();
+        client.params.isolation_info_mut().isolate();
+        client
+    }
+
+    /// Set an isolation flag for this client.
+    pub fn set_isolation(&mut self, flag: IsolationFlag) -> &mut Self {
+        self.params.isolation_info_mut().set(flag);
+        self
+    }
+
     /// Bootstrap a network connection configured by `dir_cfg` and `circ_cfg`.
     ///
     /// Return a client once there is enough directory material to

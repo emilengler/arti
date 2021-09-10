@@ -168,7 +168,7 @@ impl IsolationInfo {
     }
 
     /// Isolate ourself.
-    fn isolate(&mut self) {
+    pub fn isolate(&mut self) {
         self.group = IsolationToken::new();
     }
 }
