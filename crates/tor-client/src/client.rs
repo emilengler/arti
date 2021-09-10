@@ -4,7 +4,7 @@
 //! Once the client is bootstrapped, you can make anonymous
 //! connections ("streams") over the Tor network using
 //! `TorClient::connect()`.
-use tor_circmgr::{CircMgrConfig, IsolationToken, TargetPort};
+use tor_circmgr::{CircMgrConfig, IsolationInfo, TargetPort};
 use tor_dirmgr::{DirEvent, DirMgrConfig};
 use tor_proto::circuit::{ClientCirc, IpVersionPreference};
 use tor_proto::stream::DataStream;
@@ -22,6 +22,11 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use tracing::{debug, error, info, warn};
 
+#[derive(Clone)]
+struct Parameters {
+    isolation_info: IsolationInfo,
+}
+
 /// An active client session on the Tor network.
 ///
 /// While it's running, it will fetch directory information, build
@@ -38,6 +43,8 @@ pub struct TorClient<R: Runtime> {
     circmgr: Arc<tor_circmgr::CircMgr<R>>,
     /// Directory manager for keeping our directory material up to date.
     dirmgr: Arc<tor_dirmgr::DirMgr<R>>,
+    /// Client parameters
+    params: Parameters,
 }
 
 /// Preferences for how to route a stream over the Tor network.
@@ -45,8 +52,6 @@ pub struct TorClient<R: Runtime> {
 pub struct ConnectPrefs {
     /// What kind of IPv6/IPv4 we'd prefer, and how strongly.
     ip_ver_pref: IpVersionPreference,
-    /// Id of the isolation group the connection should be part of
-    isolation_group: IsolationToken,
 }
 
 impl ConnectPrefs {
@@ -106,19 +111,6 @@ impl ConnectPrefs {
         }
     }
 
-    /// Indicate which other connections might use the same circuit
-    /// as this one.
-    pub fn set_isolation_group(&mut self, isolation_group: IsolationToken) -> &mut Self {
-        self.isolation_group = isolation_group;
-        self
-    }
-
-    /// Return a u64 to describe which connections might use
-    /// the same circuit as this one.
-    fn isolation_group(&self) -> IsolationToken {
-        self.isolation_group
-    }
-
     // TODO: Add some way to be IPFlexible, and require exit to support both.
 }
 
@@ -126,8 +118,21 @@ impl Default for ConnectPrefs {
     fn default() -> Self {
         ConnectPrefs {
             ip_ver_pref: Default::default(),
-            isolation_group: IsolationToken::no_isolation(),
         }
+    }
+}
+
+impl Parameters {
+    /// DOCDOC
+    fn new() -> Self {
+        Self {
+            isolation_info: IsolationInfo::new(),
+        }
+    }
+
+    /// DOCDOC
+    fn isolation_info(&self) -> &IsolationInfo {
+        &self.isolation_info
     }
 }
 
@@ -180,6 +185,7 @@ impl<R: Runtime> TorClient<R> {
             runtime,
             circmgr,
             dirmgr,
+            params: Parameters::new(),
         })
     }
 
@@ -200,7 +206,7 @@ impl<R: Runtime> TorClient<R> {
 
         let flags = flags.unwrap_or_default();
         let exit_ports = [flags.wrap_target_port(port)];
-        let circ = self.get_or_launch_exit_circ(&exit_ports, &flags).await?;
+        let circ = self.get_or_launch_exit_circ(&exit_ports).await?;
         info!("Got a circuit for {}:{}", addr, port);
 
         // TODO: make this configurable.
@@ -218,17 +224,12 @@ impl<R: Runtime> TorClient<R> {
     /// Perform a remote DNS lookup with the provided hostname.
     ///
     /// On success, return a list of IP addresses.
-    pub async fn resolve(
-        &self,
-        hostname: &str,
-        flags: Option<ConnectPrefs>,
-    ) -> Result<Vec<IpAddr>> {
+    pub async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>> {
         if hostname.to_lowercase().ends_with(".onion") {
             return Err(anyhow!("Rejecting .onion address as unsupported."));
         }
 
-        let flags = flags.unwrap_or_default();
-        let circ = self.get_or_launch_exit_circ(&[], &flags).await?;
+        let circ = self.get_or_launch_exit_circ(&[]).await?;
 
         // TODO: make this configurable.
         let resolve_timeout = Duration::new(10, 0);
@@ -245,13 +246,8 @@ impl<R: Runtime> TorClient<R> {
     /// Perform a remote DNS reverse lookup with the provided IP address.
     ///
     /// On success, return a list of hostnames.
-    pub async fn resolve_ptr(
-        &self,
-        addr: &str,
-        flags: Option<ConnectPrefs>,
-    ) -> Result<Vec<String>> {
-        let flags = flags.unwrap_or_default();
-        let circ = self.get_or_launch_exit_circ(&[], &flags).await?;
+    pub async fn resolve_ptr(&self, addr: &str) -> Result<Vec<String>> {
+        let circ = self.get_or_launch_exit_circ(&[]).await?;
         let addr = IpAddr::from_str(addr)?;
 
         // TODO: make this configurable.
@@ -286,15 +282,15 @@ impl<R: Runtime> TorClient<R> {
 
     /// Get or launch an exit-suitable circuit with a given set of
     /// exit ports.
-    async fn get_or_launch_exit_circ(
-        &self,
-        exit_ports: &[TargetPort],
-        flags: &ConnectPrefs,
-    ) -> Result<Arc<ClientCirc>> {
+    async fn get_or_launch_exit_circ(&self, exit_ports: &[TargetPort]) -> Result<Arc<ClientCirc>> {
         let dir = self.dirmgr.netdir();
         let circ = self
             .circmgr
-            .get_or_launch_exit(dir.as_ref().into(), exit_ports, flags.isolation_group())
+            .get_or_launch_exit(
+                dir.as_ref().into(),
+                exit_ports,
+                self.params.isolation_info(),
+            )
             .await
             .context("Unable to launch circuit")?;
         drop(dir); // This decreases the refcount on the netdir.

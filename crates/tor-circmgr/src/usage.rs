@@ -1,6 +1,8 @@
 //! Code related to tracking what activities a circuit can be used for.
 
 use rand::Rng;
+use std::collections::HashSet;
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -65,7 +67,7 @@ impl TargetPort {
 /// [`IsolationToken::no_isolation`]. However, tokens created with
 /// [`IsolationToken::no_isolation`] are all equal to one another.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct IsolationToken(u64);
+struct IsolationToken(u64);
 
 #[allow(clippy::new_without_default)]
 impl IsolationToken {
@@ -77,7 +79,7 @@ impl IsolationToken {
     /// Panics if we have already allocated 2^64 isolation tokens: in that
     /// case, we have exhausted the space of possible tokens, and it is
     /// no longer possible to ensure isolation.
-    pub fn new() -> Self {
+    fn new() -> Self {
         /// Internal counter used to generate different tokens each time
         static COUNTER: AtomicU64 = AtomicU64::new(1);
         // Ordering::Relaxed is fine because we don't care about causality, we just want a
@@ -92,8 +94,90 @@ impl IsolationToken {
     /// `new`.
     ///
     /// This can be used when no isolation is wanted for some streams.
-    pub fn no_isolation() -> Self {
+    fn no_isolation() -> Self {
         IsolationToken(0)
+    }
+}
+
+/// An isolation flag are rules for which streams are allowed to share circuits with one another.
+///
+/// Two streams need to share the same isolation flag in order to be able to be on the same circuit
+/// or the lack of the same flag.
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
+pub enum IsolationFlag {
+    /// Destination address of the stream.
+    DestAddr(IpAddr),
+    /// Destination port of the stream.
+    DestPort(u16),
+    /// SOCKS protocol authentication (username and password).
+    SOCKSAuth(String),
+}
+
+/// Isolation information attached to a circuit usage.
+///
+/// It contains an isolation group and a set of isolation flags. This is attached to a circuit
+/// usage type and used to determine if a stream can be attached or not to the circuit.
+#[derive(Clone, Debug)]
+pub struct IsolationInfo {
+    /// Isolation group in which this belongs to.
+    group: IsolationToken,
+    /// Set of isolation flags.
+    flags: HashSet<IsolationFlag>,
+}
+
+impl IsolationInfo {
+    /// Create a new isolation information object. Every object created this way belong to the same
+    /// group. One either needs to call [`IsolationInfo::isolate()`] or use
+    /// [`IsolationInfo::new_isolated()`] to get a new isolation group.
+    pub fn new() -> Self {
+        Self {
+            group: IsolationToken::no_isolation(),
+            flags: HashSet::new(),
+        }
+    }
+
+    /// Create a new isolation information object but isolated from any other other object that
+    /// were created or will be created.
+    pub fn new_isolated() -> Self {
+        let mut info = IsolationInfo::new();
+        info.isolate();
+        info
+    }
+
+    /// Insert a new isolation flag into this object.
+    pub fn set(&mut self, flag: IsolationFlag) {
+        self.flags.insert(flag);
+    }
+
+    /// Return true iff the given isolation info object matches this one.
+    ///
+    /// The rules are for a match:
+    ///     1. Isolation group matches
+    ///     2. Same amount of flags which is a small optimization to (3)
+    ///     3. For all keys, value1 == value2 _OR_ (NOT value1 and NOT value2)
+    ///
+    /// In other words, all flags must match or for a specific flag, it must not be present in both
+    /// flag sets.
+    ///
+    /// For this, we do an intersection between the two flag sets and they should match the total
+    /// number of flags we have (to the condition that both flag sets have the same length).
+    pub fn matches(&self, other: &Self) -> bool {
+        self.group == other.group
+            && self.flags.len() == other.flags.len()
+            && self.flags.intersection(&other.flags).count() == self.flags.len()
+    }
+
+    /// Isolate ourself.
+    fn isolate(&mut self) {
+        self.group = IsolationToken::new();
+    }
+}
+
+// This is so we can both TargetCircUsage and SupportedCircUsage can be compared with equality
+// signs along with tests asserts.
+impl PartialEq for IsolationInfo {
+    fn eq(&self, other: &Self) -> bool {
+        self.matches(other)
     }
 }
 
@@ -133,8 +217,8 @@ pub(crate) enum TargetCircUsage {
         /// If this list of ports is empty, then the circuit doesn't need
         /// to support any particular port, but it still needs to be an exit.
         ports: Vec<TargetPort>,
-        /// Isolation group the circuit shall be part of
-        isolation_group: IsolationToken,
+        /// Isolation information for the resulting circuit.
+        isolation_info: IsolationInfo,
     },
     /// For a circuit is only used for the purpose of building it.
     TimeoutTesting,
@@ -152,9 +236,9 @@ pub(crate) enum SupportedCircUsage {
     Exit {
         /// Exit policy of the circuit
         policy: ExitPolicy,
-        /// Isolation group the circuit is part of. None when the circuit is not yet assigned to an
-        /// isolation group.
-        isolation_group: Option<IsolationToken>,
+        /// Isolation information of the circuit. None when the circuit has not been assigned
+        /// isolation info yet.
+        isolation_info: Option<IsolationInfo>,
     },
     /// This circuit is not suitable for any usage.
     NoUsage,
@@ -176,7 +260,7 @@ impl TargetCircUsage {
             }
             TargetCircUsage::Exit {
                 ports: p,
-                isolation_group,
+                isolation_info,
             } => {
                 let path =
                     ExitPathBuilder::from_target_ports(p.clone()).pick_path(rng, netdir, config)?;
@@ -187,7 +271,7 @@ impl TargetCircUsage {
                     path,
                     SupportedCircUsage::Exit {
                         policy,
-                        isolation_group: Some(*isolation_group),
+                        isolation_info: Some(isolation_info.clone()),
                     },
                 ))
             }
@@ -197,7 +281,7 @@ impl TargetCircUsage {
                 let usage = match policy {
                     Some(policy) if policy.allows_some_port() => SupportedCircUsage::Exit {
                         policy,
-                        isolation_group: None,
+                        isolation_info: None,
                     },
                     _ => SupportedCircUsage::NoUsage,
                 };
@@ -218,14 +302,14 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
             (
                 Exit {
                     policy: p1,
-                    isolation_group: i1,
+                    isolation_info: i1,
                 },
                 TargetCircUsage::Exit {
                     ports: p2,
-                    isolation_group: i2,
+                    isolation_info: i2,
                 },
             ) => {
-                i1.map(|i1| i1 == *i2).unwrap_or(true)
+                i1.as_ref().map(|i1| i1.matches(i2)).unwrap_or(true)
                     && p2.iter().all(|port| p1.allows_port(*port))
             }
             (Exit { .. } | NoUsage, TargetCircUsage::TimeoutTesting) => true,
@@ -240,15 +324,14 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
             (Dir, TargetCircUsage::Dir) => Ok(()),
             (
                 Exit {
-                    isolation_group: ref mut i1,
+                    isolation_info: ref mut i1,
                     ..
                 },
                 TargetCircUsage::Exit {
-                    isolation_group: i2,
-                    ..
+                    isolation_info: i2, ..
                 },
-            ) if i1.map(|i1| i1 == *i2).unwrap_or(true) => {
-                *i1 = Some(*i2);
+            ) if i1.as_ref().map(|i1| i1.matches(i2)).unwrap_or(true) => {
+                *i1 = Some(i2.clone());
                 Ok(())
             }
             (Exit { .. }, TargetCircUsage::Exit { .. }) => {
@@ -265,6 +348,42 @@ mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use tor_netdir::testnet;
+
+    #[test]
+    fn isolation_info() {
+        // Two new isolation info means in the same group.
+        let mut i1 = IsolationInfo::new();
+        let mut i2 = IsolationInfo::new();
+        assert!(i1.matches(&i2));
+
+        // Set a destination port flag in i1: i1 streams can't be on i2 streams on same circuit and
+        // vice versa.
+        i1.set(IsolationFlag::DestPort(80));
+        assert!(!i1.matches(&i2));
+        assert!(!i2.matches(&i1));
+
+        // Set a destination port flag in i2 that is different from i1: they can't share a circuit.
+        i2.set(IsolationFlag::DestPort(443));
+        assert!(!i1.matches(&i2));
+        assert!(!i2.matches(&i1));
+
+        // Set same destination port flag to 80 in i2. Still can't share because i1 requires port
+        // 443.
+        i2.set(IsolationFlag::DestPort(80));
+        assert!(!i1.matches(&i2));
+        assert!(!i2.matches(&i1));
+
+        // Add destination port flag to 443 in i1. Now, i1 and i2 have the same flags and so they
+        // can share a circuit.
+        i1.set(IsolationFlag::DestPort(443));
+        assert!(i1.matches(&i2));
+        assert!(i2.matches(&i1));
+
+        // Isolate i2 and thus should be unequal to i1 whatever happens next.
+        i2.isolate();
+        assert!(!i1.matches(&i2));
+        assert!(!i2.matches(&i1));
+    }
 
     #[test]
     fn exit_policy() {
@@ -319,42 +438,42 @@ mod test {
             v4: Arc::new("accept 80,443".parse().unwrap()),
             v6: Arc::new("accept 23".parse().unwrap()),
         };
-        let isolation_group = IsolationToken::new();
-        let isolation_group_2 = IsolationToken::new();
+        let isolation_info = IsolationInfo::new();
+        let isolation_info_2 = IsolationInfo::new_isolated();
 
         let supp_dir = SupportedCircUsage::Dir;
         let targ_dir = TargetCircUsage::Dir;
         let supp_exit = SupportedCircUsage::Exit {
             policy: policy.clone(),
-            isolation_group: Some(isolation_group),
+            isolation_info: Some(isolation_info.clone()),
         };
         let supp_exit_iso2 = SupportedCircUsage::Exit {
             policy: policy.clone(),
-            isolation_group: Some(isolation_group_2),
+            isolation_info: Some(isolation_info_2.clone()),
         };
         let supp_exit_no_iso = SupportedCircUsage::Exit {
             policy,
-            isolation_group: None,
+            isolation_info: None,
         };
         let targ_80_v4 = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(80)],
-            isolation_group,
+            isolation_info: isolation_info.clone(),
         };
         let targ_80_v4_iso2 = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(80)],
-            isolation_group: isolation_group_2,
+            isolation_info: isolation_info_2.clone(),
         };
         let targ_80_23_v4 = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(80), TargetPort::ipv4(23)],
-            isolation_group,
+            isolation_info: isolation_info.clone(),
         };
         let targ_80_23_mixed = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(80), TargetPort::ipv6(23)],
-            isolation_group,
+            isolation_info: isolation_info.clone(),
         };
         let targ_999_v6 = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv6(999)],
-            isolation_group,
+            isolation_info: isolation_info.clone(),
         };
 
         assert!(supp_dir.supports(&targ_dir));
@@ -381,30 +500,30 @@ mod test {
             v6: Arc::new("accept 23".parse().unwrap()),
         };
 
-        let isolation_group = IsolationToken::new();
-        let isolation_group_2 = IsolationToken::new();
+        let isolation_info = IsolationInfo::new();
+        let isolation_info_2 = IsolationInfo::new_isolated();
 
         let supp_dir = SupportedCircUsage::Dir;
         let targ_dir = TargetCircUsage::Dir;
         let supp_exit = SupportedCircUsage::Exit {
             policy: policy.clone(),
-            isolation_group: Some(isolation_group),
+            isolation_info: Some(isolation_info.clone()),
         };
         let supp_exit_iso2 = SupportedCircUsage::Exit {
             policy: policy.clone(),
-            isolation_group: Some(isolation_group_2),
+            isolation_info: Some(isolation_info_2.clone()),
         };
         let supp_exit_no_iso = SupportedCircUsage::Exit {
             policy,
-            isolation_group: None,
+            isolation_info: None,
         };
         let targ_exit = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(80)],
-            isolation_group,
+            isolation_info: isolation_info.clone(),
         };
         let targ_exit_iso2 = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(80)],
-            isolation_group: isolation_group_2,
+            isolation_info: isolation_info_2.clone(),
         };
 
         // not allowed, do nothing
@@ -469,18 +588,18 @@ mod test {
         assert!(matches!(u_dir, SupportedCircUsage::Dir));
         assert_eq!(p_dir.len(), 1);
 
-        let isolation_group = IsolationToken::new();
+        let isolation_info = IsolationInfo::new();
         let exit_usage = TargetCircUsage::Exit {
             ports: vec![TargetPort::ipv4(995)],
-            isolation_group,
+            isolation_info: isolation_info.clone(),
         };
         let (p_exit, u_exit) = exit_usage.build_path(&mut rng, di, &config).unwrap();
         assert!(matches!(
             u_exit,
             SupportedCircUsage::Exit {
-                isolation_group: iso,
+                isolation_info: Some(ref iso),
                 ..
-            } if iso == Some(isolation_group)
+            } if iso.matches(&isolation_info)
         ));
         assert!(u_exit.supports(&exit_usage));
         assert_eq!(p_exit.len(), 3);

@@ -5,20 +5,17 @@
 
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
-use std::collections::HashMap;
 use std::convert::TryInto;
 use std::io::Result as IoResult;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
-use tor_client::{ConnectPrefs, IsolationToken, TorClient};
+use tor_client::{ConnectPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener, TimeoutError};
-use tor_socksproto::{SocksAddr, SocksAuth, SocksCmd, SocksRequest};
+use tor_socksproto::{SocksAddr, SocksCmd, SocksRequest};
 
 use anyhow::{Context, Result};
 
@@ -42,60 +39,6 @@ fn stream_preference(req: &SocksRequest, addr: &str) -> ConnectPrefs {
     prefs
 }
 
-/// A Key used to isolate connections.
-///
-/// Composed of an usize (representing which listener socket accepted
-/// the connection, the source IpAddr of the client, and the
-/// authentication string provided by the client).
-type IsolationKey = (usize, IpAddr, SocksAuth);
-
-/// Shared and garbage-collected Map used to isolate connections.
-struct IsolationMap {
-    /// Inner map guarded by a Mutex
-    inner: Mutex<IsolationMapInner>,
-}
-
-/// Inner map, generally guarded by a Mutex
-struct IsolationMapInner {
-    /// Map storing isolation token and last time they where used
-    map: HashMap<IsolationKey, (IsolationToken, Instant)>,
-    /// Instant after which the garbage collector will be run again
-    next_gc: Instant,
-}
-
-impl IsolationMap {
-    /// Create a new, empty, IsolationMap
-    fn new() -> Self {
-        IsolationMap {
-            inner: Mutex::new(IsolationMapInner {
-                map: HashMap::new(),
-                next_gc: Instant::now() + Duration::new(60 * 30, 0),
-            }),
-        }
-    }
-
-    /// Get the IsolationToken corresponding to the given key-tuple, creating a new IsolationToken
-    /// if none exists for this key.
-    ///
-    /// Every 30 minutes, on next call to this functions, entry older than 30 minutes are removed
-    async fn get_or_create(&self, key: IsolationKey) -> IsolationToken {
-        let now = Instant::now();
-        let mut inner = self.inner.lock().await;
-        if inner.next_gc < now {
-            inner.next_gc = now + Duration::new(60 * 30, 0);
-
-            let old_limit = now - Duration::new(60 * 30, 0);
-            inner.map.retain(|_, val| val.1 > old_limit);
-        }
-        let entry = inner
-            .map
-            .entry(key)
-            .or_insert_with(|| (IsolationToken::new(), now));
-        entry.1 = now;
-        entry.0
-    }
-}
-
 /// Given a just-received TCP connection `S` on a SOCKS port, handle the
 /// SOCKS handshake and relay the connection over the Tor network.
 ///
@@ -106,8 +49,7 @@ async fn handle_socks_conn<R, S>(
     runtime: R,
     tor_client: Arc<TorClient<R>>,
     socks_stream: S,
-    isolation_map: Arc<IsolationMap>,
-    isolation_info: (usize, IpAddr),
+    //isolation_info: (usize, IpAddr),
 ) -> Result<()>
 where
     R: Runtime,
@@ -176,15 +118,11 @@ where
     // to determine the stream's isolation properties.  (Our current
     // rule is that two streams may only share a circuit if they have
     // the same values for all of these properties.)
-    let auth = request.auth().clone();
-    let (source_address, ip) = isolation_info;
-    let isolation_token = isolation_map
-        .get_or_create((source_address, ip, auth))
-        .await;
+    //let auth = request.auth().clone();
+    //let (source_address, ip) = isolation_info;
 
     // Determine whether we want to ask for IPv4/IPv6 addresses.
-    let mut prefs = stream_preference(&request, &addr);
-    prefs.set_isolation_group(isolation_token);
+    let prefs = stream_preference(&request, &addr);
 
     match request.command() {
         SocksCmd::CONNECT => {
@@ -236,7 +174,7 @@ where
         SocksCmd::RESOLVE => {
             // We've been asked to perform a regular hostname lookup.
             // (This is a tor-specific SOCKS extension.)
-            let addrs = tor_client.resolve(&addr, Some(prefs)).await?;
+            let addrs = tor_client.resolve(&addr).await?;
             if let Some(addr) = addrs.first() {
                 let reply = request.reply(
                     tor_socksproto::SocksStatus::SUCCEEDED,
@@ -251,7 +189,7 @@ where
         SocksCmd::RESOLVE_PTR => {
             // We've been asked to perform a reverse hostname lookup.
             // (This is a tor-specific SOCKS extension.)
-            let hosts = tor_client.resolve_ptr(&addr, Some(prefs)).await?;
+            let hosts = tor_client.resolve_ptr(&addr).await?;
             if let Some(host) = hosts.into_iter().next() {
                 let reply = request.reply(
                     tor_socksproto::SocksStatus::SUCCEEDED,
@@ -379,24 +317,18 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
             }),
     );
 
-    // Make a new IsolationMap; We'll use this to register which incoming
-    // connections can and cannot share a circuit.
-    let isolation_map = Arc::new(IsolationMap::new());
-
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
-    while let Some((stream, sock_id)) = incoming.next().await {
-        let (stream, addr) = stream.context("Failed to receive incoming stream on SOCKS port")?;
+    while let Some((stream, _sock_id)) = incoming.next().await {
+        let (stream, _addr) = stream.context("Failed to receive incoming stream on SOCKS port")?;
         let client_ref = Arc::clone(&tor_client);
         let runtime_copy = runtime.clone();
-        let isolation_map_ref = Arc::clone(&isolation_map);
         runtime.spawn(async move {
             let res = handle_socks_conn(
                 runtime_copy,
                 client_ref,
                 stream,
-                isolation_map_ref,
-                (sock_id, addr.ip()),
+                //(sock_id, addr.ip()),
             )
             .await;
             if let Err(e) = res {

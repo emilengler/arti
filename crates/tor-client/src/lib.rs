@@ -19,7 +19,7 @@
 //! Most of its functionality is provided by lower-level crates in Arti.
 //!
 //! ## ⚠️️ Warnings ⚠️
-//! ️
+//!
 //! **Do not expect ANY privacy from this code yet.**
 //!
 //! Arti is a work in progress, and there are currently certain
@@ -98,7 +98,7 @@ mod client;
 
 pub use client::{ConnectPrefs, TorClient};
 
-pub use tor_circmgr::IsolationToken;
+pub use tor_circmgr::{IsolationFlag, IsolationInfo};
 /// An anonymized stream over the Tor network.
 ///
 /// For most purposes, you can think of this type as an anonymized
