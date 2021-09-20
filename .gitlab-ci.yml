@@ -47,12 +47,16 @@ build-repro:
   stage: build
   image: rust:1.54.0-alpine3.14
   script:
-    - ./maint/reproducible_build.sh
+    - ./maint/reproducible_build.sh linux windows macos
   artifacts:
     paths:
       - arti-linux
       - arti-windows.exe
+      - arti-macos
     expire_in: 1 day
+  cache:
+    paths:
+      - osxcross/target
   tags:
     - TPA
     - amd64
