@@ -305,7 +305,11 @@ where
         let mut read_future = reader.read(&mut buf[..]);
         match poll!(&mut read_future) {
             Poll::Ready(Err(e)) => break Err(e),
-            Poll::Ready(Ok(0)) => break Ok(()), // EOF
+            Poll::Ready(Ok(0)) => {
+                // EOF
+                writer.close().await?;
+                break Ok(());
+            }
             Poll::Ready(Ok(n)) => {
                 writer.write_all(&buf[..n]).await?;
                 continue;

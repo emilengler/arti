@@ -3,7 +3,7 @@
 
 use super::RawCellStream;
 use crate::{Error, Result};
-use tor_cell::relaycell::msg::EndReason;
+use tor_cell::relaycell::msg::{End, EndReason};
 
 use futures::io::{AsyncRead, AsyncWrite};
 use futures::task::{Context, Poll};
@@ -116,13 +116,15 @@ impl AsyncWrite for DataStream {
 /// for a flush operation to complete, the future returned by
 /// `flush_cell()` owns the DataWriterImpl.
 enum DataWriterState {
-    /// The writer has closed or gotten an error: nothing more to do.
-    Closed,
     /// The writer is not currently flushing; more data can get queued
     /// immediately.
     Ready(DataWriterImpl),
     /// The writer is flushing a cell.
     Flushing(Pin<Box<dyn Future<Output = (DataWriterImpl, Result<()>)> + Send>>),
+    /// The writer is getting closed.
+    Closing(Pin<Box<dyn Future<Output = Result<()>> + Send>>),
+    /// The writer has closed or gotten an error: nothing more to do.
+    Closed,
 }
 
 /// Internal: the write part of a DataStream
@@ -153,17 +155,42 @@ impl DataWriter {
 
         // TODO: this whole function is a bit copy-pasted.
 
+        /// Short helper to handle polling in closing state
+        fn poll_closing(
+            mut fut: Pin<Box<dyn Future<Output = Result<()>> + Send>>,
+            cx: &mut Context<'_>,
+        ) -> (DataWriterState, Poll<IoResult<()>>) {
+            match fut.as_mut().poll(cx) {
+                Poll::Ready(res) => (
+                    DataWriterState::Closed,
+                    Poll::Ready(res.map_err(|e| e.into())),
+                ),
+                Poll::Pending => (DataWriterState::Closing(fut), Poll::Pending),
+            }
+        }
+
         let mut future = match state {
             DataWriterState::Ready(imp) => {
                 if imp.n_pending == 0 {
                     // Nothing to flush!
-                    self.state = Some(DataWriterState::Ready(imp));
-                    return Poll::Ready(Ok(()));
+                    if should_close {
+                        let fut = Box::pin(imp.close_stream());
+                        let (state, res) = poll_closing(fut, cx);
+                        self.state = Some(state);
+                        return res;
+                    } else {
+                        self.state = Some(DataWriterState::Ready(imp));
+                        return Poll::Ready(Ok(()));
+                    }
                 }
-
                 Box::pin(imp.flush_buf())
             }
             DataWriterState::Flushing(fut) => fut,
+            DataWriterState::Closing(fut) => {
+                let (state, res) = poll_closing(fut, cx);
+                self.state = Some(state);
+                return res;
+            }
             DataWriterState::Closed => {
                 self.state = Some(DataWriterState::Closed);
                 return Poll::Ready(Err(Error::NotConnected.into()));
@@ -214,6 +241,10 @@ impl AsyncWrite for DataWriter {
                 Box::pin(imp.flush_buf())
             }
             DataWriterState::Flushing(fut) => fut,
+            DataWriterState::Closing(fut) => {
+                self.state = Some(DataWriterState::Closing(fut));
+                return Poll::Ready(Err(Error::NotConnected.into()));
+            }
             DataWriterState::Closed => {
                 self.state = Some(DataWriterState::Closed);
                 return Poll::Ready(Err(Error::NotConnected.into()));
@@ -263,6 +294,17 @@ impl DataWriterImpl {
         };
 
         (self, result)
+    }
+
+    /// Close the write half of the buffer.
+    async fn close_stream(self) -> Result<()> {
+        assert!(self.n_pending == 0);
+
+        let result = self
+            .s
+            .send(RelayMsg::End(End::new_with_reason(EndReason::DONE)))
+            .await;
+        result
     }
 
     /// Add as many bytes as possible from `b` to our internal buffer;

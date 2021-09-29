@@ -9,7 +9,7 @@ from time import time_ns
 port_to_bind = 2
 client_to_run = 1
 ## TODO setting this to twice as much appear to make arti freeze
-bench_len = 256 * 1024 #1024**2
+bench_len = 256 * 1024
 buffer_len = 2048
 verbose = True
 
