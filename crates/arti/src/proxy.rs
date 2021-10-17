@@ -16,11 +16,63 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
 
-use tor_client::{ConnectPrefs, IsolationToken, TorClient};
+use tor_client::{ConnectPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener, TimeoutError};
 use tor_socksproto::{SocksAddr, SocksAuth, SocksCmd, SocksRequest};
 
 use anyhow::{Context, Result};
+
+/// A Key used to isolate connections.
+///
+/// Composed of an usize (representing which listener socket accepted the connection, the source
+/// IpAddr of the client, and the authentication string provided by the client).
+type IsolationKey = (usize, IpAddr, SocksAuth);
+/// The garbage collecting lifetime that a TorClient will live in the ClientMap.
+const CLIENT_LIFETIME: Duration = Duration::from_secs(60 * 30);
+
+/// Inner structure of the ClientMap.
+struct ClientMapInner<R: Runtime> {
+    /// Map storing tor clients indexed by isolation key.
+    map: HashMap<IsolationKey, (TorClient<R>, Instant)>,
+    /// Instant after which the garbage collector will be run again
+    next_gc: Instant,
+}
+
+/// Map containing isolated tor clients based on an IsolationKey. The map is shared, protected by a
+/// Mutex, and garbage collected every CLIENT_LIFETIME seconds.
+struct ClientMap<R: Runtime> {
+    inner: Mutex<ClientMapInner<R>>,
+}
+
+impl<R: Runtime> ClientMap<R> {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(ClientMapInner {
+                map: HashMap::new(),
+                next_gc: Instant::now() + CLIENT_LIFETIME,
+            }),
+        }
+    }
+
+    /// Get or create a new tor client based on the given IsolationKey.
+    ///
+    /// Every CLIENT_LIFETIME minutes, on next call to this functions, old entires are removed
+    async fn get_or_create(&self, client_ref: &TorClient<R>, key: IsolationKey) -> TorClient<R> {
+        let now = Instant::now();
+        let mut inner = self.inner.lock().await;
+        if inner.next_gc < now {
+            inner.next_gc = now + CLIENT_LIFETIME;
+            let old_limit = now - CLIENT_LIFETIME;
+            inner.map.retain(|_, val| val.1 > old_limit);
+        }
+        inner
+            .map
+            .entry(key)
+            .or_insert((client_ref.new_isolated(), now))
+            .0
+            .clone()
+    }
+}
 
 /// Find out which kind of address family we can/should use for a
 /// given `SocksRequest`.
@@ -42,60 +94,6 @@ fn stream_preference(req: &SocksRequest, addr: &str) -> ConnectPrefs {
     prefs
 }
 
-/// A Key used to isolate connections.
-///
-/// Composed of an usize (representing which listener socket accepted
-/// the connection, the source IpAddr of the client, and the
-/// authentication string provided by the client).
-type IsolationKey = (usize, IpAddr, SocksAuth);
-
-/// Shared and garbage-collected Map used to isolate connections.
-struct IsolationMap {
-    /// Inner map guarded by a Mutex
-    inner: Mutex<IsolationMapInner>,
-}
-
-/// Inner map, generally guarded by a Mutex
-struct IsolationMapInner {
-    /// Map storing isolation token and last time they where used
-    map: HashMap<IsolationKey, (IsolationToken, Instant)>,
-    /// Instant after which the garbage collector will be run again
-    next_gc: Instant,
-}
-
-impl IsolationMap {
-    /// Create a new, empty, IsolationMap
-    fn new() -> Self {
-        IsolationMap {
-            inner: Mutex::new(IsolationMapInner {
-                map: HashMap::new(),
-                next_gc: Instant::now() + Duration::new(60 * 30, 0),
-            }),
-        }
-    }
-
-    /// Get the IsolationToken corresponding to the given key-tuple, creating a new IsolationToken
-    /// if none exists for this key.
-    ///
-    /// Every 30 minutes, on next call to this functions, entry older than 30 minutes are removed
-    async fn get_or_create(&self, key: IsolationKey) -> IsolationToken {
-        let now = Instant::now();
-        let mut inner = self.inner.lock().await;
-        if inner.next_gc < now {
-            inner.next_gc = now + Duration::new(60 * 30, 0);
-
-            let old_limit = now - Duration::new(60 * 30, 0);
-            inner.map.retain(|_, val| val.1 > old_limit);
-        }
-        let entry = inner
-            .map
-            .entry(key)
-            .or_insert_with(|| (IsolationToken::new(), now));
-        entry.1 = now;
-        entry.0
-    }
-}
-
 /// Given a just-received TCP connection `S` on a SOCKS port, handle the
 /// SOCKS handshake and relay the connection over the Tor network.
 ///
@@ -106,7 +104,7 @@ async fn handle_socks_conn<R, S>(
     runtime: R,
     tor_client: Arc<TorClient<R>>,
     socks_stream: S,
-    isolation_map: Arc<IsolationMap>,
+    client_map: Arc<ClientMap<R>>,
     isolation_info: (usize, IpAddr),
 ) -> Result<()>
 where
@@ -178,19 +176,18 @@ where
     // the same values for all of these properties.)
     let auth = request.auth().clone();
     let (source_address, ip) = isolation_info;
-    let isolation_token = isolation_map
-        .get_or_create((source_address, ip, auth))
+    let client = client_map
+        .get_or_create(&tor_client, (source_address, ip, auth))
         .await;
 
     // Determine whether we want to ask for IPv4/IPv6 addresses.
-    let mut prefs = stream_preference(&request, &addr);
-    prefs.set_isolation_group(isolation_token);
+    let prefs = stream_preference(&request, &addr);
 
     match request.command() {
         SocksCmd::CONNECT => {
             // The SOCKS request wants us to connect to a given address.
             // So, launch a connection over Tor.
-            let tor_stream = tor_client.connect(&addr, port, Some(prefs)).await;
+            let tor_stream = client.connect(&addr, port, Some(prefs)).await;
             let tor_stream = match tor_stream {
                 Ok(s) => s,
                 // In the case of a stream timeout, send the right SOCKS reply.
@@ -236,7 +233,7 @@ where
         SocksCmd::RESOLVE => {
             // We've been asked to perform a regular hostname lookup.
             // (This is a tor-specific SOCKS extension.)
-            let addrs = tor_client.resolve(&addr, Some(prefs)).await?;
+            let addrs = client.resolve(&addr).await?;
             if let Some(addr) = addrs.first() {
                 let reply = request.reply(
                     tor_socksproto::SocksStatus::SUCCEEDED,
@@ -251,7 +248,7 @@ where
         SocksCmd::RESOLVE_PTR => {
             // We've been asked to perform a reverse hostname lookup.
             // (This is a tor-specific SOCKS extension.)
-            let hosts = tor_client.resolve_ptr(&addr, Some(prefs)).await?;
+            let hosts = client.resolve_ptr(&addr).await?;
             if let Some(host) = hosts.into_iter().next() {
                 let reply = request.reply(
                     tor_socksproto::SocksStatus::SUCCEEDED,
@@ -400,9 +397,7 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
             }),
     );
 
-    // Make a new IsolationMap; We'll use this to register which incoming
-    // connections can and cannot share a circuit.
-    let isolation_map = Arc::new(IsolationMap::new());
+    let client_map = Arc::new(ClientMap::new());
 
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
@@ -420,13 +415,13 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
         };
         let client_ref = Arc::clone(&tor_client);
         let runtime_copy = runtime.clone();
-        let isolation_map_ref = Arc::clone(&isolation_map);
+        let client_map_ref = Arc::clone(&client_map);
         runtime.spawn(async move {
             let res = handle_socks_conn(
                 runtime_copy,
                 client_ref,
                 stream,
-                isolation_map_ref,
+                client_map_ref,
                 (sock_id, addr.ip()),
             )
             .await;
