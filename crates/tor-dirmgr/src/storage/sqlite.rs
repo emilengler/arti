@@ -17,7 +17,6 @@ use std::convert::TryInto;
 use std::path::{self, Path, PathBuf};
 use std::time::SystemTime;
 
-use anyhow::Context;
 use chrono::prelude::*;
 use chrono::Duration as CDuration;
 use rusqlite::{params, OpenFlags, OptionalExtension, Transaction};
@@ -72,10 +71,9 @@ impl SqliteStore {
             let mut builder = std::fs::DirBuilder::new();
             #[cfg(target_family = "unix")]
             builder.mode(0o700);
-            builder
-                .recursive(true)
-                .create(&blobpath)
-                .with_context(|| format!("Creating directory at {:?}", &blobpath))?;
+            builder.recursive(true).create(&blobpath).map_err(|err| {
+                Error::StorageError(format!("Creating directory at {:?}: {}", &blobpath, err))
+            })?;
         }
 
         let mut lockfile = fslock::LockFile::open_excl(&lockpath)?;
@@ -184,7 +182,7 @@ impl SqliteStore {
             tx.commit()?;
             return Ok(());
         } else if readable_by > SCHEMA_VERSION {
-            return Err(Error::UnrecognizedSchema.into());
+            return Err(Error::UnrecognizedSchema);
         }
 
         // rolls back the transaction, but nothing was done.
@@ -232,7 +230,7 @@ impl SqliteStore {
             .components()
             .all(|c| matches!(c, path::Component::Normal(_)))
         {
-            return Err(Error::CacheCorruption("Invalid path in database").into());
+            return Err(Error::CacheCorruption("Invalid path in database"));
         }
 
         let mut result = self.path.clone();
@@ -247,8 +245,12 @@ impl SqliteStore {
     {
         let path = path.as_ref();
         let full_path = self.blob_fname(path)?;
-        InputString::load(&full_path)
-            .with_context(|| format!("Loading blob {:?} from storage at {:?}", path, full_path))
+        InputString::load(&full_path).map_err(|err| {
+            Error::StorageError(format!(
+                "Loading blob {:?} from storage at {:?}: {}",
+                path, full_path, err
+            ))
+        })
     }
 
     /// Write a file to disk as a blob, and record it in the ExtDocs table.
@@ -417,7 +419,9 @@ impl SqliteStore {
         {
             Ok(text)
         } else {
-            Err(Error::CacheCorruption("couldn't find a consensus we thought we had.").into())
+            Err(Error::CacheCorruption(
+                "couldn't find a consensus we thought we had.",
+            ))
         }
     }
 
@@ -669,7 +673,7 @@ impl Drop for Unlinker {
 fn digest_from_hex(s: &str) -> Result<[u8; 32]> {
     hex::decode(s)?
         .try_into()
-        .map_err(|_| Error::CacheCorruption("Invalid digest in database").into())
+        .map_err(|_| Error::CacheCorruption("Invalid digest in database"))
 }
 
 /// Convert a hexadecimal sha3-256 "digest string" as used in the
@@ -678,9 +682,9 @@ fn digest_from_dstr(s: &str) -> Result<[u8; 32]> {
     if let Some(stripped) = s.strip_prefix("sha3-256-") {
         hex::decode(stripped)?
             .try_into()
-            .map_err(|_| Error::CacheCorruption("Invalid digest in database").into())
+            .map_err(|_| Error::CacheCorruption("Invalid digest in database"))
     } else {
-        Err(Error::CacheCorruption("Invalid digest in database").into())
+        Err(Error::CacheCorruption("Invalid digest in database"))
     }
 }
 

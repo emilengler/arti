@@ -70,7 +70,6 @@ use tor_circmgr::CircMgr;
 use tor_netdir::NetDir;
 use tor_netdoc::doc::netstatus::ConsensusFlavor;
 
-use anyhow::{Context, Result};
 use async_trait::async_trait;
 use futures::{channel::oneshot, lock::Mutex, task::SpawnExt};
 use tor_rtcompat::{Runtime, SleepProviderExt};
@@ -91,6 +90,9 @@ pub use err::Error;
 pub use event::DirEvent;
 pub use storage::DocumentText;
 pub use tor_netdir::fallback::{FallbackDir, FallbackDirBuilder};
+
+/// A Result as returned by this crate.
+pub type Result<T> = std::result::Result<T, Error>;
 
 /// A directory manager to download, fetch, and cache a Tor directory.
 ///
@@ -158,9 +160,7 @@ impl<R: Runtime> DirMgr<R> {
         // TODO: add some way to return a directory that isn't up-to-date
         let _success = dirmgr.load_directory().await?;
 
-        dirmgr
-            .opt_netdir()
-            .ok_or_else(|| Error::DirectoryNotPresent.into())
+        dirmgr.opt_netdir().ok_or(Error::DirectoryNotPresent)
     }
 
     /// Return a current netdir, either loading it or bootstrapping it
@@ -196,10 +196,7 @@ impl<R: Runtime> DirMgr<R> {
         let dirmgr = Arc::new(DirMgr::from_config(config, runtime.clone(), Some(circmgr))?);
 
         // Try to load from the cache.
-        let have_directory = dirmgr
-            .load_directory()
-            .await
-            .context("Error loading cached directory")?;
+        let have_directory = dirmgr.load_directory().await?;
 
         let (mut sender, receiver) = if have_directory {
             info!("Loaded a good directory from cache.");
@@ -232,7 +229,7 @@ impl<R: Runtime> DirMgr<R> {
                 }
                 Err(_) => {
                     warn!("Bootstrapping task exited before finishing.");
-                    return Err(Error::CantAdvanceState.into());
+                    return Err(Error::CantAdvanceState);
                 }
             }
         }
@@ -352,7 +349,7 @@ impl<R: Runtime> DirMgr<R> {
                     "We failed {} times to bootstrap a directory. We're going to give up.",
                     retry_config.n_attempts()
                 );
-                return Err(Error::CantAdvanceState.into());
+                return Err(Error::CantAdvanceState);
             } else {
                 // Report success, if appropriate.
                 if let Some(send_done) = on_complete.take() {
@@ -374,7 +371,7 @@ impl<R: Runtime> DirMgr<R> {
         self.circmgr
             .as_ref()
             .map(Arc::clone)
-            .ok_or_else(|| Error::NoDownloadSupport.into())
+            .ok_or(Error::NoDownloadSupport)
     }
 
     /// Try to make this a directory manager with read-write access to its
@@ -460,9 +457,9 @@ impl<R: Runtime> DirMgr<R> {
         })?;
         if let Some((docid, doctext)) = item {
             if &docid != doc {
-                return Err(
-                    Error::CacheCorruption("Item from storage had incorrect docid.").into(),
-                );
+                return Err(Error::CacheCorruption(
+                    "Item from storage had incorrect docid.",
+                ));
             }
             Ok(Some(doctext))
         } else {
@@ -626,7 +623,9 @@ impl<R: Runtime> DirMgr<R> {
                         return Ok(new_consensus.to_string());
                     }
                 }
-                return Err(Error::Unwanted("Received a consensus diff we did not ask for").into());
+                return Err(Error::Unwanted(
+                    "Received a consensus diff we did not ask for",
+                ));
             }
         }
         Ok(text)
@@ -713,5 +712,5 @@ trait DirState: Send {
 /// Try to upgrade a weak reference to a DirMgr, and give an error on
 /// failure.
 fn upgrade_weak_ref<T>(weak: &Weak<T>) -> Result<Arc<T>> {
-    Weak::upgrade(weak).ok_or_else(|| Error::ManagerDropped.into())
+    Weak::upgrade(weak).ok_or(Error::ManagerDropped)
 }
