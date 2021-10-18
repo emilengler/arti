@@ -965,10 +965,6 @@ impl<'a> Relay<'a> {
     /// A "microdescriptor" is a synopsis of the information about a relay,
     /// used to determine its capabilities and route traffic through it.
     /// For most use cases, you shouldn't need it.
-    ///
-    /// This function is only available if the crate was built with
-    /// its `experimental-api` feature.
-    #[cfg(feature = "experimental-api")]
     pub fn md(&self) -> &Microdesc {
         self.md
     }
