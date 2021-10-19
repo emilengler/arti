@@ -105,8 +105,8 @@ request_max_retries = 32
 # will wait this long before using the unexpectedly available circuit.
 request_loyalty = "50 msec"
 
-# Rules for client configuration
-[client_config]
+# Rules for address configuration
+[addr_config]
 
 # Should we allow attempts to make Tor connections to local addresses?
 allow_local_addrs = false
