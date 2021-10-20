@@ -18,6 +18,11 @@ pub enum Error {
     /// to the given input.
     #[error("Diff didn't apply to input: {0}")]
     CantApply(&'static str),
+
+    /// We got a consensus diff where the old digest is different from the
+    /// our current document.
+    #[error("Old consensus has different digest from diff: {0}")]
+    OldDigestInvalid(&'static str),
 }
 
 impl From<ParseIntError> for Error {

@@ -115,7 +115,7 @@ pub fn apply_diff<'a>(
 
 /// Given a line iterator, check to make sure the first two lines are
 /// a valid diff header as specified in dir-spec.txt.
-fn parse_diff_header<'a, I>(iter: &mut I) -> Result<([u8; 32], [u8; 32])>
+pub fn parse_diff_header<'a, I>(iter: &mut I) -> Result<([u8; 32], [u8; 32])>
 where
     I: Iterator<Item = &'a str>,
 {
@@ -185,7 +185,7 @@ enum DiffCommand<'a> {
 pub struct DiffResult<'a> {
     /// An expected digest of the input, before the digest is computed.
     #[allow(dead_code)] // XXXX Check this value before applying the digest?
-    d_pre: [u8; 32],
+    pub d_pre: [u8; 32],
     /// An expected digest of the output, after it has been assembled.
     d_post: [u8; 32],
     /// The lines in the output.

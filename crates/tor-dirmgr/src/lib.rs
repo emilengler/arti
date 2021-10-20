@@ -631,12 +631,21 @@ impl<R: Runtime> DirMgr<R> {
                     };
                     if let Some((old_consensus, meta)) = db_val {
                         info!("Applying a consensus diff");
+                        let mut diff_lines = (&text).lines();
+                        let (old_digest, _) = tor_consdiff::parse_diff_header(&mut diff_lines)?;
                         let new_consensus = tor_consdiff::apply_diff(
                             old_consensus.as_str()?,
                             &text,
                             Some(*meta.sha3_256_of_signed()),
                         )?;
                         new_consensus.check_digest()?;
+                        if new_consensus.d_pre == old_digest {
+                            return Err(Error::ConsensusDiffError(
+                                tor_consdiff::Error::OldDigestInvalid(
+                                    "Old checksum has different digest versus diff",
+                                ),
+                            ));
+                        }
                         return Ok(new_consensus.to_string());
                     }
                 }
