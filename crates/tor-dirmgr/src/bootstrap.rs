@@ -12,9 +12,9 @@ use crate::{
     upgrade_weak_ref, DirMgr, DirState, DocId, DocumentText, Error, Readiness, Result,
 };
 
-use futures::channel::oneshot;
-use futures::FutureExt;
 use futures::StreamExt;
+use futures::{channel::oneshot, Stream};
+use futures::{lock::Mutex, Future, FutureExt};
 use tor_dirclient::DirResponse;
 use tor_rtcompat::{Runtime, SleepProviderExt};
 use tracing::{info, trace, warn};
@@ -33,7 +33,7 @@ async fn load_all<R: Runtime>(
 
 /// Launch a single client request and get an associated response.
 async fn fetch_single<R: Runtime>(
-    dirmgr: Arc<DirMgr<R>>,
+    dirmgr: &DirMgr<R>,
     request: ClientRequest,
 ) -> Result<(ClientRequest, DirResponse)> {
     let circmgr = dirmgr.circmgr()?;
@@ -50,36 +50,38 @@ async fn fetch_single<R: Runtime>(
 }
 
 /// Launch a set of download requests for a set of missing objects in
-/// `missing`, and return each request along with the response it received.
+/// `missing`, and return a future for each request that resolves to
+/// the request and its response.
 ///
-/// Don't launch more than `parallelism` requests at once.
+/// This function returns a stream of futures which enables
+/// a call to [`futures::StreamExt::buffer_unordered`]
+/// on the returned stream to launch as many requests concurrently as desired.
+/// To chain additional computation onto the returned futures map over
+/// the stream and call [`futures::FutureExt::then`] on each future.
+/// This enables concurrent requests and concurrent handling of responses.
 async fn fetch_multiple<R: Runtime>(
     dirmgr: Arc<DirMgr<R>>,
     missing: Vec<DocId>,
-    parallelism: usize,
-) -> Result<Vec<(ClientRequest, DirResponse)>> {
+) -> Result<impl Stream<Item = impl Future<Output = Option<(ClientRequest, DirResponse)>>>> {
     let mut requests = Vec::new();
     for (_type, query) in docid::partition_by_type(missing.into_iter()) {
         requests.extend(dirmgr.query_into_requests(query).await?);
     }
 
-    // TODO: instead of waiting for all the queries to finish, we
-    // could stream the responses back or something.
-    let responses: Vec<Result<(ClientRequest, DirResponse)>> = futures::stream::iter(requests)
-        .map(|query| fetch_single(Arc::clone(&dirmgr), query))
-        .buffer_unordered(parallelism)
-        .collect()
-        .await;
-
-    let mut useful_responses = Vec::new();
-    for r in responses {
-        match r {
-            Ok(x) => useful_responses.push(x),
-            // TODO: in this case we might want to stop using this source.
-            Err(e) => warn!("error while downloading: {:?}", e),
+    let useful_responses = futures::stream::iter(requests).map(move |query| {
+        let dirmgr = Arc::clone(&dirmgr);
+        async move {
+            let response = fetch_single(&dirmgr, query).await;
+            match response {
+                Ok(x) => Some(x),
+                Err(e) => {
+                    // TODO: in this case we might want to stop using this source.
+                    warn!("error while downloading: {:?}", e);
+                    None
+                }
+            }
         }
-    }
-
+    });
     Ok(useful_responses)
 }
 
@@ -137,6 +139,42 @@ pub(crate) async fn load<R: Runtime>(
     Ok(state)
 }
 
+/// Helper: feed response into state object
+/// Returns 'true' if there is any change in this state.
+async fn handle_download_response<R: Runtime>(
+    dirmgr: Arc<DirMgr<R>>,
+    state: Arc<Mutex<&mut Box<dyn DirState>>>,
+    response: Option<(ClientRequest, DirResponse)>,
+) -> Result<bool> {
+    match response {
+        Some((client_req, dir_response)) => {
+            let text = String::from_utf8(dir_response.into_output())?;
+            let text = dirmgr
+                .expand_response_text(&client_req, text)
+                .await
+                .map_err(|e| {
+                    // TODO: in this case we might want to stop using this source.
+                    warn!("Error when expanding directory text: {}", e);
+                    e
+                })?;
+            let outcome = {
+                // Lock state for shortest duration possible
+                let mut state = state.lock().await;
+                state
+                    .add_from_download(&text, &client_req, Some(&dirmgr.store))
+                    .await
+            };
+            dirmgr.notify().await;
+            outcome.map_err(|e| {
+                // TODO: in this case we might want to stop using this source.
+                warn!("error while adding directory info: {}", e);
+                e
+            })
+        }
+        None => Ok(false),
+    }
+}
+
 /// Helper: Make a set of download attempts for the current directory state,
 /// and on success feed their results into the state object.
 ///
@@ -149,30 +187,21 @@ async fn download_attempt<R: Runtime>(
     state: &mut Box<dyn DirState>,
     parallelism: usize,
 ) -> Result<bool> {
-    let mut changed = false;
     let missing = state.missing_docs();
-    let fetched = fetch_multiple(Arc::clone(dirmgr), missing, parallelism).await?;
-    for (client_req, dir_response) in fetched {
-        let text = String::from_utf8(dir_response.into_output())?;
-        match dirmgr.expand_response_text(&client_req, text).await {
-            Ok(text) => {
-                let outcome = state
-                    .add_from_download(&text, &client_req, Some(&dirmgr.store))
-                    .await;
-                dirmgr.notify().await;
-                match outcome {
-                    Ok(b) => changed |= b,
-                    // TODO: in this case we might want to stop using this source.
-                    Err(e) => warn!("error while adding directory info: {}", e),
-                }
-            }
-            Err(e) => {
-                // TODO: in this case we might want to stop using this source.
-                warn!("Error when expanding directory text: {}", e);
-            }
-        }
-    }
-
+    let state = Arc::new(Mutex::new(state)); // State will be locked to add a response
+    let changed = fetch_multiple(Arc::clone(dirmgr), missing)
+        .await?
+        .map(|fut| {
+            fut.then(|s| async {
+                // TODO: we might want to stop using this source on error
+                handle_download_response(Arc::clone(dirmgr), Arc::clone(&state), s)
+                    .await
+                    .unwrap_or(false)
+            })
+        })
+        .buffer_unordered(parallelism) // Request and handle responses concurrently
+        .fold(false, |a, changed_now| async move { a | changed_now })
+        .await;
     Ok(changed)
 }
 
