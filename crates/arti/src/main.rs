@@ -140,6 +140,9 @@ struct LoggingConfig {
 
     /// Whether to log to journald
     journald: bool,
+
+    /// Whether to only log messages of WARN or higher
+    safe_logging: bool,
 }
 
 /// Structure to hold our configuration options, whether from a
@@ -264,10 +267,19 @@ fn setup_logging(config: &ArtiConfig) {
         .map(|s| filt_from_str_verbose(s, "ARTI_LOG environment variable"))
     {
         Ok(f) => f,
-        Err(_) => filt_from_str_verbose(
-            config.logging.trace_filter.as_str(),
-            "trace_filter configuration option",
-        ),
+        Err(_) => {
+            if config.logging.safe_logging {
+                filt_from_str_verbose(
+                    "info",
+                    "safe_logging configuration option",
+                )
+            } else {
+                filt_from_str_verbose(
+                    config.logging.trace_filter.as_str(),
+                    "trace_filter configuration option",
+                )
+            }
+        }
     };
 
     let registry = registry().with(fmt::Layer::default()).with(env_filter);

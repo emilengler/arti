@@ -25,6 +25,10 @@ journald = false
 # For more information, see https://docs.rs/tracing-subscriber/0.2.20/tracing_subscriber/filter/struct.EnvFilter.html
 trace_filter = "debug"
 
+# Prevent logging of sensitive infornmation by only logging levels
+# "info" or above. If true, overrides trace_filter.
+safe_logging = false
+
 # Locations to use for storing things on disk.
 #
 # These paths can use ~ to indicate the user's home directory, or a set
