@@ -95,10 +95,12 @@ pub(crate) struct Guard {
     /// What version of this crate added this guard to our sample?
     added_by: Option<CrateId>,
 
-    /// If present, this guard is permanently disabled, and this string
-    /// tells us why.
+    /// If present, this guard is permanently disabled, and this
+    /// object tells us why.
+    // TODO: Wrap this in some kind of a future-proofing wrapper so that
+    // we can safely add more variants to GuardDisabled.
     #[serde(default)]
-    disabled: Option<String>,
+    disabled: Option<GuardDisabled>,
 
     /// When, approximately, did we first successfully use this guard?
     ///
@@ -496,8 +498,12 @@ impl Guard {
             const WARN_THRESHOLD: f64 = 0.5;
 
             if ratio > DISABLE_THRESHOLD {
-                let reason = format!("{:.1}% of circuits died under mysterious circumstances, exceeding threshold of {:.1}%", ratio*100.0, (DISABLE_THRESHOLD*100.0));
-                warn!(guard=?self.id, "Disabling guard: {}", reason);
+                let reason = GuardDisabled::TooManyIndeterminateFailures {
+                    history: self.circ_history.clone(),
+                    failure_ratio: ratio,
+                    threshold_ratio: DISABLE_THRESHOLD,
+                };
+                warn!(guard=?self.id, "Disabling guard: {:.1}% of circuits died under mysterioius circumstances, exceeding threshold of {:.1}%", ratio*100.0, (DISABLE_THRESHOLD*100.0));
                 self.disabled = Some(reason);
             } else if ratio > WARN_THRESHOLD && !self.suspicious_behavior_warned {
                 warn!(guard=?self.id, "Questionable guard: {:.1}% of circuits died under mysterious circumstances.", ratio*100.0);
@@ -533,6 +539,21 @@ impl tor_linkspec::ChanTarget for Guard {
     fn rsa_identity(&self) -> &RsaIdentity {
         &self.id.rsa
     }
+}
+
+/// A reason for permanently disabling a guard.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum GuardDisabled {
+    /// Too many attempts to use this guard failed for indeterminate reasons.
+    TooManyIndeterminateFailures {
+        /// Observed count of status reports about this guard.
+        history: CircHistory,
+        /// Observed fraction of indeterminate status reports.
+        failure_ratio: f64,
+        /// Threshold that was exceeded.
+        threshold_ratio: f64,
+    },
 }
 
 /// Return the interval after which we should retry a guard that has
@@ -597,7 +618,7 @@ fn retry_interval(is_primary: bool, failing: Duration) -> Duration {
 // TODO: We may eventually want to make this structure persistent.  If we
 // do, however, we'll need a way to make ancient history expire.  We might
 // want that anyway, to make attacks harder.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub(crate) struct CircHistory {
     /// How many times have we seen this guard succeed?
     n_successes: u32,
@@ -935,6 +956,8 @@ mod test {
 
     #[test]
     fn disable_on_failure() {
+        #![allow(irrefutable_let_patterns)]
+
         let mut g = basic_guard();
         let params = GuardParams::default();
 
@@ -950,9 +973,17 @@ mod test {
         // This crosses the threshold.
         g.record_indeterminate_result();
         assert!(g.disabled.is_some());
-        assert_eq!(
-            &g.disabled.unwrap(),
-            "93.3% of circuits died under mysterious circumstances, exceeding threshold of 70.0%"
-        );
+
+        if let GuardDisabled::TooManyIndeterminateFailures {
+            history: _,
+            failure_ratio,
+            threshold_ratio,
+        } = g.disabled.unwrap()
+        {
+            assert!((failure_ratio - 0.933).abs() < 0.01);
+            assert!((threshold_ratio - 0.7).abs() < 0.01);
+        } else {
+            panic!("Wrong variant.")
+        }
     }
 }
