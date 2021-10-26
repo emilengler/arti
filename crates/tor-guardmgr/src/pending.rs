@@ -174,7 +174,7 @@ impl GuardMonitor {
         self.report_impl(msg);
     }
 
-    /// As [`report`], but take a &mut reference.
+    /// As [`GuardMonitor::report`], but take a &mut reference.
     fn report_impl(&mut self, msg: GuardStatus) {
         let msg = match (msg, self.ignore_indeterminate) {
             (GuardStatus::Indeterminate, true) => GuardStatus::AttemptAbandoned,
