@@ -102,7 +102,12 @@ pub struct GuardMonitor {
     id: RequestId,
     /// The status that we will report if this monitor is dropped now.
     pending_status: GuardStatus,
-    /// If false set, we change Indeterminate to Pending before sendong.
+    /// If set, we change `Indeterminate` to `AttemptAbandoned` before
+    /// reporting it to the guard manager.
+    ///
+    /// We do this when a failure to finish the circuit doesn't reflect
+    /// badly against the guard at all: typically, because the circuit's
+    /// path is not random.
     ignore_indeterminate: bool,
     /// A sender that needs to get told when the attempt to use the guard is
     /// finished or abandoned.
@@ -164,7 +169,7 @@ impl GuardMonitor {
     /// values, and treat them as abandoned attempts.
     ///
     /// We should use this whenever the path being built with this guard
-    /// is not under our control.
+    /// is not randomly generated.
     pub fn ignore_indeterminate_status(&mut self) {
         self.ignore_indeterminate = true;
     }
