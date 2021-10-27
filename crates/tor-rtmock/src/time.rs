@@ -125,6 +125,7 @@ impl MockSleepProvider {
         let mut state = self.state.lock().expect("Poisoned lock for state");
         state.wallclock += dur;
         state.instant += dur;
+        state.allowed_advance = state.allowed_advance.saturating_sub(dur);
         state.fire();
     }
 
@@ -206,11 +207,9 @@ impl MockSleepProvider {
             };
             if next_timeout <= state.allowed_advance {
                 // We can advance up to the next timeout, since it's in our quota.
-                // Subtract the amount we're going to advance by from said quota.
-                state.allowed_advance -= next_timeout;
                 eprintln!(
-                    "WARNING: allowing advance due to allow_one; new allowed is {:?}",
-                    state.allowed_advance
+                    "WARNING: allowing advance due to allow_one == {:?} <= next_timeout == {:?}",
+                    state.allowed_advance, next_timeout
                 );
             } else {
                 // The next timeout is too far in the future.
