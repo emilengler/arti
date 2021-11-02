@@ -999,14 +999,14 @@ mod test {
 
         assert_eq!(g.reachable(), Unknown);
 
-        for (pre, post) in vec![
+        for (pre, post) in &[
             (Unknown, Unknown),
             (Unreachable, Unknown),
             (Reachable, Reachable),
         ] {
-            g.reachable = pre;
+            g.reachable = *pre;
             g.mark_retriable();
-            assert_eq!(g.reachable(), post);
+            assert_eq!(g.reachable(), *post);
         }
     }
 }
