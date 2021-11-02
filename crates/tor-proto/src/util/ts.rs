@@ -35,10 +35,7 @@ impl Timestamp {
     /// Update this timestamp to (at least) the time `now`.
     #[inline]
     pub(crate) fn update_to(&self, now: coarsetime::Instant) {
-        // TODO: This is using an undocumented API from coarsetime.
-        // We should talk to the coarsetime folks and promote some way
-        // to do this using only a public API.
-        self.latest.fetch_max(now.as_u64(), Ordering::Relaxed);
+        self.latest.fetch_max(now.as_ticks(), Ordering::Relaxed);
     }
 
     /// Return the time since `update` was last called.
@@ -56,10 +53,9 @@ impl Timestamp {
     #[inline]
     pub(crate) fn time_since_update_at(&self, now: coarsetime::Instant) -> coarsetime::Duration {
         let earlier = self.latest.load(Ordering::Relaxed);
-        let now = now.as_u64();
+        let now = now.as_ticks();
         if now >= earlier && earlier != 0 {
-            // TODO: This is also an undocumented API.
-            coarsetime::Duration::from_u64(now - earlier)
+            coarsetime::Duration::from_ticks(now - earlier)
         } else {
             coarsetime::Duration::from_secs(0)
         }
