@@ -4,18 +4,77 @@
 //!
 //! Most types in this module are re-exported by `arti-client`.
 
+use tor_config::ConfigBuildError;
+
 use derive_builder::Builder;
 use serde::Deserialize;
 
 use std::time::Duration;
 
-/// Configuration for circuit timeouts and retries.
+/// Rules for building paths over the network.
 ///
-/// This type is immutable once constructed. To create an object of this type,
-/// use [`RequestTimingBuilder`], or deserialize it from a string.
+/// This type is immutable once constructed.  To build one, use
+/// [`PathConfigBuilder`], or deserialize it from a string.
 #[derive(Debug, Clone, Builder, Deserialize)]
-#[builder]
-pub struct RequestTiming {
+#[builder(build_fn(error = "ConfigBuildError"))]
+pub struct PathConfig {
+    /// Set the length of a bit-prefix for a default IPv4 subnet-family.
+    ///
+    /// Any two relays will be considerd to belong to the same family if their
+    /// IPv4 addresses share at least this many initial bits.
+    #[builder(default = "ipv4_prefix_default()")]
+    #[serde(default = "ipv4_prefix_default")]
+    ipv4_subnet_family_prefix: u8,
+
+    /// Set the length of a bit-prefix for a default IPv6 subnet-family.
+    ///
+    /// Any two relays will be considerd to belong to the same family if their
+    /// IPv6 addresses share at least this many initial bits.
+    #[builder(default = "ipv6_prefix_default()")]
+    #[serde(default = "ipv6_prefix_default")]
+    ipv6_subnet_family_prefix: u8,
+}
+
+/// Default value for ipv4_subnet_family_prefix.
+fn ipv4_prefix_default() -> u8 {
+    16
+}
+/// Default value for ipv6_subnet_family_prefix.
+fn ipv6_prefix_default() -> u8 {
+    32
+}
+
+impl PathConfig {
+    /// Return a subnet configuration based on these rules.
+    pub fn subnet_config(&self) -> tor_netdir::SubnetConfig {
+        tor_netdir::SubnetConfig::new(
+            self.ipv4_subnet_family_prefix,
+            self.ipv6_subnet_family_prefix,
+        )
+    }
+}
+
+impl Default for PathConfig {
+    fn default() -> PathConfig {
+        PathConfigBuilder::default()
+            .build()
+            .expect("unusable hirdwired defaults")
+    }
+}
+
+/// Configuration for circuit timeouts, expiration, and so on.
+///
+/// This type is immutable once constructd. To create an object of this
+/// type, use [`CircuitTimingBuilder`].
+#[derive(Debug, Clone, Builder, Deserialize)]
+#[builder(build_fn(error = "ConfigBuildError"))]
+pub struct CircuitTiming {
+    /// How long after a circuit has first been used should we give
+    /// it out for new requests?
+    #[builder(default = "Duration::from_secs(60 * 10)")]
+    #[serde(with = "humantime_serde")]
+    pub(crate) max_dirtiness: Duration,
+
     /// When a circuit is requested, we stop retrying new circuits
     /// after this much time.
     // TODO: Impose a maximum or minimum?
@@ -41,43 +100,6 @@ pub struct RequestTiming {
 // check `derive_builder` documentation for details
 // https://docs.rs/derive_builder/0.10.2/derive_builder/#default-values
 #[allow(clippy::unwrap_used)]
-impl Default for RequestTiming {
-    fn default() -> Self {
-        RequestTimingBuilder::default().build().unwrap()
-    }
-}
-
-/// Rules for building paths over the network.
-///
-/// This type is immutable once constructed.  To build one, use
-/// [`PathConfigBuilder`], or deserialize it from a string.
-#[derive(Debug, Clone, Builder, Deserialize, Default)]
-#[builder]
-pub struct PathConfig {
-    /// Override the default required distance for two relays to share
-    /// the same circuit.
-    #[builder(default)]
-    pub(crate) enforce_distance: tor_netdir::SubnetConfig,
-}
-
-/// Configuration for circuit timeouts, expiration, and so on.
-///
-/// This type is immutable once constructd. To create an object of this
-/// type, use [`CircuitTimingBuilder`].
-#[derive(Debug, Clone, Builder, Deserialize)]
-#[builder]
-pub struct CircuitTiming {
-    /// How long after a circuit has first been used should we give
-    /// it out for new requests?
-    #[builder(default = "Duration::from_secs(60 * 10)")]
-    #[serde(with = "humantime_serde")]
-    pub(crate) max_dirtiness: Duration,
-}
-
-// NOTE: it seems that `unwrap` may be safe because of builder defaults
-// check `derive_builder` documentation for details
-// https://docs.rs/derive_builder/0.10.2/derive_builder/#default-values
-#[allow(clippy::unwrap_used)]
 impl Default for CircuitTiming {
     fn default() -> Self {
         CircuitTimingBuilder::default().build().unwrap()
@@ -95,16 +117,12 @@ impl Default for CircuitTiming {
 /// string.  (Arti generally uses Toml for configuration, but you can
 /// use other formats if you prefer.)
 #[derive(Debug, Clone, Builder, Default)]
-#[builder]
+#[builder(build_fn(error = "ConfigBuildError"))]
 pub struct CircMgrConfig {
     /// Override the default required distance for two relays to share
     /// the same circuit.
     #[builder(default)]
-    pub(crate) path_config: PathConfig,
-
-    /// Timing and retry information related to requests for circuits.
-    #[builder(default)]
-    pub(crate) request_timing: RequestTiming,
+    pub(crate) path_rules: PathConfig,
 
     /// Timing and retry information related to circuits themselves.
     #[builder(default)]
