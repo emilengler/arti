@@ -10,7 +10,11 @@ CHUTNEY_START_TIME=180 ./chutney/chutney wait_for_bootstrap "$target"
 ./chutney/chutney verify "$target"
 
 
-if [ -x ./target/x86_64-unknown-linux-gnu/debug/arti ]; then
+if [ "${COVERAGE}" == 1 ]; then
+	RUSTFLAGS="$RUSTFLAGS -Z instrument-coverage" cargo +nightly build
+	cmd=./target/debug/arti
+	export LLVM_PROFILE_FILE="$(git rev-parse --show-toplevel)/coverage_meta/%p-%m.profraw"
+elif [ -x ./target/x86_64-unknown-linux-gnu/debug/arti ]; then
 	cmd=./target/x86_64-unknown-linux-gnu/debug/arti
 else
 	cargo build

@@ -13,4 +13,10 @@ tail --pid="$pid" -f /dev/null
 ./chutney/chutney stop "$target"
 
 source tests/chutney/arti.run
-exit "$result"
+if [ "$result" != 0 ]; then
+	exit "$result"
+fi
+
+if [ "${COVERAGE}" == 1 ]; then
+	grcov coverage_meta/ --binary-path target/debug/ -s crates/ -t html --branch --ignore-not-existing -o coverage/
+fi
