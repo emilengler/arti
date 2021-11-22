@@ -151,7 +151,11 @@ impl<'a> ExitPathBuilder<'a> {
                     for rsaid in exit_relay.family().members() {
                         let relay = netdir.by_rsa_id(rsaid);
                         if let Some(r) = relay {
-                            b.restriction(tor_guardmgr::GuardRestriction::AvoidId(*r.ed_identity()));
+                            for fam_relay in r.family().members() {
+                                if fam_relay == exit_relay.rsa_identity() {
+                                    b.restriction(tor_guardmgr::GuardRestriction::AvoidId(*r.ed_identity()));
+                                }
+                            }
                         }
                     }
                 }
