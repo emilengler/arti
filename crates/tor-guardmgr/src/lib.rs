@@ -878,7 +878,7 @@ pub struct GuardUsage {
     ///
     /// (Eventually, multiple restrictions may be supported.)
     #[builder(default, setter(strip_option))]
-    restriction: Option<GuardRestriction>,
+    restriction: Option<Vec<GuardRestriction>>,
 }
 
 impl GuardUsageBuilder {

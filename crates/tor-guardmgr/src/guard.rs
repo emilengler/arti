@@ -297,10 +297,17 @@ impl Guard {
     }
 
     /// Return true if this guard obeys the restriction in `rest`.
-    fn obeys_restriction(&self, rest: &GuardRestriction) -> bool {
-        match rest {
-            GuardRestriction::AvoidId(ed) => &self.id.ed25519 != ed,
+    fn obeys_restriction(&self, rest: &[GuardRestriction]) -> bool {
+        for r in rest {
+            match r {
+                GuardRestriction::AvoidId(ed) => {
+                    if &self.id.ed25519 == ed {
+                        return false;
+                    }
+                }
+            }
         }
+        true
     }
 
     /// Return true if this guard is suitable to use for the provided `usage`.
