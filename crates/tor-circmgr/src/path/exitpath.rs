@@ -148,6 +148,12 @@ impl<'a> ExitPathBuilder<'a> {
                     // just makes sure they're not the same relay.
                     let id = exit_relay.ed_identity();
                     b.restriction(tor_guardmgr::GuardRestriction::AvoidId(*id));
+                    for rsaid in exit_relay.family().members() {
+                        let relay = netdir.by_rsa_id(rsaid);
+                        if let Some(r) = relay {
+                            b.restriction(tor_guardmgr::GuardRestriction::AvoidId(*r.ed_identity()));
+                        }
+                    }
                 }
                 let guard_usage = b.build().expect("Failed while building guard usage!");
                 let (guard, mut mon, usable) = guardmgr.select_guard(guard_usage, Some(netdir))?;
