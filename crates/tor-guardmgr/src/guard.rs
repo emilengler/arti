@@ -694,11 +694,11 @@ mod test {
 
         use crate::GuardUsageBuilder;
         let usage1 = GuardUsageBuilder::new()
-            .restriction(GuardRestriction::AvoidId([22; 32].into()))
+            .restriction(vec![GuardRestriction::AvoidId([22; 32].into())])
             .build()
             .unwrap();
         let usage2 = GuardUsageBuilder::new()
-            .restriction(GuardRestriction::AvoidId([13; 32].into()))
+            .restriction(vec![GuardRestriction::AvoidId([13; 32].into())])
             .build()
             .unwrap();
         let usage3 = GuardUsage::default();

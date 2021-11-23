@@ -151,7 +151,9 @@ impl<'a> ExitPathBuilder<'a> {
                         if let Some(r) = relay {
                             for fam_relay in r.family().members() {
                                 if fam_relay == exit_relay.rsa_identity() {
-                                    restrictions.push(tor_guardmgr::GuardRestriction::AvoidId(*r.ed_identity()));
+                                    restrictions.push(tor_guardmgr::GuardRestriction::AvoidId(
+                                        *r.ed_identity(),
+                                    ));
                                 }
                             }
                         }
