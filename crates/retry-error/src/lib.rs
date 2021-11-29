@@ -1,4 +1,36 @@
-#![doc = include_str!("../README.md")]
+//! An error attempt to represent multiple failures.
+//!
+//! This crate implements [`RetryError`], a type to use when you
+//! retry something a few times, and all those attempts.  Instead of
+//! returning only a single error, it records _all of the errors
+//! received_, in case they are different.
+//!
+//! This crate is developed as part of
+//! [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
+//! implement [Tor](https://www.torproject.org/) in Rust.
+//! It's used by higher-level crates that retry
+//! operations.
+//!
+//! # Example
+//!
+//! ```
+//! # fn some_operation() -> Result<(),anyhow::Error> {Ok(())}
+//! # fn demo() -> Result<(),retry_error::RetryError<anyhow::Error>> {
+//! use retry_error::RetryError;
+//!
+//! const N_ATTEMPTS: usize = 10;
+//! let mut err = RetryError::in_attempt_to("perform an example operation");
+//! for _ in 0..N_ATTEMPTS {
+//!     match some_operation() {
+//!         Ok(val) => return Ok(val),
+//!         Err(e) => err.push(e),
+//!     }
+//! }
+//! // All attempts failed; return all the errors.
+//! return Err(err)
+//! # }
+//! ```
+
 #![deny(missing_docs)]
 #![warn(noop_method_call)]
 #![deny(unreachable_pub)]

@@ -1,4 +1,5 @@
-#![doc = include_str!("../README.md")]
+//! Tools for generating a stream of structured events, similar to C tor's `ControlPort`.
+
 #![deny(missing_docs)]
 #![warn(noop_method_call)]
 #![deny(unreachable_pub)]

@@ -1,4 +1,13 @@
-#![doc = include_str!("../README.md")]
+//! `tor-config`: Tools for configuration management in Arti
+//!
+//! # Overview
+//!
+//! This crate is part of
+//! [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
+//! implement [Tor](https://www.torproject.org/) in Rust.
+//!
+//! It provides low-level types for handling configuration values.
+
 #![deny(missing_docs)]
 #![warn(noop_method_call)]
 #![deny(unreachable_pub)]
