@@ -206,11 +206,7 @@ impl ExitPolicy {
 
     /// Returns true if this policy allows any ports at all.
     fn allows_some_port(&self) -> bool {
-        if self.bad_exit {
-            false
-        } else {
-            self.v4.allows_some_port() || self.v6.allows_some_port()
-        }
+        !self.bad_exit && (self.v4.allows_some_port() || self.v6.allows_some_port())
     }
 }
 
