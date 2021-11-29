@@ -15,6 +15,8 @@ use crate::{Error, Result};
 /// An exit policy, as supported by the last hop of a circuit.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ExitPolicy {
+    /// Are we a bad exit?
+    bad_exit: bool,
     /// Permitted IPv4 ports.
     v4: Arc<PortPolicy>,
     /// Permitted IPv6 ports.
@@ -48,7 +50,9 @@ impl TargetPort {
 
     /// Return true if this port is supported by the provided Relay.
     pub fn is_supported_by(&self, r: &tor_netdir::Relay<'_>) -> bool {
-        if self.ipv6 {
+        if r.is_flagged_bad_exit() {
+            false
+        } else if self.ipv6 {
             r.supports_exit_port_ipv6(self.port)
         } else {
             r.supports_exit_port_ipv4(self.port)
@@ -184,6 +188,7 @@ impl ExitPolicy {
     /// Make a new exit policy from a given Relay.
     pub(crate) fn from_relay(relay: &Relay<'_>) -> Self {
         Self {
+            bad_exit: relay.is_flagged_bad_exit(),
             v4: relay.ipv4_policy(),
             v6: relay.ipv6_policy(),
         }
@@ -191,13 +196,21 @@ impl ExitPolicy {
 
     /// Return true if a given port is contained in this ExitPolicy.
     fn allows_port(&self, p: TargetPort) -> bool {
-        let policy = if p.ipv6 { &self.v6 } else { &self.v4 };
-        policy.allows_port(p.port)
+        if self.bad_exit {
+            false
+        } else {
+            let policy = if p.ipv6 { &self.v6 } else { &self.v4 };
+            policy.allows_port(p.port)
+        }
     }
 
     /// Returns true if this policy allows any ports at all.
     fn allows_some_port(&self) -> bool {
-        self.v4.allows_some_port() || self.v6.allows_some_port()
+        if self.bad_exit {
+            false
+        } else {
+            self.v4.allows_some_port() || self.v6.allows_some_port()
+        }
     }
 }
 
@@ -363,25 +376,36 @@ mod test {
 
     #[test]
     fn exit_policy() {
-        let network = testnet::construct_netdir()
-            .unwrap()
-            .unwrap_if_sufficient()
-            .unwrap();
+        use tor_netdir::testnet::construct_custom_netdir;
+        use tor_netdoc::doc::netstatus::RelayFlags;
+
+        let network = construct_custom_netdir(|idx, nb| {
+            if (0x21..0x27).contains(&idx) {
+                nb.rs.add_flags(RelayFlags::BAD_EXIT);
+            }
+        })
+        .unwrap()
+        .unwrap_if_sufficient()
+        .unwrap();
 
         // Nodes with ID 0x0a through 0x13 and 0x1e through 0x27 are
         // exits.  Odd-numbered ones allow only ports 80 and 443;
-        // even-numbered ones allow all ports.
+        // even-numbered ones allow all ports.  Nodes with ID 0x21
+        // through 0x27 are bad exits.
         let id_noexit = [0x05; 32].into();
         let id_webexit = [0x11; 32].into();
         let id_fullexit = [0x20; 32].into();
+        let id_badexit = [0x25; 32].into();
 
         let not_exit = network.by_id(&id_noexit).unwrap();
         let web_exit = network.by_id(&id_webexit).unwrap();
         let full_exit = network.by_id(&id_fullexit).unwrap();
+        let bad_exit = network.by_id(&id_badexit).unwrap();
 
         let ep_none = ExitPolicy::from_relay(&not_exit);
         let ep_web = ExitPolicy::from_relay(&web_exit);
         let ep_full = ExitPolicy::from_relay(&full_exit);
+        let ep_bad = ExitPolicy::from_relay(&bad_exit);
 
         assert!(!ep_none.allows_port(TargetPort::ipv4(80)));
         assert!(!ep_none.allows_port(TargetPort::ipv4(9999)));
@@ -394,15 +418,18 @@ mod test {
         assert!(ep_full.allows_port(TargetPort::ipv4(443)));
         assert!(ep_full.allows_port(TargetPort::ipv4(9999)));
 
+        assert!(!ep_bad.allows_port(TargetPort::ipv4(80)));
+
         // Note that nobody in the testdir::network allows ipv6.
         assert!(!ep_none.allows_port(TargetPort::ipv6(80)));
         assert!(!ep_web.allows_port(TargetPort::ipv6(80)));
         assert!(!ep_full.allows_port(TargetPort::ipv6(80)));
+        assert!(!ep_bad.allows_port(TargetPort::ipv6(80)));
 
         // Check is_supported_by while we're here.
-        // TODO: Make sure that if BadExit is set, this function returns no
         assert!(TargetPort::ipv4(80).is_supported_by(&web_exit));
         assert!(!TargetPort::ipv6(80).is_supported_by(&web_exit));
+        assert!(!TargetPort::ipv6(80).is_supported_by(&bad_exit));
     }
 
     #[test]
@@ -411,6 +438,7 @@ mod test {
         // Make an exit-policy object that allows web on IPv4 and
         // smtp on IPv6.
         let policy = ExitPolicy {
+            bad_exit: false,
             v4: Arc::new("accept 80,443".parse().unwrap()),
             v6: Arc::new("accept 23".parse().unwrap()),
         };
@@ -491,6 +519,7 @@ mod test {
         use crate::mgr::AbstractSpec;
 
         let policy = ExitPolicy {
+            bad_exit: false,
             v4: Arc::new("accept 80,443".parse().unwrap()),
             v6: Arc::new("accept 23".parse().unwrap()),
         };
