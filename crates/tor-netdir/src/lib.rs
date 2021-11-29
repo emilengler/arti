@@ -896,6 +896,10 @@ impl<'a> Relay<'a> {
     pub fn is_flagged_guard(&self) -> bool {
         self.rs.is_flagged_guard()
     }
+    /// Return true if this relay is marked as usable as a new Guard node.
+    pub fn is_flagged_bad_exit(&self) -> bool {
+        self.rs.is_flagged_bad_exit()
+    }
     /// Return true if both relays are in the same subnet, as configured by
     /// `subnet_config`.
     ///
