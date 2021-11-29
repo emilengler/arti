@@ -682,6 +682,9 @@ mod test {
 
     #[test]
     fn simple_accessors() {
+        use std::collections::hash_map::RandomState;
+        use std::iter::FromIterator;
+
         let id = basic_id();
         let g = basic_guard();
 
@@ -694,11 +697,15 @@ mod test {
 
         use crate::GuardUsageBuilder;
         let usage1 = GuardUsageBuilder::new()
-            .restriction(HashSet::from([GuardRestriction::AvoidId([22; 32].into())]))
+            .restriction(HashSet::<_, RandomState>::from_iter([
+                GuardRestriction::AvoidId([22; 32].into()),
+            ]))
             .build()
             .unwrap();
         let usage2 = GuardUsageBuilder::new()
-            .restriction(HashSet::from([GuardRestriction::AvoidId([13; 32].into())]))
+            .restriction(HashSet::<_, RandomState>::from_iter([
+                GuardRestriction::AvoidId([13; 32].into()),
+            ]))
             .build()
             .unwrap();
         let usage3 = GuardUsage::default();
