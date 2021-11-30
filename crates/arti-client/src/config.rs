@@ -159,7 +159,7 @@ impl From<StorageConfig> for StorageConfigBuilder {
 /// [`TorClientConfig::default`].
 ///
 /// If you need to override the locations where Arti stores its information,
-/// you can make a TorClientConfig with [`TorClientConfig::with_directories`].
+/// you can make a TorClientConfig using [`TorClientConfigBuilder`] with [`TorClientConfigBuilder::from_directories`].
 ///
 /// Finally, you can get fine-grained control over the members of a a
 /// TorClientConfig using [`TorClientConfigBuilder`].
