@@ -3,6 +3,7 @@ set -xe
 
 cd "$(git rev-parse --show-toplevel)"
 
+export CHUTNEY_PATH="$(pwd)/chutney/"
 source tests/chutney/arti.run
 
 kill -s INT "$pid"; 
