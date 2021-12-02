@@ -475,7 +475,8 @@ struct CircList<B: AbstractCircBuilder> {
     /// waiting for the circuit to be built, this set's members are
     /// lazily removed after the request succeeds or fails.
     pending_requests: PtrWeakHashSet<Weak<PendingRequest<B>>>,
-    /// Limit of circuits supporting a port before we open a new circuit
+    /// Limit of preemptive circuits supporting a port before we open
+    /// a new circuit
     circ_limit_port: usize,
 }
 
