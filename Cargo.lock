@@ -101,6 +101,7 @@ dependencies = [
  "tor-circmgr",
  "tor-config",
  "tor-dirmgr",
+ "tor-events",
  "tor-persist",
  "tor-proto",
  "tor-rtcompat",

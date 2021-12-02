@@ -9,6 +9,7 @@ use crate::address::IntoTorAddr;
 use crate::config::{ClientAddrConfig, TorClientConfig};
 use tor_circmgr::{DirInfo, IsolationToken, StreamIsolationBuilder, TargetPort};
 use tor_dirmgr::DirEvent;
+use tor_events::{events::BootstrapEvent, EventReactor, TorEventReceiver};
 use tor_persist::{FsStateMgr, StateMgr};
 use tor_proto::circuit::ClientCirc;
 use tor_proto::stream::{DataStream, IpVersionPreference, StreamParameters};
@@ -152,6 +153,15 @@ impl ConnectPrefs {
     }
 
     // TODO: Add some way to be IPFlexible, and require exit to support both.
+}
+
+/// Create a receiver to listen for bootstrap events
+pub async fn bootstrap_event_receiver() -> Result<TorEventReceiver> {
+    let mut rx = EventReactor::receiver().ok_or(Error::Internal("failed to create recevier"))?; // TODO improve this error
+    rx.subscribe(BootstrapEvent::Empty);
+
+    // subscribe to the rest of bootstrap events here
+    Ok(rx)
 }
 
 impl<R: Runtime> TorClient<R> {
