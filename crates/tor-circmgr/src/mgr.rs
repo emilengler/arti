@@ -669,13 +669,14 @@ enum Action<B: AbstractCircBuilder> {
 
 impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
     /// Construct a new AbstractCircMgr.
+    /// XXX: We need the exit_circs_for_port for CircList
     pub(crate) fn new(
         builder: B,
         runtime: R,
         circuit_timing: CircuitTiming,
-        circ_count: usize,
+        exit_circs_for_port: usize,
     ) -> Self {
-        let circs = sync::Mutex::new(CircList::new(circ_count));
+        let circs = sync::Mutex::new(CircList::new(exit_circs_for_port));
         let dflt_params = tor_netdir::params::NetParameters::default();
         let unused_timing = (&dflt_params).into();
         AbstractCircMgr {
