@@ -97,6 +97,7 @@ pub(crate) trait AbstractSpec: Clone + Debug {
     fn find_supported<'a, 'b, C: AbstractCirc>(
         list: impl Iterator<Item = &'b mut OpenEntry<Self, C>>,
         usage: &Self::Usage,
+        // HACK(neel): We need this since other find_supported() uses this
         _circs: usize,
     ) -> Vec<&'b mut OpenEntry<Self, C>> {
         abstract_spec_find_supported(list, usage)
