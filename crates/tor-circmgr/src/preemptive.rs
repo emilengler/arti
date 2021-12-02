@@ -12,13 +12,13 @@ pub(crate) struct PreemptiveCircuitPredictor {
     /// such usage.
     usages: HashMap<Option<TargetPort>, Instant>,
 
-    /// The duration value for
-    duration: u64,
+    /// How long should we have a fast exit for a port?
+    duration: Duration,
 }
 
 impl PreemptiveCircuitPredictor {
     /// Create a new predictor, starting out with a set of ports we think are likely to be used.
-    pub(crate) fn new(starting_ports: Vec<TargetPort>, d: u64) -> Self {
+    pub(crate) fn new(starting_ports: Vec<TargetPort>, dur: u64) -> Self {
         let mut usages = HashMap::new();
         for sp in starting_ports {
             usages.insert(Some(sp), Instant::now());
@@ -26,16 +26,14 @@ impl PreemptiveCircuitPredictor {
         // We want to build circuits for resolving DNS, too.
         usages.insert(None, Instant::now());
 
-        let duration = d;
+        let duration = Duration::from_secs(dur);
 
         Self { usages, duration }
     }
 
     /// Make some predictions for what circuits should be built.
     pub(crate) fn predict(&self) -> Vec<TargetCircUsage> {
-        // path-spec.txt § 2.1.1: "[Tor] tries to have two fast exit circuits available for every
-        // port seen within the past hour" (although they can be shared)
-        let duration = Instant::now() - Duration::from_secs(self.duration);
+        let duration = Instant::now() - self.duration;
         self.usages
             .iter()
             .filter(|(_, &time)| time > duration)
