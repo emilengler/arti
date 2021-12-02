@@ -75,8 +75,8 @@ pub use err::Error;
 pub use usage::{IsolationToken, StreamIsolation, StreamIsolationBuilder, TargetPort};
 
 pub use config::{
-    CircMgrConfig, CircMgrConfigBuilder, CircuitTiming, CircuitTimingBuilder, PathConfig,
-    PathConfigBuilder,
+    CircMgrConfig, CircMgrConfigBuilder, CircuitPreemptive, CircuitPreemptiveBuilder,
+    CircuitTiming, CircuitTimingBuilder, PathConfig, PathConfigBuilder,
 };
 
 use crate::preemptive::PreemptiveCircuitPredictor;
@@ -90,9 +90,6 @@ type TimeoutStateHandle = tor_persist::DynStorageHandle<timeouts::pareto::Pareto
 
 /// Key used to load timeout state information.
 const PARETO_TIMEOUT_DATA_KEY: &str = "circuit_timeouts";
-
-/// If we have this number or more circuits open, we don't build circuits preemptively any more.
-const PREEMPTIVE_CIRCUIT_THRESHOLD: usize = 12;
 
 /// Represents what we know about the Tor network.
 ///
@@ -157,6 +154,8 @@ pub struct CircMgr<R: Runtime> {
     mgr: Arc<mgr::AbstractCircMgr<build::CircuitBuilder<R>, R>>,
     /// A preemptive circuit predictor, for, uh, building circuits preemptively.
     predictor: Arc<Mutex<PreemptiveCircuitPredictor>>,
+    /// Limit on number of preemptive circuits
+    threshold: usize,
 }
 
 impl<R: Runtime> CircMgr<R> {
@@ -173,13 +172,18 @@ impl<R: Runtime> CircMgr<R> {
         let CircMgrConfig {
             path_rules,
             circuit_timing,
+            circuit_preemptive,
         } = config;
 
-        // TODO(eta): don't hardcode!
-        let preemptive = Arc::new(Mutex::new(PreemptiveCircuitPredictor::new(vec![
-            TargetPort::ipv4(80),
-            TargetPort::ipv4(443),
-        ])));
+        let mut ports = Vec::new();
+        circuit_preemptive
+            .ports
+            .iter()
+            .for_each(|p| ports.push(TargetPort::ipv4(*p)));
+        let preemptive = Arc::new(Mutex::new(PreemptiveCircuitPredictor::new(
+            ports,
+            circuit_preemptive.duration,
+        )));
 
         let guardmgr = tor_guardmgr::GuardMgr::new(runtime.clone(), storage.clone())?;
 
@@ -192,10 +196,16 @@ impl<R: Runtime> CircMgr<R> {
             storage_handle,
             guardmgr,
         );
-        let mgr = mgr::AbstractCircMgr::new(builder, runtime.clone(), circuit_timing);
+        let mgr = mgr::AbstractCircMgr::new(
+            builder,
+            runtime.clone(),
+            circuit_timing,
+            circuit_preemptive.min_exit_circs_for_port,
+        );
         let circmgr = Arc::new(CircMgr {
             mgr: Arc::new(mgr),
             predictor: preemptive,
+            threshold: circuit_preemptive.threshold,
         });
 
         runtime.spawn(continually_expire_circuits(
@@ -294,7 +304,7 @@ impl<R: Runtime> CircMgr<R> {
     /// should ideally be refactored to be internal to this crate, and not be a
     /// public API here.
     pub async fn launch_circuits_preemptively(&self, netdir: DirInfo<'_>) {
-        if self.mgr.n_circs() >= PREEMPTIVE_CIRCUIT_THRESHOLD {
+        if self.mgr.n_circs() >= self.threshold {
             return;
         }
         debug!("Checking preemptive circuit predictions.");

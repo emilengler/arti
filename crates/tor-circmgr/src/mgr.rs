@@ -97,6 +97,7 @@ pub(crate) trait AbstractSpec: Clone + Debug {
     fn find_supported<'a, 'b, C: AbstractCirc>(
         list: impl Iterator<Item = &'b mut OpenEntry<Self, C>>,
         usage: &Self::Usage,
+        _circs: usize,
     ) -> Vec<&'b mut OpenEntry<Self, C>> {
         abstract_spec_find_supported(list, usage)
     }
@@ -474,15 +475,18 @@ struct CircList<B: AbstractCircBuilder> {
     /// waiting for the circuit to be built, this set's members are
     /// lazily removed after the request succeeds or fails.
     pending_requests: PtrWeakHashSet<Weak<PendingRequest<B>>>,
+    /// Limit of circuits supporting a port before we open a new circuit
+    circ_limit_port: usize,
 }
 
 impl<B: AbstractCircBuilder> CircList<B> {
     /// Make a new empty `CircList`
-    fn new() -> Self {
+    fn new(exit_circs_for_port: usize) -> Self {
         CircList {
             open_circs: HashMap::new(),
             pending_circs: PtrWeakHashSet::new(),
             pending_requests: PtrWeakHashSet::new(),
+            circ_limit_port: exit_circs_for_port,
         }
     }
 
@@ -500,7 +504,7 @@ impl<B: AbstractCircBuilder> CircList<B> {
         usage: &<B::Spec as AbstractSpec>::Usage,
     ) -> Option<Vec<&mut OpenEntry<B::Spec, B::Circ>>> {
         let list = self.open_circs.values_mut();
-        let v = <B::Spec as AbstractSpec>::find_supported(list, usage);
+        let v = <B::Spec as AbstractSpec>::find_supported(list, usage, self.circ_limit_port);
         if v.is_empty() {
             None
         } else {
@@ -660,8 +664,13 @@ enum Action<B: AbstractCircBuilder> {
 
 impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
     /// Construct a new AbstractCircMgr.
-    pub(crate) fn new(builder: B, runtime: R, circuit_timing: CircuitTiming) -> Self {
-        let circs = sync::Mutex::new(CircList::new());
+    pub(crate) fn new(
+        builder: B,
+        runtime: R,
+        circuit_timing: CircuitTiming,
+        circ_count: usize,
+    ) -> Self {
+        let circs = sync::Mutex::new(CircList::new(circ_count));
         let dflt_params = tor_netdir::params::NetParameters::default();
         let unused_timing = (&dflt_params).into();
         AbstractCircMgr {
@@ -1357,6 +1366,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
 
             let webports = FakeSpec::new(vec![80_u16, 443]);
@@ -1439,6 +1449,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
             let c1 = mgr
                 .peek_runtime()
@@ -1471,6 +1482,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
             let c1 = mgr
                 .peek_runtime()
@@ -1496,6 +1508,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
@@ -1517,6 +1530,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
@@ -1543,6 +1557,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
             let c1 = rt.wait_for(mgr.get_or_launch(&ports, di())).await;
 
@@ -1566,6 +1581,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
 
             // This test doesn't exercise any timeout behaviour.
@@ -1594,6 +1610,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
 
             let ports = FakeSpec::new(vec![443_u16]);
@@ -1661,6 +1678,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
             // Note that ports2 will be wider than ports1, so the second
             // request will have to launch a new circuit.
@@ -1695,6 +1713,7 @@ mod test {
                 builder,
                 rt.clone(),
                 CircuitTiming::default(),
+                2,
             ));
 
             let ports1 = FakeSpec::new(vec![80_u16, 443]);
@@ -1739,7 +1758,7 @@ mod test {
                 .build()
                 .unwrap();
 
-            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone(), circuit_timing));
+            let mgr = Arc::new(AbstractCircMgr::new(builder, rt.clone(), circuit_timing, 2));
 
             let imap = FakeSpec::new(vec![993_u16]);
             let pop = FakeSpec::new(vec![995_u16]);
@@ -1851,7 +1870,7 @@ mod test {
         let empty: Vec<&OpenEntry<SupportedCircUsage, FakeCirc>> = vec![];
 
         assert_eq!(
-            SupportedCircUsage::find_supported(vec![&mut entry_none].into_iter(), &usage_web),
+            SupportedCircUsage::find_supported(vec![&mut entry_none].into_iter(), &usage_web, 2),
             empty
         );
 
@@ -1862,7 +1881,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none, &mut entry_web].into_iter(),
-                &usage_web
+                &usage_web,
+                2
             ),
             vec![&mut entry_web_c]
         );
@@ -1870,7 +1890,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none, &mut entry_web, &mut entry_full].into_iter(),
-                &usage_web
+                &usage_web,
+                2
             ),
             vec![&mut entry_web_c, &mut entry_full_c]
         );
@@ -1887,7 +1908,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none].into_iter(),
-                &usage_preemptive_web
+                &usage_preemptive_web,
+                2
             ),
             empty
         );
@@ -1895,7 +1917,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none].into_iter(),
-                &usage_preemptive_dns
+                &usage_preemptive_dns,
+                2
             ),
             empty
         );
@@ -1903,7 +1926,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none, &mut entry_web].into_iter(),
-                &usage_preemptive_web
+                &usage_preemptive_web,
+                2
             ),
             empty
         );
@@ -1911,7 +1935,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none, &mut entry_web].into_iter(),
-                &usage_preemptive_dns
+                &usage_preemptive_dns,
+                2
             ),
             vec![&mut entry_none_c, &mut entry_web_c]
         );
@@ -1919,7 +1944,8 @@ mod test {
         assert_eq!(
             SupportedCircUsage::find_supported(
                 vec![&mut entry_none, &mut entry_web, &mut entry_full].into_iter(),
-                &usage_preemptive_web
+                &usage_preemptive_web,
+                2
             ),
             vec![&mut entry_web_c, &mut entry_full_c]
         );

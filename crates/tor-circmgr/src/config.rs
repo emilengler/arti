@@ -77,6 +77,37 @@ impl From<PathConfig> for PathConfigBuilder {
     }
 }
 
+/// Configuration for preemptive circuits.
+///
+/// This type is immutable once constructed. To create an object of this
+/// type, use [`CircuitPreemptiveBuilder`].
+#[derive(Debug, Clone, Builder, Deserialize, Eq, PartialEq)]
+#[builder(build_fn(error = "ConfigBuildError"))]
+#[serde(deny_unknown_fields)]
+pub struct CircuitPreemptive {
+    /// How many circuits should we have before we stop opening circuits
+    /// preemptively?
+    #[builder(default = "default_threshold()")]
+    #[serde(default = "default_threshold")]
+    pub(crate) threshold: usize,
+
+    /// Which ports should we be preemptive to by default (currently IPv4-only)?
+    #[builder(default = "default_ports()")]
+    #[serde(default = "default_ports")]
+    pub(crate) ports: Vec<u16>,
+
+    /// When we see a new port, how long should we have an fast exit for
+    /// that port?
+    #[builder(default = "default_duration()")]
+    #[serde(default = "default_duration")]
+    pub(crate) duration: u64,
+
+    /// How many circuits should we have at minimum for an exit port?
+    #[builder(default = "default_min_exit_circs_for_port()")]
+    #[serde(default = "default_min_exit_circs_for_port")]
+    pub(crate) min_exit_circs_for_port: usize,
+}
+
 /// Configuration for circuit timeouts, expiration, and so on.
 ///
 /// This type is immutable once constructed. To create an object of this
@@ -111,6 +142,26 @@ pub struct CircuitTiming {
     #[builder(default = "default_request_loyalty()")]
     #[serde(with = "humantime_serde", default = "default_request_loyalty")]
     pub(crate) request_loyalty: Duration,
+}
+
+/// Return default threshold?
+fn default_threshold() -> usize {
+    12
+}
+
+/// Return default target ports
+fn default_ports() -> Vec<u16> {
+    vec![80, 443]
+}
+
+/// Return default duration
+fn default_duration() -> u64 {
+    60 * 60
+}
+
+/// Return minimum circuits for an exit port
+fn default_min_exit_circs_for_port() -> usize {
+    2
 }
 
 /// Return the default value for `max_dirtiness`.
@@ -162,6 +213,32 @@ impl From<CircuitTiming> for CircuitTimingBuilder {
     }
 }
 
+#[allow(clippy::unwrap_used)]
+impl Default for CircuitPreemptive {
+    fn default() -> Self {
+        CircuitPreemptiveBuilder::default().build().unwrap()
+    }
+}
+
+impl CircuitPreemptive {
+    /// Return a new [`CircuitPreemptiveBuilder`]
+    pub fn builder() -> CircuitPreemptiveBuilder {
+        CircuitPreemptiveBuilder::default()
+    }
+}
+
+impl From<CircuitPreemptive> for CircuitPreemptiveBuilder {
+    fn from(cfg: CircuitPreemptive) -> CircuitPreemptiveBuilder {
+        let mut builder = CircuitPreemptiveBuilder::default();
+        builder
+            .threshold(cfg.threshold)
+            .ports(cfg.ports)
+            .duration(cfg.duration)
+            .min_exit_circs_for_port(cfg.min_exit_circs_for_port);
+        builder
+    }
+}
+
 /// Configuration for a circuit manager.
 ///
 /// This configuration includes information about how to build paths
@@ -183,6 +260,10 @@ pub struct CircMgrConfig {
     /// Timing and retry information related to circuits themselves.
     #[builder(default)]
     pub(crate) circuit_timing: CircuitTiming,
+
+    /// Information related to preemptive circuits.
+    #[builder(default)]
+    pub(crate) circuit_preemptive: CircuitPreemptive,
 }
 
 impl CircMgrConfig {

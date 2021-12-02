@@ -1,6 +1,7 @@
 //! Code related to tracking what activities a circuit can be used for.
 
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::debug;
@@ -27,7 +28,7 @@ pub(crate) struct ExitPolicy {
 ///
 /// Ordinarily, this is a TCP port, plus a flag to indicate whether we
 /// must support IPv4 or IPv6.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash, PartialOrd, Ord, Serialize)]
 pub struct TargetPort {
     /// True if this is a request to connect to an IPv6 address
     ipv6: bool,
@@ -401,6 +402,7 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
     fn find_supported<'a, 'b, C: AbstractCirc>(
         list: impl Iterator<Item = &'b mut OpenEntry<Self, C>>,
         usage: &TargetCircUsage,
+        circs: usize,
     ) -> Vec<&'b mut OpenEntry<Self, C>> {
         match usage {
             TargetCircUsage::Preemptive { .. } => {
@@ -413,7 +415,7 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
                     usage,
                     supported.len()
                 );
-                if supported.len() >= 2 {
+                if supported.len() >= circs {
                     supported
                 } else {
                     vec![]
