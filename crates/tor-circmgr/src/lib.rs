@@ -175,11 +175,11 @@ impl<R: Runtime> CircMgr<R> {
             circuit_preemptive,
         } = config;
 
-        let mut ports = Vec::new();
-        circuit_preemptive
+        let ports = circuit_preemptive
             .ports
             .iter()
-            .for_each(|p| ports.push(TargetPort::ipv4(*p)));
+            .map(|p| TargetPort::ipv4(*p))
+            .collect();
         let preemptive = Arc::new(Mutex::new(PreemptiveCircuitPredictor::new(
             ports,
             circuit_preemptive.duration,
