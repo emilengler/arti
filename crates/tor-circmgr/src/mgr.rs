@@ -483,6 +483,9 @@ struct CircList<B: AbstractCircBuilder> {
 
 impl<B: AbstractCircBuilder> CircList<B> {
     /// Make a new empty `CircList`
+    ///
+    /// XXXX: We need the exit_circs_for_port since it's used by find_open()
+    /// which in turn calls find_supported() which uses this variable
     fn new(exit_circs_for_port: usize) -> Self {
         CircList {
             open_circs: HashMap::new(),
