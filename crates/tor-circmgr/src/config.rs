@@ -87,24 +87,24 @@ impl From<PathConfig> for PathConfigBuilder {
 pub struct CircuitPreemptive {
     /// How many circuits should we have before we stop opening circuits
     /// preemptively?
-    #[builder(default = "default_threshold()")]
-    #[serde(default = "default_threshold")]
+    #[builder(default = "default_preemptive_threshold()")]
+    #[serde(default = "default_preemptive_threshold")]
     pub(crate) threshold: usize,
 
     /// Which exit ports should we preemptively build circuits through?
-    #[builder(default = "default_ports()")]
-    #[serde(default = "default_ports")]
+    #[builder(default = "default_preemptive_ports()")]
+    #[serde(default = "default_preemptive_ports")]
     pub(crate) ports: Vec<u16>,
 
     /// When we see a new port, how long should we have a fast exit for
     /// that port?
-    #[builder(default = "default_duration()")]
-    #[serde(default = "default_duration")]
+    #[builder(default = "default_preemptive_duration()")]
+    #[serde(default = "default_preemptive_duration")]
     pub(crate) duration: u64,
 
     /// How many circuits should we have at minimum for an exit port?
-    #[builder(default = "default_min_exit_circs_for_port()")]
-    #[serde(default = "default_min_exit_circs_for_port")]
+    #[builder(default = "default_preemptive_min_exit_circs_for_port()")]
+    #[serde(default = "default_preemptive_min_exit_circs_for_port")]
     pub(crate) min_exit_circs_for_port: usize,
 }
 
@@ -144,23 +144,23 @@ pub struct CircuitTiming {
     pub(crate) request_loyalty: Duration,
 }
 
-/// Return default threshold?
-fn default_threshold() -> usize {
+/// Return default threshold
+fn default_preemptive_threshold() -> usize {
     12
 }
 
 /// Return default target ports
-fn default_ports() -> Vec<u16> {
+fn default_preemptive_ports() -> Vec<u16> {
     vec![80, 443]
 }
 
 /// Return default duration
-fn default_duration() -> u64 {
+fn default_preemptive_duration() -> u64 {
     60 * 60
 }
 
 /// Return minimum circuits for an exit port
-fn default_min_exit_circs_for_port() -> usize {
+fn default_preemptive_min_exit_circs_for_port() -> usize {
     2
 }
 
@@ -213,10 +213,11 @@ impl From<CircuitTiming> for CircuitTimingBuilder {
     }
 }
 
-#[allow(clippy::unwrap_used)]
 impl Default for CircuitPreemptive {
     fn default() -> Self {
-        CircuitPreemptiveBuilder::default().build().unwrap()
+        CircuitPreemptiveBuilder::default()
+            .build()
+            .expect("preemptive circuit defaults")
     }
 }
 
