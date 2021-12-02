@@ -353,8 +353,7 @@ impl ArtiConfigBuilder {
 
     /// Return a mutable reference to a [`CircuitPreemptiveBuilder`](circ::CircuitPreemptiveBuilder).
     ///
-    /// This section overrides Arti's rules for deciding how long to use
-    /// circuits, and when to give up on attempts to launch them.
+    /// This section overrides Arti's rules for preemptive circuits.
     pub fn circuit_preemptive(&mut self) -> &mut circ::CircuitPreemptiveBuilder {
         &mut self.circuit_preemptive
     }
