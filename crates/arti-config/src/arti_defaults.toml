@@ -90,13 +90,13 @@ ipv6_subnet_family_prefix = 32
 # preemptively?
 threshold = 12
 
-# Which ports should we be preemptive to by default (currently IPv4-only)?
+# Which exit ports should we preemptively build circuits through?
 ports = [80, 443]
 
 # When we see a new port, how long should we have an fast exit for that port?
 duration = 3600
 
-# How many circuits should we have at minimum for an exit port?
+# How many circuits should we have at minimum for a exit port?
 min_exit_circs_for_port = 2
 
 # Rules for how long circuits should survive, and how long pending

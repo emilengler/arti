@@ -91,12 +91,12 @@ pub struct CircuitPreemptive {
     #[serde(default = "default_threshold")]
     pub(crate) threshold: usize,
 
-    /// Which ports should we be preemptive to by default (currently IPv4-only)?
+    /// Which exit ports should we preemptively build circuits through?
     #[builder(default = "default_ports()")]
     #[serde(default = "default_ports")]
     pub(crate) ports: Vec<u16>,
 
-    /// When we see a new port, how long should we have an fast exit for
+    /// When we see a new port, how long should we have a fast exit for
     /// that port?
     #[builder(default = "default_duration()")]
     #[serde(default = "default_duration")]
