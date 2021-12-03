@@ -154,7 +154,8 @@ pub struct CircMgr<R: Runtime> {
     mgr: Arc<mgr::AbstractCircMgr<build::CircuitBuilder<R>, R>>,
     /// A preemptive circuit predictor, for, uh, building circuits preemptively.
     predictor: Arc<Mutex<PreemptiveCircuitPredictor>>,
-    /// Limit on number of circuits
+    /// How many circuits should we have before we stop opening circuits
+    /// preemptively?
     threshold: usize,
 }
 
