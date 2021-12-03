@@ -182,7 +182,7 @@ impl<R: Runtime> CircMgr<R> {
             .collect();
         let preemptive = Arc::new(Mutex::new(PreemptiveCircuitPredictor::new(
             ports,
-            circuit_preemptive.duration,
+            Duration::from_secs(circuit_preemptive.duration),
         )));
 
         let guardmgr = tor_guardmgr::GuardMgr::new(runtime.clone(), storage.clone())?;
