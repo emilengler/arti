@@ -197,12 +197,7 @@ impl<R: Runtime> CircMgr<R> {
             storage_handle,
             guardmgr,
         );
-        let mgr = mgr::AbstractCircMgr::new(
-            builder,
-            runtime.clone(),
-            circuit_timing,
-            circuit_preemptive.min_exit_circs_for_port,
-        );
+        let mgr = mgr::AbstractCircMgr::new(builder, runtime.clone(), circuit_timing);
         let circmgr = Arc::new(CircMgr {
             mgr: Arc::new(mgr),
             predictor: preemptive,

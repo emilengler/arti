@@ -37,7 +37,7 @@ impl PreemptiveCircuitPredictor {
         self.usages
             .iter()
             .filter(|(_, &time)| time > duration)
-            .map(|(&port, _)| TargetCircUsage::Preemptive { port })
+            .map(|(&port, _)| TargetCircUsage::Preemptive { port, circs: 2 })
             .collect()
     }
 
@@ -60,7 +60,10 @@ mod test {
         results.sort();
         assert_eq!(
             predictor.predict(),
-            vec![TargetCircUsage::Preemptive { port: None }]
+            vec![TargetCircUsage::Preemptive {
+                port: None,
+                circs: 2
+            }]
         );
 
         let predictor = PreemptiveCircuitPredictor::new(
@@ -73,12 +76,17 @@ mod test {
         assert_eq!(
             results,
             vec![
-                TargetCircUsage::Preemptive { port: None },
                 TargetCircUsage::Preemptive {
-                    port: Some(TargetPort::ipv4(80))
+                    port: None,
+                    circs: 2
                 },
                 TargetCircUsage::Preemptive {
-                    port: Some(TargetPort::ipv6(80))
+                    port: Some(TargetPort::ipv4(80)),
+                    circs: 2
+                },
+                TargetCircUsage::Preemptive {
+                    port: Some(TargetPort::ipv6(80)),
+                    circs: 2
                 },
             ]
         );
@@ -90,7 +98,10 @@ mod test {
 
         assert_eq!(
             predictor.predict(),
-            vec![TargetCircUsage::Preemptive { port: None }]
+            vec![TargetCircUsage::Preemptive {
+                port: None,
+                circs: 2
+            }]
         );
 
         predictor.note_usage(Some(TargetPort::ipv4(1234)), Instant::now());
@@ -100,9 +111,13 @@ mod test {
         assert_eq!(
             results,
             vec![
-                TargetCircUsage::Preemptive { port: None },
                 TargetCircUsage::Preemptive {
-                    port: Some(TargetPort::ipv4(1234))
+                    port: None,
+                    circs: 2
+                },
+                TargetCircUsage::Preemptive {
+                    port: Some(TargetPort::ipv4(1234)),
+                    circs: 2
                 }
             ]
         );
@@ -117,7 +132,10 @@ mod test {
 
         assert_eq!(
             predictor.predict(),
-            vec![TargetCircUsage::Preemptive { port: None }]
+            vec![TargetCircUsage::Preemptive {
+                port: None,
+                circs: 2
+            }]
         );
     }
 }
