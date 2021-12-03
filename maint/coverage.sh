@@ -1,3 +1,4 @@
 #!/bin/sh
 
-cargo tarpaulin -o Html --all-features --output-dir coverage/ --ignore-tests
+path=$(dirname $0)
+"$path/with_coverage.sh" cargo test --all-features
