@@ -97,11 +97,9 @@ use tor_rtcompat::{Runtime, SpawnBlocking};
 
 fn main() -> anyhow::Result<()> {
     let app = app::App::parse();
-
     let runtime = runtime()?;
-    let rt_copy = runtime.clone();
 
-    runtime.block_on(app.run(rt_copy))
+    runtime.block_on(app.run(runtime.clone()))
 }
 
 /// Create a 'Runtime' capable of running asynchronous tasks
