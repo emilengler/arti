@@ -34,10 +34,9 @@ impl TryFrom<Global> for ArtiConfig {
             .chain([default_config_file()])
             // The second value in this 2-tuple specifies whether the config file is "required" (as in,
             // failure to load it is an error). All config files that aren't the default are required.
-            .map(|p| (p, true))
-            .collect::<Vec<_>>();
+            .map(|p| (p, true));
 
-        let config = arti_config::load(&config_files, config.options)?.try_into()?;
+        let config = arti_config::load(config_files, config.options)?.try_into()?;
         Ok(config)
     }
 }
