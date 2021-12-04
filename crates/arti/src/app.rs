@@ -6,6 +6,7 @@ use std::convert::TryInto;
 
 use arti_config::ArtiConfig;
 use clap::Parser;
+use tor_rtcompat::Runtime;
 use tracing_subscriber::EnvFilter;
 
 mod proxy;
@@ -38,13 +39,13 @@ enum SubCommand {
 }
 
 impl App {
-    pub(crate) fn run(self) -> anyhow::Result<()> {
+    pub(crate) async fn run(self, runtime: impl Runtime) -> anyhow::Result<()> {
         let config: ArtiConfig = self.config.try_into()?;
 
         logging::setup(config.logging(), self.log_level);
 
         match self.subcommand {
-            SubCommand::Proxy(command) => command.run(&config),
+            SubCommand::Proxy(command) => command.run(runtime, &config).await,
         }
     }
 }

@@ -4,7 +4,7 @@ use anyhow::anyhow;
 use arti_client::{TorClient, TorClientConfig};
 use arti_config::ArtiConfig;
 use clap::Parser;
-use tor_rtcompat::{Runtime, SpawnBlocking};
+use tor_rtcompat::Runtime;
 
 use crate::{exit, process, proxy};
 
@@ -23,7 +23,11 @@ impl Proxy {
         self.socks_port.or_else(|| config.proxy().socks_port())
     }
 
-    pub(super) fn run(self, config: &ArtiConfig) -> anyhow::Result<()> {
+    pub(super) async fn run(
+        self,
+        runtime: impl Runtime,
+        config: &ArtiConfig,
+    ) -> anyhow::Result<()> {
         let socks_port = self.socks_port(config).ok_or(anyhow!(
             "No SOCKS port set; specify -p PORT or use the `socks_port` configuration option."
         ))?;
@@ -38,14 +42,7 @@ impl Proxy {
 
         process::use_max_file_limit();
 
-        #[cfg(feature = "tokio")]
-        let runtime = tor_rtcompat::tokio::create_runtime()?;
-        #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-        let runtime = tor_rtcompat::async_std::create_runtime()?;
-
-        let rt_copy = runtime.clone();
-        rt_copy.block_on(run(runtime, socks_port, client_config))?;
-        Ok(())
+        run(runtime, socks_port, client_config).await
     }
 }
 

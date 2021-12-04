@@ -93,8 +93,24 @@ mod process;
 mod proxy;
 
 use clap::Parser;
+use tor_rtcompat::{Runtime, SpawnBlocking};
 
 fn main() -> anyhow::Result<()> {
     let app = app::App::parse();
-    app.run()
+
+    let runtime = runtime()?;
+    let rt_copy = runtime.clone();
+
+    runtime.block_on(app.run(rt_copy))
+}
+
+/// Create a 'Runtime' capable of running asynchronous tasks
+fn runtime() -> anyhow::Result<impl Runtime> {
+    #[cfg(feature = "tokio")]
+    let runtime = tor_rtcompat::tokio::create_runtime()?;
+
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    let runtime = tor_rtcompat::async_std::create_runtime()?;
+
+    Ok(runtime)
 }
