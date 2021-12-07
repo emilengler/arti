@@ -31,10 +31,11 @@ impl TryFrom<Global> for ArtiConfig {
         let config_files = config
             .files
             .into_iter()
-            .chain([default_config_file()])
             // The second value in this 2-tuple specifies whether the config file is "required" (as in,
             // failure to load it is an error). All config files that aren't the default are required.
-            .map(|p| (p, true));
+            .map(|p| (p, true))
+            // try and load the default config file, but don't panic if it's missing
+            .chain([(default_config_file(), false)]);
 
         let config = arti_config::load(config_files, config.options)?.try_into()?;
         Ok(config)
