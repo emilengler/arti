@@ -177,7 +177,7 @@ mod client;
 pub mod config;
 
 pub use address::{DangerouslyIntoTorAddr, IntoTorAddr, TorAddr, TorAddrError};
-pub use client::{ConnectPrefs, TorClient};
+pub use client::{bootstrap_event_receiver, ConnectPrefs, TorClient};
 pub use config::TorClientConfig;
 
 pub use tor_circmgr::IsolationToken;

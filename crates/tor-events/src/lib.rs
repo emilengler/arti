@@ -32,7 +32,7 @@
 
 pub mod events;
 
-use crate::events::{TorEvent, TorEventKind};
+use crate::events::TorEvent;
 use async_broadcast::{InactiveReceiver, Receiver, Sender, TrySendError};
 use futures::channel::mpsc;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -50,14 +50,18 @@ static EVENT_SENDER: OnceCell<UnboundedSender<TorEvent>> = OnceCell::new();
 /// An inactive receiver for the currently active broadcast channel, if there is one.
 static CURRENT_RECEIVER: OnceCell<InactiveReceiver<TorEvent>> = OnceCell::new();
 /// The number of `TorEventKind`s there are.
-const EVENT_KIND_COUNT: usize = 1;
+const EVENT_KIND_COUNT: usize = 2;
 /// An array containing one `AtomicUsize` for each `TorEventKind`, used to track subscriptions.
 ///
 /// When a `TorEventReceiver` subscribes to a `TorEventKind`, it uses its `usize` value to index
 /// into this array and increment the associated `AtomicUsize` (and decrements it to unsubscribe).
 /// This lets event emitters check whether there are any subscribers, and avoid emitting events
 /// if there aren't.
-static EVENT_SUBSCRIBERS: [AtomicUsize; EVENT_KIND_COUNT] = [AtomicUsize::new(0); EVENT_KIND_COUNT];
+///
+/// TODO find a better way to do this:  [T; N] copies the T for N times, meaning that the last implementation would've copied the
+/// value instead of creating a new one.
+static EVENT_SUBSCRIBERS: [AtomicUsize; EVENT_KIND_COUNT] =
+    [AtomicUsize::new(0), AtomicUsize::new(0)];
 
 /// The size of the internal broadcast channel used to implement event subscription.
 pub static BROADCAST_CAPACITY: usize = 512;
@@ -208,10 +212,14 @@ impl TorEventReceiver {
     ///
     /// After calling this function, `TorEventReceiver::recv` will emit events of that kind.
     /// This function is idempotent (subscribing twice has the same effect as doing so once).
-    pub fn subscribe(&mut self, kind: TorEventKind) {
-        if !self.subscribed[kind as usize] {
-            EVENT_SUBSCRIBERS[kind as usize].fetch_add(1, Ordering::SeqCst);
-            self.subscribed[kind as usize] = true;
+    pub fn subscribe<E>(&mut self, e: E)
+    where
+        E: Into<TorEvent>,
+    {
+        let event: TorEvent = e.into();
+        if !self.subscribed[event.kind() as usize] {
+            EVENT_SUBSCRIBERS[event.kind() as usize].fetch_add(1, Ordering::SeqCst);
+            self.subscribed[event.kind() as usize] = true;
         }
         // FIXME(eta): cloning is ungood, but hard to avoid
         if let Either::Right(inactive) = self.inner.clone() {
@@ -223,10 +231,14 @@ impl TorEventReceiver {
     /// After calling this function, `TorEventReceiver::recv` will no longer emit events of that
     /// kind.
     /// This function is idempotent (unsubscribing twice has the same effect as doing so once).
-    pub fn unsubscribe(&mut self, kind: TorEventKind) {
-        if self.subscribed[kind as usize] {
-            EVENT_SUBSCRIBERS[kind as usize].fetch_sub(1, Ordering::SeqCst);
-            self.subscribed[kind as usize] = false;
+    pub fn unsubscribe<E>(&mut self, e: E)
+    where
+        E: Into<TorEvent>,
+    {
+        let event: TorEvent = e.into();
+        if self.subscribed[event.kind() as usize] {
+            EVENT_SUBSCRIBERS[event.kind() as usize].fetch_sub(1, Ordering::SeqCst);
+            self.subscribed[event.kind() as usize] = false;
         }
         // If we're now not subscribed to anything, deactivate our channel.
         if self.subscribed.iter().all(|x| !*x) {
@@ -255,8 +267,12 @@ impl Drop for TorEventReceiver {
 ///
 /// This is useful to avoid doing work to generate events that might be computationally expensive
 /// to generate.
-pub fn event_has_subscribers(kind: TorEventKind) -> bool {
-    EVENT_SUBSCRIBERS[kind as usize].load(Ordering::SeqCst) > 0
+pub fn event_has_subscribers<E>(e: E) -> bool
+where
+    E: Into<TorEvent>,
+{
+    let event: TorEvent = e.into();
+    EVENT_SUBSCRIBERS[event.kind() as usize].load(Ordering::SeqCst) > 0
 }
 
 /// Broadcast the given `TorEvent` to any interested subscribers.
@@ -266,8 +282,13 @@ pub fn event_has_subscribers(kind: TorEventKind) -> bool {
 ///
 /// This function isn't intended for use outside Arti crates (as in, library consumers of Arti
 /// shouldn't broadcast events!).
-pub fn broadcast(event: TorEvent) {
-    if !event_has_subscribers(event.kind()) {
+pub fn broadcast<E>(e: E)
+where
+    E: Into<TorEvent>,
+{
+    let event: TorEvent = e.into();
+    if !event_has_subscribers(event.clone()) {
+        // TODO avoid this clone somehow...
         return;
     }
     if let Some(sender) = EVENT_SENDER.get() {
@@ -279,9 +300,7 @@ pub fn broadcast(event: TorEvent) {
 #[cfg(test)]
 mod test {
     #![allow(clippy::unwrap_used)]
-    use crate::{
-        broadcast, event_has_subscribers, EventReactor, StreamExt, TorEvent, TorEventKind,
-    };
+    use crate::{broadcast, event_has_subscribers, EventReactor, StreamExt, TorEvent};
     use once_cell::sync::OnceCell;
     use std::sync::{Mutex, MutexGuard};
     use std::time::Duration;
@@ -313,35 +332,35 @@ mod test {
 
         rt.block_on(async move {
             // shouldn't have any subscribers at the start
-            assert!(!event_has_subscribers(TorEventKind::Empty));
+            assert!(!event_has_subscribers(TorEvent::Empty));
 
             let mut rx = EventReactor::receiver().unwrap();
             // creating a receiver shouldn't result in any subscriptions
-            assert!(!event_has_subscribers(TorEventKind::Empty));
+            assert!(!event_has_subscribers(TorEvent::Empty));
 
-            rx.subscribe(TorEventKind::Empty);
+            rx.subscribe(TorEvent::Empty);
             // subscription should work
-            assert!(event_has_subscribers(TorEventKind::Empty));
+            assert!(event_has_subscribers(TorEvent::Empty));
 
-            rx.unsubscribe(TorEventKind::Empty);
+            rx.unsubscribe(TorEvent::Empty);
             // unsubscribing should work
-            assert!(!event_has_subscribers(TorEventKind::Empty));
+            assert!(!event_has_subscribers(TorEvent::Empty));
 
             // subscription should be idempotent
-            rx.subscribe(TorEventKind::Empty);
-            rx.subscribe(TorEventKind::Empty);
-            rx.subscribe(TorEventKind::Empty);
-            assert!(event_has_subscribers(TorEventKind::Empty));
+            rx.subscribe(TorEvent::Empty);
+            rx.subscribe(TorEvent::Empty);
+            rx.subscribe(TorEvent::Empty);
+            assert!(event_has_subscribers(TorEvent::Empty));
 
-            rx.unsubscribe(TorEventKind::Empty);
-            assert!(!event_has_subscribers(TorEventKind::Empty));
+            rx.unsubscribe(TorEvent::Empty);
+            assert!(!event_has_subscribers(TorEvent::Empty));
 
-            rx.subscribe(TorEventKind::Empty);
-            assert!(event_has_subscribers(TorEventKind::Empty));
+            rx.subscribe(TorEvent::Empty);
+            assert!(event_has_subscribers(TorEvent::Empty));
 
             std::mem::drop(rx);
             // dropping the receiver should auto-unsubscribe
-            assert!(!event_has_subscribers(TorEventKind::Empty));
+            assert!(!event_has_subscribers(TorEvent::Empty));
         });
     }
 
@@ -363,7 +382,7 @@ mod test {
 
         rt.block_on(async move {
             let mut rx = EventReactor::receiver().unwrap();
-            rx.subscribe(TorEventKind::Empty);
+            rx.subscribe(TorEvent::Empty);
             // HACK(eta): give the event reactor time to run
             tokio::time::sleep(Duration::from_millis(100)).await;
             broadcast(TorEvent::Empty);
@@ -382,7 +401,7 @@ mod test {
             broadcast(TorEvent::Empty);
 
             let mut rx = EventReactor::receiver().unwrap();
-            rx.subscribe(TorEventKind::Empty);
+            rx.subscribe(TorEvent::Empty);
 
             // this shouldn't have an event to receive now
             let result = tokio::time::timeout(Duration::from_millis(100), rx.next()).await;

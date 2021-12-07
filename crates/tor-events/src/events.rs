@@ -7,6 +7,25 @@ use serde::{Deserialize, Serialize};
 pub enum TorEvent {
     /// An event with no data, used for testing purposes.
     Empty,
+    /// An event emitted during the bootstrap process of `TorClient`
+    BootstrapEvent(BootstrapEvent),
+}
+
+/// An event emitted during the bootstrap process of `TorClient`
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[non_exhaustive]
+pub enum BootstrapEvent {
+    /// Test bootstrap event
+    Empty = 1,
+}
+
+// TODO can probably do better than have to implement this for every event
+impl From<BootstrapEvent> for TorEvent {
+    fn from(bootstrap_event: BootstrapEvent) -> Self {
+        match bootstrap_event {
+            BootstrapEvent::Empty => TorEvent::BootstrapEvent(BootstrapEvent::Empty),
+        }
+    }
 }
 
 /// An opaque type describing a variant of `TorEvent`.
@@ -23,6 +42,8 @@ pub enum TorEvent {
 pub enum TorEventKind {
     /// Identifier for [`TorEvent::Empty`].
     Empty = 0,
+    /// Test bootstrap event
+    BootstrapEventEmpty = 1,
 }
 
 impl TorEvent {
@@ -30,6 +51,9 @@ impl TorEvent {
     pub fn kind(&self) -> TorEventKind {
         match self {
             TorEvent::Empty => TorEventKind::Empty,
+            TorEvent::BootstrapEvent(e) => match e {
+                BootstrapEvent::Empty => TorEventKind::BootstrapEventEmpty,
+            },
         }
     }
 }
