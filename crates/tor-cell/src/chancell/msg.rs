@@ -433,9 +433,8 @@ impl Readable for Created2 {
 /// in the [crate::relaycell] module.
 #[derive(Clone)]
 pub struct Relay {
-    // XXXX either this shouldn't be boxed, or RelayCellBody should be boxed!
     /// The contents of the relay cell as encoded for transfer.
-    body: Box<RawCellBody>,
+    body: RawCellBody,
 }
 impl Relay {
     /// Construct a Relay message from a slice containing its contents.
@@ -448,19 +447,17 @@ impl Relay {
         // TODO: This will panic if body is too long, but that would be a
         // programming error anyway.
         (&mut r[..body.len()]).copy_from_slice(body);
-        Relay { body: Box::new(r) }
+        Relay { body: r }
     }
     /// Construct a Relay message from its body.
     pub fn from_raw(body: RawCellBody) -> Self {
-        Relay {
-            body: Box::new(body),
-        }
+        Relay { body }
     }
 
     /// Consume this Relay message and return a RelayCellBody for
     /// encryption/decryption.
     pub fn into_relay_body(self) -> RawCellBody {
-        *self.body
+        self.body
     }
     /// Wrap this Relay message into a RelayMsg as a RELAY_EARLY cell.
     pub fn into_early(self) -> ChanMsg {
@@ -484,7 +481,7 @@ impl Readable for Relay {
     fn take_from(r: &mut Reader<'_>) -> Result<Self> {
         let mut body = Box::new([0_u8; CELL_DATA_LEN]);
         (&mut body[..]).copy_from_slice(r.take(CELL_DATA_LEN)?);
-        Ok(Relay { body })
+        Ok(Relay { body: *body })
     }
 }
 
