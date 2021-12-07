@@ -2593,6 +2593,7 @@ dependencies = [
  "serde",
  "shellexpand",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
