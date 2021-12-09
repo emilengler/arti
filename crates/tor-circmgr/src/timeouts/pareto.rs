@@ -144,9 +144,8 @@ impl History {
         // random order, but we want to defend ourselves against bogus inputs
         // that would take too much RAM.
         let mut observations = iter
-            .take(TIME_HISTORY_LEN) // limit number of bins
-            .map(|(dur, n)| iter::repeat(dur).take(n as usize))
-            .flatten()
+            .take(TIME_HISTORY_LEN)
+            .flat_map(|(dur, n)| iter::repeat(dur).take(n as usize))
             .choose_multiple(&mut rng, TIME_HISTORY_LEN);
         // choose_multiple doesn't guarantee anything about the order of its output.
         observations.shuffle(&mut rng);
