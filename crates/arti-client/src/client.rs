@@ -188,8 +188,9 @@ impl<R: Runtime> TorClient<R> {
 
         // Launch a daemon task to inform the circmgr about new
         // network parameters.
+        let events = futures::stream::select(dirmgr.consensus_changes(), dirmgr.new_descriptors());
         runtime.spawn(keep_circmgr_params_updated(
-            dirmgr.events(),
+            events,
             Arc::downgrade(&circmgr),
             Arc::downgrade(&dirmgr),
         ))?;

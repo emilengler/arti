@@ -78,7 +78,6 @@ use futures::{channel::oneshot, task::SpawnExt};
 use tor_rtcompat::{Runtime, SleepProviderExt};
 use tracing::{info, trace, warn};
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::{collections::HashMap, sync::Weak};
 use std::{fmt::Debug, time::SystemTime};
@@ -124,17 +123,11 @@ pub struct DirMgr<R: Runtime> {
     /// users, and replace it once a new directory is bootstrapped.
     netdir: SharedMutArc<NetDir>,
 
-    /// A flag that gets set whenever the _consensus_ part of `netdir` has
-    /// changed.
-    netdir_consensus_changed: AtomicBool,
+    /// A publisher handle that we notify whenever the consensus changes.
+    consensus_changed: event::FlagPublisher<DirEvent>,
 
-    /// A flag that gets set whenever the _descriptors_ part of `netdir` has
-    /// changed without adding a new consensus.
-    netdir_descriptors_changed: AtomicBool,
-
-    /// A publisher handle, used to inform others about changes in the
-    /// status of this directory handle.
-    publisher: event::Publisher,
+    /// A publisher handle that we notify whenever the descriptors change.
+    new_descriptors: event::FlagPublisher<DirEvent>,
 
     /// A circuit manager, if this DirMgr supports downloading.
     circmgr: Option<Arc<CircMgr<R>>>,
@@ -438,16 +431,15 @@ impl<R: Runtime> DirMgr<R> {
     ) -> Result<Self> {
         let store = Mutex::new(config.open_sqlite_store(readonly)?);
         let netdir = SharedMutArc::new();
-        let netdir_consensus_changed = AtomicBool::new(false);
-        let netdir_descriptors_changed = AtomicBool::new(false);
-        let publisher = event::Publisher::new();
+        let consensus_changed = event::FlagPublisher::new(DirEvent::NewConsensus);
+        let new_descriptors = event::FlagPublisher::new(DirEvent::NewDescriptors);
+
         Ok(DirMgr {
             config,
             store,
             netdir,
-            netdir_consensus_changed,
-            netdir_descriptors_changed,
-            publisher,
+            consensus_changed,
+            new_descriptors,
             circmgr,
             runtime,
         })
@@ -479,13 +471,25 @@ impl<R: Runtime> DirMgr<R> {
         self.opt_netdir().expect("DirMgr was not bootstrapped!")
     }
 
-    /// Return a new asynchronous stream about events taking place with
-    /// this directory manager.
+    /// Return a new asynchronous stream that will receive notification
+    /// whenever the consensus has changed.
     ///
-    /// The caller must regularly process events from this stream to
-    /// prevent it from blocking.
-    pub fn events(&self) -> impl futures::Stream<Item = DirEvent> {
-        self.publisher.subscribe()
+    ///
+    /// Multiple events may be batched up into a single item: each time
+    /// this stream is ready, all you can assume is that one or more
+    /// "new consensus" events has occurrred.
+    pub fn consensus_changes(&self) -> impl futures::Stream<Item = DirEvent> {
+        self.consensus_changed.subscribe()
+    }
+
+    /// Return a new asynchronous stream that will receive notification
+    /// whenever new descriptors are added changed.
+    ///
+    /// Multiple events may be batched up into a single item: each time
+    /// this stream is ready, all you can assume is that one or more
+    /// "new descriptor" events has occurrred.
+    pub fn new_descriptors(&self) -> impl futures::Stream<Item = DirEvent> {
+        self.new_descriptors.subscribe()
     }
 
     /// Try to load the text of a single document described by `doc` from
@@ -524,23 +528,6 @@ impl<R: Runtime> DirMgr<R> {
             self.load_documents_into(&query, &mut result)?;
         }
         Ok(result)
-    }
-
-    /// If the consensus has changed, notify any subscribers.
-    // TODO: I don't like all the different places in `bootstrap`
-    // where we have to call this function.  Can we simplify it or
-    // clean it up somehow?  Maybe we can build some kind of intelligence into
-    // shared_ref?
-    pub(crate) async fn notify(&self) {
-        if self.netdir_consensus_changed.swap(false, Ordering::SeqCst) {
-            self.publisher.send(DirEvent::NewConsensus).await;
-        }
-        if self
-            .netdir_descriptors_changed
-            .swap(false, Ordering::SeqCst)
-        {
-            self.publisher.send(DirEvent::NewDescriptors).await;
-        }
     }
 
     /// Load all the documents for a single DocumentQuery from the store.
