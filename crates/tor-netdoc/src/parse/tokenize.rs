@@ -132,18 +132,16 @@ impl<'a, K: Keyword> NetDocReaderBase<'a, K> {
     /// remove data if the reader is nonempty.
     fn line(&mut self) -> Result<&'a str> {
         let remainder = &self.s[self.off..];
-        let line;
         if let Some(nl_pos) = remainder.find('\n') {
             self.advance(nl_pos + 1)?;
-            line = &remainder[..nl_pos];
+            let line = &remainder[..nl_pos];
+            // TODO: we should probably detect \r and do something about it.
+            // Just ignoring it isn't the right answer, though.
+            Ok(line)
         } else {
             self.advance(remainder.len())?; // drain everything.
-            return Err(Error::TruncatedLine(self.pos(self.s.len())));
+            Err(Error::TruncatedLine(self.pos(self.s.len())))
         }
-
-        // TODO: we should probably detect \r and do something about it.
-        // Just ignoring it isn't the right answer, though.
-        Ok(line)
     }
 
     /// Try to extract a line that begins with a keyword from this reader.
