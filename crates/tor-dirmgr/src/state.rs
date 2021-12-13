@@ -82,13 +82,10 @@ impl<R: Runtime> WriteNetDir for crate::DirMgr<R> {
         &self.netdir
     }
     fn netdir_consensus_changed(&self) {
-        use std::sync::atomic::Ordering;
-        self.netdir_consensus_changed.store(true, Ordering::SeqCst);
+        self.consensus_changed.publish();
     }
     fn netdir_descriptors_changed(&self) {
-        use std::sync::atomic::Ordering;
-        self.netdir_descriptors_changed
-            .store(true, Ordering::SeqCst);
+        self.new_descriptors.publish();
     }
     fn now(&self) -> SystemTime {
         SystemTime::now()
