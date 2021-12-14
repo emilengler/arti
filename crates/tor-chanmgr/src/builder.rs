@@ -8,6 +8,7 @@ use tor_rtcompat::{tls::TlsConnector, Runtime, TlsProvider};
 
 use async_trait::async_trait;
 use futures::task::SpawnExt;
+use rand::{distributions::Alphanumeric, Rng};
 use std::sync::Arc;
 
 /// TLS-based channel builder.
@@ -75,10 +76,14 @@ impl<R: Runtime> ChanBuilder<R> {
         // Establish a TCP connection.
         let stream = self.runtime.connect(addr).await?;
 
-        // TODO: add a random hostname here if it will be used for SNI?
+        let sni_hostname: String = rand::thread_rng()
+            .sample_iter(&Alphanumeric)
+            .take(28)
+            .map(char::from)
+            .collect();
         let tls = self
             .tls_connector
-            .negotiate_unvalidated(stream, "ignored")
+            .negotiate_unvalidated(stream, &sni_hostname)
             .await?;
 
         let peer_cert = tls

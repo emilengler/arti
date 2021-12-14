@@ -2550,6 +2550,7 @@ dependencies = [
  "futures",
  "futures-await-test",
  "hex-literal",
+ "rand 0.8.4",
  "thiserror",
  "tor-linkspec",
  "tor-llcrypto",
