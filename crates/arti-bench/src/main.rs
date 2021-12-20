@@ -282,7 +282,7 @@ fn main() -> Result<()> {
         .into_iter()
         .map(|x| (PathBuf::from(x), true))
         .collect::<Vec<_>>();
-    let cfg = arti_config::load(&config_files, vec![])?;
+    let cfg = arti_config::load(config_files, vec![])?;
     let config: ArtiConfig = cfg.try_into()?;
     let tcc = config.tor_client_config()?;
     info!("Binding local TCP listener...");
