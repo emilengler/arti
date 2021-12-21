@@ -44,7 +44,7 @@ use rand::distributions::Standard;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
-use std::net::{IpAddr, SocketAddr, TcpListener};
+use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -131,6 +131,46 @@ impl TimingSummary {
     }
 }
 
+/// Does the thing
+fn do_the_thing(mut stream: TcpStream, send: &Arc<[u8]>, receive: &Arc<[u8]>) {
+    let peer_addr = stream.peer_addr().unwrap();
+    // Do this potentially costly allocation before we do all the timing stuff.
+    let mut received = vec![0_u8; receive.len()];
+
+    info!("Accepted connection from {}", peer_addr);
+    let accepted_ts = SystemTime::now();
+    let mut data: &[u8] = send.deref();
+    let copied = std::io::copy(&mut data, &mut stream).unwrap();
+    stream.flush().unwrap();
+    let copied_ts = SystemTime::now();
+    assert_eq!(copied, send.len() as u64);
+    info!("Copied {} bytes payload to {}.", copied, peer_addr);
+    let read = stream.read(&mut received).unwrap();
+    if read == 0 {
+        panic!("unexpected EOF");
+    }
+    let first_byte_ts = SystemTime::now();
+    stream.read_exact(&mut received[read..]).unwrap();
+    let read_done_ts = SystemTime::now();
+    info!(
+        "Received {} bytes payload from {}.",
+        received.len(),
+        peer_addr
+    );
+    // Check we actually got what we thought we would get.
+    if received != receive.deref() {
+        panic!("Received data doesn't match expected; potential corruption?");
+    }
+    let st = ServerTiming {
+        accepted_ts,
+        copied_ts,
+        first_byte_ts,
+        read_done_ts,
+    };
+    serde_json::to_writer(&mut stream, &st).unwrap();
+    info!("Wrote timing payload to {}.", peer_addr);
+}
+
 /// Runs the benchmarking TCP server, using the provided TCP listener and set of payloads.
 fn serve_payload(listener: &TcpListener, send: &Arc<[u8]>, receive: &Arc<[u8]>) {
     info!("Listening for clients...");
@@ -138,43 +178,7 @@ fn serve_payload(listener: &TcpListener, send: &Arc<[u8]>, receive: &Arc<[u8]>) 
         let send = Arc::clone(send);
         let receive = Arc::clone(receive);
         std::thread::spawn(move || {
-            let mut stream = stream.unwrap();
-            let peer_addr = stream.peer_addr().unwrap();
-            // Do this potentially costly allocation before we do all the timing stuff.
-            let mut received = vec![0_u8; receive.len()];
-
-            info!("Accepted connection from {}", peer_addr);
-            let accepted_ts = SystemTime::now();
-            let mut data: &[u8] = send.deref();
-            let copied = std::io::copy(&mut data, &mut stream).unwrap();
-            stream.flush().unwrap();
-            let copied_ts = SystemTime::now();
-            assert_eq!(copied, send.len() as u64);
-            info!("Copied {} bytes payload to {}.", copied, peer_addr);
-            let read = stream.read(&mut received).unwrap();
-            if read == 0 {
-                panic!("unexpected EOF");
-            }
-            let first_byte_ts = SystemTime::now();
-            stream.read_exact(&mut received[read..]).unwrap();
-            let read_done_ts = SystemTime::now();
-            info!(
-                "Received {} bytes payload from {}.",
-                received.len(),
-                peer_addr
-            );
-            // Check we actually got what we thought we would get.
-            if received != receive.deref() {
-                panic!("Received data doesn't match expected; potential corruption?");
-            }
-            let st = ServerTiming {
-                accepted_ts,
-                copied_ts,
-                first_byte_ts,
-                read_done_ts,
-            };
-            serde_json::to_writer(&mut stream, &st).unwrap();
-            info!("Wrote timing payload to {}.", peer_addr);
+            do_the_thing(stream.unwrap(), &send, &receive);
         });
     }
 }
