@@ -49,6 +49,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::SystemTime;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio_socks::tcp::Socks5Stream;
@@ -131,26 +132,26 @@ impl TimingSummary {
     }
 }
 
-/// Does the thing
-fn do_the_thing(mut stream: TcpStream, send: &Arc<[u8]>, receive: &Arc<[u8]>) {
-    let peer_addr = stream.peer_addr().unwrap();
+/// Run the timing routine
+fn run_timing(mut stream: TcpStream, send: &Arc<[u8]>, receive: &Arc<[u8]>) -> Result<()> {
+    let peer_addr = stream.peer_addr()?;
     // Do this potentially costly allocation before we do all the timing stuff.
     let mut received = vec![0_u8; receive.len()];
 
     info!("Accepted connection from {}", peer_addr);
     let accepted_ts = SystemTime::now();
     let mut data: &[u8] = send.deref();
-    let copied = std::io::copy(&mut data, &mut stream).unwrap();
-    stream.flush().unwrap();
+    let copied = std::io::copy(&mut data, &mut stream)?;
+    stream.flush()?;
     let copied_ts = SystemTime::now();
     assert_eq!(copied, send.len() as u64);
     info!("Copied {} bytes payload to {}.", copied, peer_addr);
-    let read = stream.read(&mut received).unwrap();
+    let read = stream.read(&mut received)?;
     if read == 0 {
         panic!("unexpected EOF");
     }
     let first_byte_ts = SystemTime::now();
-    stream.read_exact(&mut received[read..]).unwrap();
+    stream.read_exact(&mut received[read..])?;
     let read_done_ts = SystemTime::now();
     info!(
         "Received {} bytes payload from {}.",
@@ -167,20 +168,28 @@ fn do_the_thing(mut stream: TcpStream, send: &Arc<[u8]>, receive: &Arc<[u8]>) {
         first_byte_ts,
         read_done_ts,
     };
-    serde_json::to_writer(&mut stream, &st).unwrap();
+    serde_json::to_writer(&mut stream, &st)?;
     info!("Wrote timing payload to {}.", peer_addr);
+    Ok(())
 }
 
 /// Runs the benchmarking TCP server, using the provided TCP listener and set of payloads.
-fn serve_payload(listener: &TcpListener, send: &Arc<[u8]>, receive: &Arc<[u8]>) {
+fn serve_payload(
+    listener: &TcpListener,
+    send: &Arc<[u8]>,
+    receive: &Arc<[u8]>,
+) -> Vec<JoinHandle<Result<()>>> {
     info!("Listening for clients...");
-    for stream in listener.incoming() {
-        let send = Arc::clone(send);
-        let receive = Arc::clone(receive);
-        std::thread::spawn(move || {
-            do_the_thing(stream.unwrap(), &send, &receive);
-        });
-    }
+
+    listener
+        .incoming()
+        .into_iter()
+        .map(|stream| {
+            let send = Arc::clone(send);
+            let receive = Arc::clone(receive);
+            std::thread::spawn(move || run_timing(stream?, &send, &receive))
+        })
+        .collect()
 }
 
 /// Runs the benchmarking client on the provided socket.
@@ -301,8 +310,10 @@ fn main() -> Result<()> {
     );
     let up = Arc::clone(&upload_payload);
     let dp = Arc::clone(&download_payload);
-    std::thread::spawn(move || {
-        serve_payload(&listener, &dp, &up);
+    let _handle = std::thread::spawn(move || -> Result<()> {
+        serve_payload(&listener, &dp, &up)
+            .into_iter()
+            .try_for_each(|handle| handle.join().expect("failed to join thread"))
     });
     info!("Benchmarking performance without Arti...");
     let runtime = tor_rtcompat::tokio::create_runtime()?;
