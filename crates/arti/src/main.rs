@@ -64,6 +64,7 @@
 #![deny(clippy::checked_conversions)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
+#![warn(clippy::dbg_macro)]
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -77,8 +78,8 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
-#![allow(clippy::print_stderr)] // Allowed in this crate only.
-#![allow(clippy::print_stdout)] // Allowed in this crate only.
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::semicolon_if_nothing_returned)]
