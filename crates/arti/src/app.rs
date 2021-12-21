@@ -17,7 +17,7 @@ mod logging;
 
 /// Entrypoint to the Arti CLI
 #[derive(Debug, Parser)]
-#[clap(author = "The Tor Project Developers")]
+#[clap(author = "The Tor Project Developers", about, version)]
 pub(crate) struct App {
     #[clap(flatten)]
     config: config::Global,
