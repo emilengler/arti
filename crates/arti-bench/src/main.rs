@@ -40,10 +40,12 @@ use anyhow::{anyhow, Result};
 use arti_client::{TorAddr, TorClient};
 use arti_config::ArtiConfig;
 use clap::{App, Arg};
+use rand::distributions::Standard;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpListener};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -53,21 +55,12 @@ use tokio_socks::tcp::Socks5Stream;
 use tor_rtcompat::SpawnBlocking;
 use tracing::info;
 
-/// A vector of random data, used as a test payload for benchmarking.
-struct RandomPayload {
-    /// The actual random data.
-    data: Vec<u8>,
-}
-
-impl RandomPayload {
-    /// Generates a payload with `size` bytes.
-    fn generate(size: usize) -> Self {
-        let mut vector = vec![0_u8; size];
-        let mut rng = rand::thread_rng();
-        rng.fill(&mut vector as &mut [u8]);
-
-        Self { data: vector }
-    }
+/// Generate a random payload of bytes of the given size
+fn random_payload(size: usize) -> Vec<u8> {
+    rand::thread_rng()
+        .sample_iter(Standard)
+        .take(size)
+        .collect()
 }
 
 /// Timing information from the benchmarking server.
@@ -139,7 +132,7 @@ impl TimingSummary {
 }
 
 /// Runs the benchmarking TCP server, using the provided TCP listener and set of payloads.
-fn serve_payload(listener: &TcpListener, send: &Arc<RandomPayload>, receive: &Arc<RandomPayload>) {
+fn serve_payload(listener: &TcpListener, send: &Arc<Vec<u8>>, receive: &Arc<Vec<u8>>) {
     info!("Listening for clients...");
     for stream in listener.incoming() {
         let send = Arc::clone(send);
@@ -148,15 +141,15 @@ fn serve_payload(listener: &TcpListener, send: &Arc<RandomPayload>, receive: &Ar
             let mut stream = stream.unwrap();
             let peer_addr = stream.peer_addr().unwrap();
             // Do this potentially costly allocation before we do all the timing stuff.
-            let mut received = vec![0_u8; receive.data.len()];
+            let mut received = vec![0_u8; receive.len()];
 
             info!("Accepted connection from {}", peer_addr);
             let accepted_ts = SystemTime::now();
-            let mut data = &send.data as &[u8];
+            let mut data: &[u8] = send.deref();
             let copied = std::io::copy(&mut data, &mut stream).unwrap();
             stream.flush().unwrap();
             let copied_ts = SystemTime::now();
-            assert_eq!(copied, send.data.len() as u64);
+            assert_eq!(copied, send.len() as u64);
             info!("Copied {} bytes payload to {}.", copied, peer_addr);
             let read = stream.read(&mut received).unwrap();
             if read == 0 {
@@ -171,7 +164,7 @@ fn serve_payload(listener: &TcpListener, send: &Arc<RandomPayload>, receive: &Ar
                 peer_addr
             );
             // Check we actually got what we thought we would get.
-            if received != receive.data {
+            if &received != receive.deref() {
                 panic!("Received data doesn't match expected; potential corruption?");
             }
             let st = ServerTiming {
@@ -189,11 +182,11 @@ fn serve_payload(listener: &TcpListener, send: &Arc<RandomPayload>, receive: &Ar
 /// Runs the benchmarking client on the provided socket.
 async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     mut socket: S,
-    send: Arc<RandomPayload>,
-    receive: Arc<RandomPayload>,
+    send: Arc<Vec<u8>>,
+    receive: Arc<Vec<u8>>,
 ) -> Result<ClientTiming> {
     // Do this potentially costly allocation before we do all the timing stuff.
-    let mut received = vec![0_u8; receive.data.len()];
+    let mut received = vec![0_u8; receive.len()];
     let started_ts = SystemTime::now();
 
     let read = socket.read(&mut received).await?;
@@ -204,7 +197,7 @@ async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     socket.read_exact(&mut received[read..]).await?;
     let read_done_ts = SystemTime::now();
     info!("Received {} bytes payload.", received.len());
-    let mut send_data = &send.data as &[u8];
+    let mut send_data = &send as &[u8];
 
     tokio::io::copy(&mut send_data, &mut socket).await?;
     socket.flush().await?;
@@ -212,7 +205,7 @@ async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     let copied_ts = SystemTime::now();
 
     // Check we actually got what we thought we would get.
-    if received != receive.data {
+    if &received != receive.deref() {
         panic!("Received data doesn't match expected; potential corruption?");
     }
     let mut json_buf = Vec::new();
@@ -224,8 +217,8 @@ async fn client<S: AsyncRead + AsyncWrite + Unpin>(
         read_done_ts,
         copied_ts,
         server,
-        download_size: receive.data.len(),
-        upload_size: send.data.len(),
+        download_size: receive.len(),
+        upload_size: send.len(),
     })
 }
 
@@ -296,8 +289,8 @@ fn main() -> Result<()> {
         .unwrap()
         .parse::<usize>()?;
     info!("Generating test payloads, please wait...");
-    let upload_payload = Arc::new(RandomPayload::generate(upload_bytes));
-    let download_payload = Arc::new(RandomPayload::generate(download_bytes));
+    let upload_payload = Arc::new(random_payload(upload_bytes));
+    let download_payload = Arc::new(random_payload(download_bytes));
     info!(
         "Generated payloads ({} upload, {} download)",
         upload_bytes, download_bytes
