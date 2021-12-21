@@ -132,7 +132,7 @@ impl TimingSummary {
 }
 
 /// Runs the benchmarking TCP server, using the provided TCP listener and set of payloads.
-fn serve_payload(listener: &TcpListener, send: &Arc<Vec<u8>>, receive: &Arc<Vec<u8>>) {
+fn serve_payload(listener: &TcpListener, send: &Arc<[u8]>, receive: &Arc<[u8]>) {
     info!("Listening for clients...");
     for stream in listener.incoming() {
         let send = Arc::clone(send);
@@ -164,7 +164,7 @@ fn serve_payload(listener: &TcpListener, send: &Arc<Vec<u8>>, receive: &Arc<Vec<
                 peer_addr
             );
             // Check we actually got what we thought we would get.
-            if &received != receive.deref() {
+            if received != receive.deref() {
                 panic!("Received data doesn't match expected; potential corruption?");
             }
             let st = ServerTiming {
@@ -182,8 +182,8 @@ fn serve_payload(listener: &TcpListener, send: &Arc<Vec<u8>>, receive: &Arc<Vec<
 /// Runs the benchmarking client on the provided socket.
 async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     mut socket: S,
-    send: Arc<Vec<u8>>,
-    receive: Arc<Vec<u8>>,
+    send: Arc<[u8]>,
+    receive: Arc<[u8]>,
 ) -> Result<ClientTiming> {
     // Do this potentially costly allocation before we do all the timing stuff.
     let mut received = vec![0_u8; receive.len()];
@@ -205,7 +205,7 @@ async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     let copied_ts = SystemTime::now();
 
     // Check we actually got what we thought we would get.
-    if &received != receive.deref() {
+    if received != receive.deref() {
         panic!("Received data doesn't match expected; potential corruption?");
     }
     let mut json_buf = Vec::new();
@@ -289,8 +289,8 @@ fn main() -> Result<()> {
         .unwrap()
         .parse::<usize>()?;
     info!("Generating test payloads, please wait...");
-    let upload_payload = Arc::new(random_payload(upload_bytes));
-    let download_payload = Arc::new(random_payload(download_bytes));
+    let upload_payload = random_payload(upload_bytes).into();
+    let download_payload = random_payload(download_bytes).into();
     info!(
         "Generated payloads ({} upload, {} download)",
         upload_bytes, download_bytes
