@@ -52,7 +52,7 @@ rust-nightly:
 
 minimal-versions:
   stage: test
-  image: rust:1.53
+  image: rust:1.54
   script:
     - rustup install nightly
     - cargo +nightly update -Z minimal-versions
