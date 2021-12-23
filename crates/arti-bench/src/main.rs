@@ -317,125 +317,90 @@ fn main() -> Result<()> {
             .try_for_each(|handle| handle.join().expect("failed to join thread"))
     });
 
-    let runtime = tor_rtcompat::tokio::create_runtime()?;
-
-    benchmark_without_arti(&runtime, connect_addr, &upload_payload, &download_payload)?;
-
-    if let Some(addr) = matches.value_of("socks-proxy") {
-        benchmark_with_proxy(
-            &runtime,
-            connect_addr,
-            &upload_payload,
-            &download_payload,
-            addr,
-        )?;
-    }
-
-    benchmark_with_arti(
-        &runtime,
+    let benchmark = Benchmark {
         connect_addr,
-        tcc,
-        &upload_payload,
-        &download_payload,
-    )?;
+        upload_payload,
+        download_payload,
+        runtime: tor_rtcompat::tokio::create_runtime()?,
+    };
+
+    benchmark.without_arti()?;
+    if let Some(addr) = matches.value_of("socks-proxy") {
+        benchmark.with_proxy(addr)?;
+    }
+    benchmark.with_arti(tcc)?;
 
     Ok(())
 }
 
-/// Benchmark without Arti
-fn benchmark_without_arti<R: Runtime>(
-    runtime: &R,
-    connect_addr: SocketAddr,
-    upload_payload: &Arc<[u8]>,
-    download_payload: &Arc<[u8]>,
-) -> Result<()> {
-    let stream = async move {
-        let socket = tokio::net::TcpStream::connect(connect_addr).await?;
-        Ok(socket)
-    };
-
-    benchmark(
-        runtime,
-        stream,
-        upload_payload,
-        download_payload,
-        "without Arti",
-    )
-}
-
-/// Benchmark with sock5 proxy
-fn benchmark_with_proxy<R: Runtime>(
-    runtime: &R,
-    connect_addr: SocketAddr,
-    upload_payload: &Arc<[u8]>,
-    download_payload: &Arc<[u8]>,
-    addr: &str,
-) -> Result<()> {
-    let stream = async move {
-        let stream = Socks5Stream::connect(addr, connect_addr).await?;
-        Ok(stream)
-    };
-
-    benchmark(
-        runtime,
-        stream,
-        upload_payload,
-        download_payload,
-        "with SOCKS proxy",
-    )
-}
-
-/// Benchmark with Arti
-fn benchmark_with_arti<R: Runtime>(
-    runtime: &R,
-    connect_addr: SocketAddr,
-    tcc: TorClientConfig,
-    upload_payload: &Arc<[u8]>,
-    download_payload: &Arc<[u8]>,
-) -> Result<()> {
-    info!("Starting Arti...");
-    let tor_client = runtime.block_on(TorClient::bootstrap(runtime.clone(), tcc))?;
-
-    let stream = async move {
-        let stream = tor_client
-            .connect(TorAddr::dangerously_from(connect_addr).unwrap(), None)
-            .await?;
-        Ok(stream)
-    };
-
-    benchmark(
-        runtime,
-        stream,
-        upload_payload,
-        download_payload,
-        "with Arti",
-    )
-}
-
-/// Run the benchmark
-fn benchmark<R, S>(
-    runtime: &R,
-    stream: impl Future<Output = Result<S>>,
-    upload_payload: &Arc<[u8]>,
-    download_payload: &Arc<[u8]>,
-    benchmark_name: &str,
-) -> Result<()>
+/// A helper struct for running benchmarks
+#[allow(clippy::missing_docs_in_private_items)]
+struct Benchmark<R>
 where
     R: Runtime,
-    S: AsyncRead + AsyncWrite + Unpin,
 {
-    let up = Arc::clone(upload_payload);
-    let dp = Arc::clone(download_payload);
-    info!("Benchmarking performance {}...", benchmark_name);
-    let stats = runtime.block_on(async move { client(stream.await?, up, dp).await })?;
-    let timing = TimingSummary::generate(&stats)?;
-    info!(
-        "{}: {:.2} Mbit/s up (ttfb {:.2}ms), {:.2} Mbit/s down (ttfb {:.2}ms)",
-        benchmark_name,
-        timing.upload_rate_megabit,
-        timing.upload_ttfb_sec * 1000.0,
-        timing.download_rate_megabit,
-        timing.download_ttfb_sec * 1000.0
-    );
-    Ok(())
+    runtime: R,
+    connect_addr: SocketAddr,
+    upload_payload: Arc<[u8]>,
+    download_payload: Arc<[u8]>,
+}
+
+impl<R: Runtime> Benchmark<R> {
+    /// Run the benchmark
+    ///
+    /// `stream` should be a try-future which returns `S: AsyncRead + AsyncWrite + Unpin`.
+    fn run<F, S, E>(&self, name: &str, stream: F) -> Result<()>
+    where
+        F: Future<Output = Result<S, E>>,
+        S: AsyncRead + AsyncWrite + Unpin,
+        E: std::error::Error + Send + Sync + 'static,
+    {
+        let stream = self.runtime.block_on(stream)?;
+
+        let up = Arc::clone(&self.upload_payload);
+        let dp = Arc::clone(&self.download_payload);
+        info!("Benchmarking performance {}...", name);
+        let stats = self
+            .runtime
+            .block_on(async move { client(stream, up, dp).await })?;
+        let timing = TimingSummary::generate(&stats)?;
+        info!(
+            "{}: {:.2} Mbit/s up (ttfb {:.2}ms), {:.2} Mbit/s down (ttfb {:.2}ms)",
+            name,
+            timing.upload_rate_megabit,
+            timing.upload_ttfb_sec * 1000.0,
+            timing.download_rate_megabit,
+            timing.download_ttfb_sec * 1000.0
+        );
+        Ok(())
+    }
+
+    /// Benchmark without Arti
+    fn without_arti(&self) -> Result<()> {
+        self.run(
+            "without Arti",
+            tokio::net::TcpStream::connect(self.connect_addr),
+        )
+    }
+
+    /// Benchmark with sock5 proxy
+    fn with_proxy(&self, addr: &str) -> Result<()> {
+        self.run(
+            "with SOCKS proxy",
+            Socks5Stream::connect(addr, self.connect_addr),
+        )
+    }
+
+    /// Benchmark with Arti
+    fn with_arti(&self, tcc: TorClientConfig) -> Result<()> {
+        info!("Starting Arti...");
+        let tor_client = self
+            .runtime
+            .block_on(TorClient::bootstrap(self.runtime.clone(), tcc))?;
+
+        self.run(
+            "with Arti",
+            tor_client.connect(TorAddr::dangerously_from(self.connect_addr)?, None),
+        )
+    }
 }
