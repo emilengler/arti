@@ -11,7 +11,7 @@ categories = [ "asynchronous" ]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 
 [dependencies]
-clap = { version = "3.0.0-rc.7", features = ["derive"] }
+clap = { version = "3.0.0-rc.8", features = ["derive"] }
 rand = "0.8.3"
 anyhow = "1.0.38"
 serde = { version = "1.0.124", features = ["derive"] }
