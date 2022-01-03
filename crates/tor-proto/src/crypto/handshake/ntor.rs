@@ -254,26 +254,6 @@ where
     R: RngCore + CryptoRng,
     T: AsRef<[u8]>,
 {
-    // TODO(nickm): we generate this key whether or not we are
-    // actually going to find our nodeid or keyid. Perhaps we should
-    // delay that till later?  It shouldn't matter for most cases,
-    // though.
-    let ephem = EphemeralSecret::new(rng.rng_compat());
-    let ephem_pub = PublicKey::from(&ephem);
-
-    server_handshake_ntor_v1_no_keygen(ephem_pub, ephem, msg, keys)
-}
-
-/// Helper: perform a server handshake without generating any new keys.
-fn server_handshake_ntor_v1_no_keygen<T>(
-    ephem_pub: PublicKey,
-    ephem: EphemeralSecret,
-    msg: T,
-    keys: &[NtorSecretKey],
-) -> Result<(NtorHkdfKeyGenerator, Vec<u8>)>
-where
-    T: AsRef<[u8]>,
-{
     let mut cur = Reader::from_slice(msg.as_ref());
 
     let my_id: RsaIdentity = cur.extract()?;
@@ -289,6 +269,9 @@ where
     if my_id != keypair.pk.id {
         return Err(Error::MissingKey);
     }
+
+    let ephem = EphemeralSecret::new(rng.rng_compat());
+    let ephem_pub = PublicKey::from(&ephem);
 
     let xy = ephem.diffie_hellman(&their_pk);
     let xb = keypair.sk.diffie_hellman(&their_pk);
@@ -346,12 +329,6 @@ mod tests {
         Ok(())
     }
 
-    fn make_fake_ephem_key(bytes: &[u8]) -> EphemeralSecret {
-        assert_eq!(bytes.len(), 32);
-        let mut rng = FakePRNG::new(bytes).rng_compat();
-        EphemeralSecret::new(&mut rng)
-    }
-
     #[test]
     fn testvec() -> Result<()> {
         use hex_literal::hex;
@@ -361,7 +338,6 @@ mod tests {
         let x_sk = hex!("706f6461792069207075742e2e2e2e2e2e2e2e4a454c4c59206f6e2074686973");
         let x_pk = hex!("e65dfdbef8b2635837fe2cebc086a8096eae3213e6830dc407516083d412b078");
         let y_sk = hex!("70686520737175697272656c2e2e2e2e2e2e2e2e686173206869732067616d65");
-        let y_pk = hex!("390480a14362761d6aec1fea840f6e9e928fb2adb7b25c670be1045e35133a37");
         let id = hex!("69546f6c64596f7541626f75745374616972732e");
         let client_handshake = hex!("69546f6c64596f7541626f75745374616972732eccbc8541904d18af08753eae967874749e6149f873de937f57f8fd903a21c471e65dfdbef8b2635837fe2cebc086a8096eae3213e6830dc407516083d412b078");
         let server_handshake = hex!("390480a14362761d6aec1fea840f6e9e928fb2adb7b25c670be1045e35133a371cbdf68b89923e1f85e8e18ee6e805ea333fe4849c790ffd2670bd80fec95cc8");
@@ -380,10 +356,9 @@ mod tests {
             client_handshake_ntor_v1_no_keygen(x_pk.into(), x_sk.into(), &relay_pk);
         assert_eq!(&create_msg[..], &client_handshake[..]);
 
-        let ephem = make_fake_ephem_key(&y_sk[..]);
-        let ephem_pub = y_pk.into();
+        let mut rng = FakePRNG::new(&y_sk[..]).rng_compat();
         let (s_keygen, created_msg) =
-            server_handshake_ntor_v1_no_keygen(ephem_pub, ephem, &create_msg[..], &[relay_sk])?;
+            server_handshake_ntor_v1(&mut rng, &create_msg[..], &[relay_sk])?;
         assert_eq!(&created_msg[..], &server_handshake[..]);
 
         let c_keygen = client_handshake2_ntor_v1(created_msg, &state)?;
