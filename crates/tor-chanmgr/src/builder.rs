@@ -43,7 +43,9 @@ impl<R: Runtime> crate::mgr::ChannelFactory for ChanBuilder<R> {
         // TODO: make this an option.  And make a better value.
         let five_seconds = std::time::Duration::new(5, 0);
 
-        // FIXME(eta): there doesn't need to be an `Arc` here; `Channel` implements `Clone`!
+        // FIXME(Diziet): the fact that there is an `Arc` here to save
+        // on the expense of cloning a `Channel` ought to be here in
+        // this module, not in the public API.
         self.runtime
             .timeout(five_seconds, self.build_channel_notimeout(target))
             .await?
