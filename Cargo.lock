@@ -112,6 +112,7 @@ dependencies = [
  "humantime-serde",
  "hyper",
  "pin-project",
+ "rand 0.8.4",
  "serde",
  "thiserror",
  "tokio",
