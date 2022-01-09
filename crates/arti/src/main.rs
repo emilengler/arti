@@ -64,6 +64,7 @@
 #![deny(clippy::checked_conversions)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
+#![warn(clippy::dbg_macro)]
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -77,8 +78,8 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
-#![allow(clippy::print_stderr)] // Allowed in this crate only.
-#![allow(clippy::print_stdout)] // Allowed in this crate only.
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::semicolon_if_nothing_returned)]
@@ -87,197 +88,28 @@
 #![warn(clippy::unseparated_literal_suffix)]
 #![deny(clippy::unwrap_used)]
 
+mod app;
 mod exit;
 mod process;
 mod proxy;
 
-use std::sync::Arc;
-
-use arti_client::{TorClient, TorClientConfig};
-use arti_config::{ArtiConfig, LoggingConfig};
+use clap::Parser;
 use tor_rtcompat::{Runtime, SpawnBlocking};
 
-use anyhow::Result;
-use clap::{App, AppSettings, Arg, SubCommand};
-use std::path::PathBuf;
-use tracing::{info, warn};
-use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, registry, EnvFilter};
+fn main() -> anyhow::Result<()> {
+    let app = app::App::parse();
+    let runtime = runtime()?;
 
-/// Run the main loop of the proxy.
-async fn run<R: Runtime>(
-    runtime: R,
-    socks_port: u16,
-    client_config: TorClientConfig,
-) -> Result<()> {
-    use futures::FutureExt;
-    futures::select!(
-        r = exit::wait_for_ctrl_c().fuse() => r,
-        r = async {
-            let client =
-                Arc::new(TorClient::bootstrap(
-                    runtime.clone(),
-                    client_config,
-                ).await?);
-            proxy::run_socks_proxy(runtime, client, socks_port).await
-        }.fuse() => r,
-    )
+    runtime.block_on(app.run(runtime.clone()))
 }
 
-/// As [`EnvFilter::new`], but print a message if any directive in the
-/// log is invalid.
-fn filt_from_str_verbose(s: &str, source: &str) -> EnvFilter {
-    match EnvFilter::try_new(s) {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!("Problem in {}:", source);
-            EnvFilter::new(s)
-        }
-    }
-}
+/// Create a 'Runtime' capable of running asynchronous tasks
+fn runtime() -> anyhow::Result<impl Runtime> {
+    #[cfg(feature = "tokio")]
+    let runtime = tor_rtcompat::tokio::create_runtime()?;
 
-/// Set up logging
-fn setup_logging(config: &LoggingConfig, cli: Option<&str>) {
-    let env_filter =
-        match cli.map(|s| filt_from_str_verbose(s, "--log-level command line parameter")) {
-            Some(f) => f,
-            None => filt_from_str_verbose(
-                config.trace_filter.as_str(),
-                "trace_filter configuration option",
-            ),
-        };
+    #[cfg(all(feature = "async-std", not(feature = "tokio")))]
+    let runtime = tor_rtcompat::async_std::create_runtime()?;
 
-    let registry = registry().with(fmt::Layer::default()).with(env_filter);
-
-    if config.journald {
-        #[cfg(feature = "journald")]
-        if let Ok(journald) = tracing_journald::layer() {
-            registry.with(journald).init();
-            return;
-        }
-        #[cfg(not(feature = "journald"))]
-        warn!("journald logging was selected, but arti was built without journald support.");
-    }
-
-    registry.init();
-}
-
-fn main() -> Result<()> {
-    let dflt_config = arti_config::default_config_file().unwrap_or_else(|| "./config.toml".into());
-
-    let matches =
-        App::new("Arti")
-            .version(env!("CARGO_PKG_VERSION"))
-            .author("The Tor Project Developers")
-            .about("A Rust Tor implementation.")
-            // HACK(eta): clap generates "arti [OPTIONS] <SUBCOMMAND>" for this usage string by
-            //            default, but then fails to parse options properly if you do put them
-            //            before the subcommand.
-            //            We just declare all options as `global` and then require them to be
-            //            put after the subcommand, hence this new usage string.
-            .usage("arti <SUBCOMMAND> [OPTIONS]")
-            .arg(
-                Arg::with_name("config-files")
-                    .short("c")
-                    .long("config")
-                    .takes_value(true)
-                    .value_name("FILE")
-                    .default_value_os(dflt_config.as_ref())
-                    .multiple(true)
-                    // NOTE: don't forget the `global` flag on all arguments declared at this level!
-                    .global(true)
-                    .help("Specify which config file(s) to read."),
-            )
-            .arg(
-                Arg::with_name("option")
-                    .short("o")
-                    .takes_value(true)
-                    .value_name("KEY=VALUE")
-                    .multiple(true)
-                    .global(true)
-                    .help("Override config file parameters, using TOML-like syntax."),
-            )
-            .arg(
-                Arg::with_name("loglevel")
-                    .short("l")
-                    .long("log-level")
-                    .global(true)
-                    .takes_value(true)
-                    .value_name("LEVEL")
-                    .help("Override the log level (usually one of 'trace', 'debug', 'info', 'warn', 'error')."),
-            )
-            .subcommand(
-                SubCommand::with_name("proxy")
-                    .about(
-                        "Run Arti in SOCKS proxy mode, proxying connections through the Tor network.",
-                    )
-                    .arg(
-                        Arg::with_name("socks-port")
-                            .short("p")
-                            .takes_value(true)
-                            .value_name("PORT")
-                            .help("Port to listen on for SOCKS connections (overrides the port in the config if specified).")
-                    )
-            )
-            .setting(AppSettings::SubcommandRequiredElseHelp)
-            .get_matches();
-
-    let config_files = matches
-        .values_of_os("config-files")
-        // This shouldn't actually be possible given we specify a default.
-        .expect("no config files provided")
-        .into_iter()
-        // The second value in this 2-tuple specifies whether the config file is "required" (as in,
-        // failure to load it is an error). All config files that aren't the default are required.
-        .map(|x| (PathBuf::from(x), x != dflt_config))
-        .collect::<Vec<_>>();
-
-    let additional_opts = matches
-        .values_of("option")
-        .map(|x| x.into_iter().map(ToOwned::to_owned).collect::<Vec<_>>())
-        .unwrap_or_else(Vec::new);
-
-    let cfg = arti_config::load(&config_files, additional_opts)?;
-
-    let config: ArtiConfig = cfg.try_into()?;
-
-    setup_logging(config.logging(), matches.value_of("loglevel"));
-
-    if let Some(proxy_matches) = matches.subcommand_matches("proxy") {
-        let socks_port = match (
-            proxy_matches.value_of("socks-port"),
-            config.proxy().socks_port(),
-        ) {
-            (Some(p), _) => p.parse().expect("Invalid port specified"),
-            (None, Some(s)) => s,
-            (None, None) => {
-                warn!(
-                "No SOCKS port set; specify -p PORT or use the `socks_port` configuration option."
-            );
-                return Ok(());
-            }
-        };
-
-        let client_config = config.tor_client_config()?;
-
-        info!(
-            "Starting Arti {} in SOCKS proxy mode on port {}...",
-            env!("CARGO_PKG_VERSION"),
-            socks_port
-        );
-
-        process::use_max_file_limit();
-
-        #[cfg(feature = "tokio")]
-        let runtime = tor_rtcompat::tokio::create_runtime()?;
-        #[cfg(all(feature = "async-std", not(feature = "tokio")))]
-        let runtime = tor_rtcompat::async_std::create_runtime()?;
-
-        let rt_copy = runtime.clone();
-        rt_copy.block_on(run(runtime, socks_port, client_config))?;
-        Ok(())
-    } else {
-        panic!("Subcommand added to clap subcommand list, but not yet implemented")
-    }
+    Ok(runtime)
 }

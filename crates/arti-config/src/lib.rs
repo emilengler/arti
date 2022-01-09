@@ -19,6 +19,7 @@
 #![deny(clippy::checked_conversions)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
+#![warn(clippy::dbg_macro)]
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -32,6 +33,8 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::semicolon_if_nothing_returned)]
@@ -59,10 +62,11 @@ use std::path::{Path, PathBuf};
 /// a failure to read this file should be an error or not.
 ///
 /// `opts` are passed into a [`CmdLine`], and use the extended syntax of that mechanism.
-pub fn load<P: AsRef<Path>>(
-    files: &[(P, bool)],
-    opts: Vec<String>,
-) -> Result<config::Config, config::ConfigError> {
+pub fn load<I, P>(files: I, opts: Vec<String>) -> Result<config::Config, config::ConfigError>
+where
+    I: IntoIterator<Item = (P, bool)>,
+    P: AsRef<Path>,
+{
     let mut config = config::Config::new();
     config.merge(config::File::from_str(
         options::ARTI_DEFAULTS,
@@ -73,16 +77,20 @@ pub fn load<P: AsRef<Path>>(
 }
 
 /// As [`load()`], but load into a mutable `Config` object.
-fn load_mut<P: AsRef<Path>>(
+fn load_mut<I, P>(
     cfg: &mut config::Config,
-    files: &[(P, bool)],
+    files: I,
     opts: Vec<String>,
-) -> Result<(), config::ConfigError> {
+) -> Result<(), config::ConfigError>
+where
+    I: IntoIterator<Item = (P, bool)>,
+    P: AsRef<Path>,
+{
     for (path, required) in files {
         // Not going to use File::with_name here, since it doesn't
         // quite do what we want.
         let f: config::File<_> = path.as_ref().into();
-        cfg.merge(f.format(config::FileFormat::Toml).required(*required))?;
+        cfg.merge(f.format(config::FileFormat::Toml).required(required))?;
     }
 
     let mut cmdline = CmdLine::new();
@@ -115,9 +123,9 @@ friends = 4242
     fn non_required_file() {
         let td = tempdir().unwrap();
         let dflt = td.path().join("a_file");
-        let files = vec![(dflt, false)];
+        let files = [(dflt, false)];
         let mut c = config::Config::new();
-        load_mut(&mut c, &files, Default::default()).unwrap();
+        load_mut(&mut c, files, Default::default()).unwrap();
     }
 
     static EX2_TOML: &str = "
@@ -132,8 +140,8 @@ world = \"nonsense\"
         let cf = td.path().join("other_file");
         let mut c = config::Config::new();
         std::fs::write(&cf, EX2_TOML).unwrap();
-        let files = vec![(dflt, false), (cf, true)];
-        load_mut(&mut c, &files, Default::default()).unwrap();
+        let files = [(dflt, false), (cf, true)];
+        load_mut(&mut c, files, Default::default()).unwrap();
 
         assert!(c.get_str("hello.friends").is_err());
         assert_eq!(c.get_str("hello.world").unwrap(), "nonsense".to_string());
@@ -147,9 +155,9 @@ world = \"nonsense\"
         let mut c = config::Config::new();
         std::fs::write(&cf1, EX_TOML).unwrap();
         std::fs::write(&cf2, EX2_TOML).unwrap();
-        let v = vec![(cf1, true), (cf2, true)];
+        let v = [(cf1, true), (cf2, true)];
         let v2 = vec!["other.var=present".to_string()];
-        load_mut(&mut c, &v, v2).unwrap();
+        load_mut(&mut c, v, v2).unwrap();
 
         assert_eq!(c.get_str("hello.friends").unwrap(), "4242".to_string());
         assert_eq!(c.get_str("hello.world").unwrap(), "nonsense".to_string());

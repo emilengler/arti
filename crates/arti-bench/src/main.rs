@@ -13,6 +13,7 @@
 #![deny(clippy::checked_conversions)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![warn(clippy::cognitive_complexity)]
+#![warn(clippy::dbg_macro)]
 #![deny(clippy::debug_assert_with_mut_call)]
 #![deny(clippy::exhaustive_enums)]
 #![deny(clippy::exhaustive_structs)]
@@ -26,6 +27,8 @@
 #![warn(clippy::needless_borrow)]
 #![warn(clippy::needless_pass_by_value)]
 #![warn(clippy::option_option)]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
 #![warn(clippy::rc_buffer)]
 #![deny(clippy::ref_option_ref)]
 #![warn(clippy::semicolon_if_nothing_returned)]
@@ -39,7 +42,7 @@
 use anyhow::{anyhow, Result};
 use arti_client::{TorAddr, TorClient};
 use arti_config::ArtiConfig;
-use clap::{App, Arg};
+use clap::Parser;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -229,78 +232,55 @@ async fn client<S: AsyncRead + AsyncWrite + Unpin>(
     })
 }
 
+#[derive(Parser)]
+#[clap(author = "The Tor Project Developers", about, version)]
+#[allow(clippy::missing_docs_in_private_items)]
+struct Cli {
+    /// Path to the Arti configuration to use
+    ///
+    /// (usually, a Chutney-generated config).
+    #[clap(
+        short = 'c',
+        long,
+        value_name = "CONFIG",
+        multiple_occurrences(true),
+        number_of_values(1)
+    )]
+    arti_config: Vec<PathBuf>,
+
+    /// "How much fake payload data to generate for the download benchmark."
+    #[clap(short, long, value_name = "SIZE", default_value_t = 10485760)]
+    download_bytes: usize,
+
+    /// "How much fake payload data to generate for the upload benchmark."
+    #[clap(short, long, value_name = "SIZE", default_value_t = 10485760)]
+    upload_bytes: usize,
+
+    /// SOCKS5 proxy address for a node to benchmark through as well (usually a Chutney node).
+    #[clap(long = "socks5", value_name = "ADDR:PORT")]
+    socks_proxy: Option<SocketAddr>,
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
-    let matches = App::new("arti-bench")
-        .version(env!("CARGO_PKG_VERSION"))
-        .author("The Tor Project Developers")
-        .about("A simple benchmarking utility for Arti.")
-        .arg(
-            Arg::with_name("arti-config")
-                .short("c")
-                .long("arti-config")
-                .takes_value(true)
-                .required(true)
-                .value_name("CONFIG")
-                .help(
-                    "Path to the Arti configuration to use (usually, a Chutney-generated config).",
-                ),
-        )
-        .arg(
-            Arg::with_name("download-bytes")
-                .short("d")
-                .long("download-bytes")
-                .takes_value(true)
-                .required(true)
-                .value_name("SIZE")
-                .default_value("10485760")
-                .help("How much fake payload data to generate for the download benchmark."),
-        )
-        .arg(
-            Arg::with_name("upload-bytes")
-                .short("u")
-                .long("upload-bytes")
-                .takes_value(true)
-                .required(true)
-                .value_name("SIZE")
-                .default_value("10485760")
-                .help("How much fake payload data to generate for the upload benchmark."),
-        )
-        .arg(
-            Arg::with_name("socks-proxy")
-                .long("socks5")
-                .takes_value(true)
-                .value_name("addr:port")
-                .help("SOCKS5 proxy address for a node to benchmark through as well (usually a Chutney node). Optional."),
-        )
-        .get_matches();
+    let cli = Cli::parse();
     info!("Parsing Arti configuration...");
-    let config_files = matches
-        .values_of_os("arti-config")
-        .expect("no config files provided")
-        .into_iter()
-        .map(|x| (PathBuf::from(x), true))
-        .collect::<Vec<_>>();
-    let cfg = arti_config::load(&config_files, vec![])?;
-    let config: ArtiConfig = cfg.try_into()?;
+
+    let config_files = cli.arti_config.into_iter().map(|p| (p, true));
+    let config: ArtiConfig = arti_config::load(config_files, vec![])?.try_into()?;
     let tcc = config.tor_client_config()?;
     info!("Binding local TCP listener...");
     let listener = TcpListener::bind("0.0.0.0:0")?;
     let local_addr = listener.local_addr()?;
     let connect_addr = SocketAddr::new(IpAddr::from_str("127.0.0.1").unwrap(), local_addr.port());
     info!("Bound to {}.", local_addr);
-    let upload_bytes = matches.value_of("upload-bytes").unwrap().parse::<usize>()?;
-    let download_bytes = matches
-        .value_of("download-bytes")
-        .unwrap()
-        .parse::<usize>()?;
     info!("Generating test payloads, please wait...");
-    let upload_payload = Arc::new(RandomPayload::generate(upload_bytes));
-    let download_payload = Arc::new(RandomPayload::generate(download_bytes));
+    let upload_payload = Arc::new(RandomPayload::generate(cli.upload_bytes));
+    let download_payload = Arc::new(RandomPayload::generate(cli.download_bytes));
     info!(
         "Generated payloads ({} upload, {} download)",
-        upload_bytes, download_bytes
+        cli.upload_bytes, cli.download_bytes
     );
     let up = Arc::clone(&upload_payload);
     let dp = Arc::clone(&download_payload);
@@ -323,7 +303,7 @@ fn main() -> Result<()> {
         timing.download_rate_megabit,
         timing.download_ttfb_sec * 1000.0
     );
-    if let Some(addr) = matches.value_of("socks-proxy") {
+    if let Some(addr) = cli.socks_proxy {
         let up = Arc::clone(&upload_payload);
         let dp = Arc::clone(&download_payload);
         let stats = runtime.block_on(async move {

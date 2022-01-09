@@ -37,7 +37,7 @@ fi
 
 (
 	set +e
-	"$cmd" proxy -c "${CHUTNEY_PATH}/net/nodes/arti.toml" &
+	"$cmd" -c "${CHUTNEY_PATH}/net/nodes/arti.toml" proxy &
 	pid=$!
 	echo "target=$target" > tests/chutney/arti.run
 	echo "pid=$pid" >> tests/chutney/arti.run

@@ -36,6 +36,14 @@ WANT_LINTS = """
 #![deny(clippy::unnecessary_wraps)]
 #![warn(clippy::unseparated_literal_suffix)]
 #![deny(clippy::unwrap_used)]
+<<<<<<< HEAD
+=======
+#![deny(clippy::checked_conversions)]
+#![warn(clippy::semicolon_if_nothing_returned)]
+#![warn(clippy::print_stderr)]
+#![warn(clippy::print_stdout)]
+#![warn(clippy::dbg_macro)]
+>>>>>>> 945799ce (fix build error)
 """
 WANT_LINTS = [ "%s\n" % w for w in WANT_LINTS.split() ]
 
