@@ -13,7 +13,7 @@ mod map;
 /// Trait to describe as much of a
 /// [`Channel`](tor_proto::channel::Channel) as `AbstractChanMgr`
 /// needs to use.
-pub(crate) trait AbstractChannel {
+pub(crate) trait AbstractChannel: Clone {
     /// Identity type for the other side of the channel.
     type Ident: Hash + Eq + Clone;
     /// Return this channel's identity.
@@ -85,7 +85,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
 
     /// Helper: return the objects used to inform pending tasks
     /// about a newly open or failed channel.
-    fn setup_launch<C>(&self) -> (map::ChannelState<C>, Sending<C>) {
+    fn setup_launch<C: Clone>(&self) -> (map::ChannelState<C>, Sending<C>) {
         let (snd, rcv) = oneshot::channel();
         let shared = rcv.shared();
         (map::ChannelState::Building(shared), snd)

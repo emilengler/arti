@@ -44,7 +44,7 @@ pub(crate) enum ChannelState<C> {
     Poisoned(Priv),
 }
 
-impl<C> ChannelState<C> {
+impl<C: Clone> ChannelState<C> {
     /// Create a new shallow copy of this ChannelState.
     #[cfg(test)]
     fn clone_ref(&self) -> Result<Self> {
