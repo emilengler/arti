@@ -95,6 +95,12 @@ type CellFrame<T> = futures_codec::Framed<T, crate::channel::codec::ChannelCodec
 /// An open client channel, ready to send and receive Tor cells.
 ///
 /// A channel is a direct connection to a Tor relay, implemented using TLS.
+///
+/// This struct is a frontend that can be used to send cells (using the `Sink<ChanCell>`
+/// impl and otherwise control the channel.  The main state is in the Reactor object.
+///
+/// (Users need a mutable reference because of the types in `Sink`, and ultimately because
+/// `cell_tx: mpsc::Sender` doesn't work without mut.
 #[derive(Clone, Debug)]
 pub struct Channel {
     /// A unique identifier for this channel.
