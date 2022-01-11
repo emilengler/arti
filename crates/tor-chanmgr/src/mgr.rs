@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use futures::channel::oneshot;
 use futures::future::{FutureExt, Shared};
 use std::hash::Hash;
-use std::sync::Arc;
 
 mod map;
 
@@ -40,7 +39,7 @@ pub(crate) trait ChannelFactory {
     /// and so on.
     ///
     /// It should not retry; that is handled at a higher level.
-    async fn build_channel(&self, target: &Self::BuildSpec) -> Result<Arc<Self::Channel>>;
+    async fn build_channel(&self, target: &Self::BuildSpec) -> Result<Self::Channel>;
 }
 
 /// A type- and network-agnostic implementation for
@@ -62,11 +61,11 @@ pub(crate) struct AbstractChanMgr<CF: ChannelFactory> {
 
 /// Type alias for a future that we wait on to see when a pending
 /// channel is done or failed.
-type Pending<C> = Shared<oneshot::Receiver<Result<Arc<C>>>>;
+type Pending<C> = Shared<oneshot::Receiver<Result<C>>>;
 
 /// Type alias for the sender we notify when we complete a channel (or
 /// fail to complete it).
-type Sending<C> = oneshot::Sender<Result<Arc<C>>>;
+type Sending<C> = oneshot::Sender<Result<C>>;
 
 impl<CF: ChannelFactory> AbstractChanMgr<CF> {
     /// Make a new empty channel manager.
@@ -104,7 +103,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
         &self,
         ident: <<CF as ChannelFactory>::Channel as AbstractChannel>::Ident,
         target: CF::BuildSpec,
-    ) -> Result<Arc<CF::Channel>> {
+    ) -> Result<CF::Channel> {
         use map::ChannelState::*;
 
         /// Possible actions that we'll decide to take based on the
@@ -117,7 +116,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
             /// We're going to wait for it to finish.
             Wait(Pending<C>),
             /// We found a usable channel.  We're going to return it.
-            Return(Result<Arc<C>>),
+            Return(Result<C>),
         }
         /// How many times do we try?
         const N_ATTEMPTS: usize = 2;
@@ -214,7 +213,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
     pub(crate) fn get_nowait(
         &self,
         ident: &<<CF as ChannelFactory>::Channel as AbstractChannel>::Ident,
-    ) -> Option<Arc<CF::Channel>> {
+    ) -> Option<CF::Channel> {
         use map::ChannelState::*;
         match self.channels.get(ident) {
             Ok(Some(Open(ref ch))) if ch.is_usable() => Some(ch.clone()),
@@ -231,6 +230,7 @@ mod test {
 
     use futures::join;
     use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
 
     use tor_rtcompat::{task::yield_now, test_with_one_runtime, Runtime};
@@ -280,7 +280,7 @@ mod test {
         type Channel = FakeChannel;
         type BuildSpec = (u32, char);
 
-        async fn build_channel(&self, target: &Self::BuildSpec) -> Result<Arc<FakeChannel>> {
+        async fn build_channel(&self, target: &Self::BuildSpec) -> Result<FakeChannel> {
             yield_now().await;
             let (ident, mood) = *target;
             match mood {
@@ -292,12 +292,12 @@ mod test {
                 }
                 _ => {}
             }
-            Ok(Arc::new(FakeChannel {
+            Ok(FakeChannel {
                 ident,
                 mood,
                 closing: Arc::new(AtomicBool::new(false)),
                 detect_reuse: Default::default(),
-            }))
+            })
         }
     }
 

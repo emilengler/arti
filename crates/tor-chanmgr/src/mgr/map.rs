@@ -4,7 +4,6 @@ use super::{AbstractChannel, Pending};
 use crate::{Error, Result};
 
 use std::collections::{hash_map, HashMap};
-use std::sync::Arc;
 
 /// A map from channel id to channel state.
 ///
@@ -34,7 +33,7 @@ pub(crate) enum ChannelState<C> {
     /// This channel might not be usable: it might be closing or
     /// broken.  We need to check its is_usable() method before
     /// yielding it to the user.
-    Open(Arc<C>),
+    Open(C),
     /// A channel that's getting built.
     Building(Pending<C>),
     /// A temporary invalid state.
@@ -59,7 +58,7 @@ impl<C: Clone> ChannelState<C> {
     /// For testing: either give the Open channel inside this state,
     /// or panic if there is none.
     #[cfg(test)]
-    fn unwrap_open(&self) -> Arc<C> {
+    fn unwrap_open(&self) -> C {
         match self {
             ChannelState::Open(chan) => chan.clone(),
             _ => panic!("Not an open channel"),
@@ -200,16 +199,16 @@ mod test {
         }
     }
     fn ch(ident: &'static str) -> ChannelState<FakeChannel> {
-        ChannelState::Open(Arc::new(FakeChannel {
+        ChannelState::Open(FakeChannel {
             ident,
             usable: true,
-        }))
+        })
     }
     fn closed(ident: &'static str) -> ChannelState<FakeChannel> {
-        ChannelState::Open(Arc::new(FakeChannel {
+        ChannelState::Open(FakeChannel {
             ident,
             usable: false,
-        }))
+        })
     }
 
     #[test]
