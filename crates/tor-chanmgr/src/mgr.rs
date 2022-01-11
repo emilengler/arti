@@ -244,6 +244,13 @@ mod test {
         ident: u32,
         mood: char,
         closing: AtomicBool,
+        detect_reuse: Arc<char>,
+    }
+
+    impl PartialEq for FakeChannel {
+        fn eq(&self, other: &Self) -> bool {
+            Arc::ptr_eq(&self.detect_reuse, &other.detect_reuse)
+        }
     }
 
     impl AbstractChannel for FakeChannel {
@@ -289,6 +296,7 @@ mod test {
                 ident,
                 mood,
                 closing: AtomicBool::new(false),
+                detect_reuse: Default::default(),
             }))
         }
     }
@@ -302,10 +310,10 @@ mod test {
             let chan1 = mgr.get_or_launch(413, target).await.unwrap();
             let chan2 = mgr.get_or_launch(413, target).await.unwrap();
 
-            assert!(Arc::ptr_eq(&chan1, &chan2));
+            assert_eq!(chan1, chan2);
 
             let chan3 = mgr.get_nowait(&413).unwrap();
-            assert!(Arc::ptr_eq(&chan1, &chan3));
+            assert_eq!(chan1, chan3);
         });
     }
 
@@ -349,9 +357,9 @@ mod test {
             let err_a = ch86a.unwrap_err();
             let err_b = ch86b.unwrap_err();
 
-            assert!(Arc::ptr_eq(&ch3a, &ch3b));
-            assert!(Arc::ptr_eq(&ch44a, &ch44b));
-            assert!(!Arc::ptr_eq(&ch44a, &ch3a));
+            assert_eq!(ch3a, ch3b);
+            assert_eq!(ch44a, ch44b);
+            assert_ne!(ch44a, ch3a);
 
             assert!(matches!(err_a, Error::UnusableTarget(_)));
             assert!(matches!(err_b, Error::UnusableTarget(_)));
@@ -378,7 +386,7 @@ mod test {
             ch5.start_closing();
 
             let ch3_new = mgr.get_or_launch(3, (3, 'b')).await.unwrap();
-            assert!(!Arc::ptr_eq(&ch3, &ch3_new));
+            assert_ne!(ch3, ch3_new);
             assert_eq!(ch3_new.mood, 'b');
 
             mgr.remove_unusable_entries().unwrap();
