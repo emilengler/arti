@@ -239,11 +239,11 @@ mod test {
         runtime: RT,
     }
 
-    #[derive(Debug)]
+    #[derive(Clone, Debug)]
     struct FakeChannel {
         ident: u32,
         mood: char,
-        closing: AtomicBool,
+        closing: Arc<AtomicBool>,
         detect_reuse: Arc<char>,
     }
 
@@ -295,7 +295,7 @@ mod test {
             Ok(Arc::new(FakeChannel {
                 ident,
                 mood,
-                closing: AtomicBool::new(false),
+                closing: Arc::new(AtomicBool::new(false)),
                 detect_reuse: Default::default(),
             }))
         }

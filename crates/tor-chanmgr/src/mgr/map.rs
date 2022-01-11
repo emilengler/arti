@@ -185,7 +185,7 @@ impl<C: AbstractChannel> ChannelMap<C> {
 mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
-    #[derive(Eq, PartialEq, Debug)]
+    #[derive(Eq, PartialEq, Clone, Debug)]
     struct FakeChannel {
         ident: &'static str,
         usable: bool,
