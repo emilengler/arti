@@ -327,11 +327,7 @@ impl Reactor {
             // If the circuit is waiting for CREATED, tell it that it
             // won't get one.
             Some(CircEnt::Opening(oneshot, _)) => {
-                trace!(
-                    "{}: Passing destroy to pending circuit {}",
-                    &self,
-                    circid
-                );
+                trace!("{}: Passing destroy to pending circuit {}", &self, circid);
                 oneshot
                     .send(msg.try_into()?)
                     // TODO(nickm) I think that this one actually means the other side
@@ -344,11 +340,7 @@ impl Reactor {
             }
             // It's an open circuit: tell it that it got a DESTROY cell.
             Some(CircEnt::Open(mut sink)) => {
-                trace!(
-                    "{}: Passing destroy to open circuit {}",
-                    &self,
-                    circid
-                );
+                trace!("{}: Passing destroy to open circuit {}", &self, circid);
                 sink.send(msg.try_into()?)
                     .await
                     // TODO(nickm) I think that this one actually means the other side
@@ -361,11 +353,7 @@ impl Reactor {
             Some(CircEnt::DestroySent(_)) => Ok(()),
             // Got a DESTROY cell for a circuit we don't have.
             None => {
-                trace!(
-                    "{}: Destroy for nonexistent circuit {}",
-                    &self,
-                    circid
-                );
+                trace!("{}: Destroy for nonexistent circuit {}", &self, circid);
                 Err(Error::ChanProto("Destroy for nonexistent circuit".into()))
             }
         }
@@ -380,11 +368,7 @@ impl Reactor {
     /// Called when a circuit goes away: sends a DESTROY cell and removes
     /// the circuit.
     async fn outbound_destroy_circ(&mut self, id: CircId) -> Result<()> {
-        trace!(
-            "{}: Circuit {} is gone; sending DESTROY",
-            &self,
-            id
-        );
+        trace!("{}: Circuit {} is gone; sending DESTROY", &self, id);
         // Remove the circuit's entry from the map: nothing more
         // can be done with it.
         // TODO: It would be great to have a tighter upper bound for
