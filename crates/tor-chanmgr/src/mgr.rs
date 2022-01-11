@@ -134,7 +134,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
                     Some(Open(ref ch)) => {
                         if ch.is_usable() {
                             // Good channel. Return it.
-                            let action = Action::Return(Ok(Arc::clone(ch)));
+                            let action = Action::Return(Ok(ch.clone()));
                             (oldstate, action)
                         } else {
                             // Unusable channel.  Move to the Building
@@ -187,10 +187,10 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
                         // The channel got built: remember it, tell the
                         // others, and return it.
                         self.channels
-                            .replace(ident.clone(), Open(Arc::clone(&chan)))?;
+                            .replace(ident.clone(), Open(chan.clone()))?;
                         // It's okay if all the receivers went away:
                         // that means that nobody was waiting for this channel.
-                        let _ignore_err = send.send(Ok(Arc::clone(&chan)));
+                        let _ignore_err = send.send(Ok(chan.clone()));
                         return Ok(chan);
                     }
                     Err(e) => {
@@ -217,7 +217,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
     ) -> Option<Arc<CF::Channel>> {
         use map::ChannelState::*;
         match self.channels.get(ident) {
-            Ok(Some(Open(ref ch))) if ch.is_usable() => Some(Arc::clone(ch)),
+            Ok(Some(Open(ref ch))) if ch.is_usable() => Some(ch.clone()),
             _ => None,
         }
     }

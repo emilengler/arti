@@ -50,7 +50,7 @@ impl<C> ChannelState<C> {
     fn clone_ref(&self) -> Result<Self> {
         use ChannelState::*;
         match self {
-            Open(chan) => Ok(Open(Arc::clone(chan))),
+            Open(chan) => Ok(Open(chan.clone())),
             Building(pending) => Ok(Building(pending.clone())),
             Poisoned(_) => Err(Error::Internal("Poisoned state in channel map")),
         }
@@ -61,7 +61,7 @@ impl<C> ChannelState<C> {
     #[cfg(test)]
     fn unwrap_open(&self) -> Arc<C> {
         match self {
-            ChannelState::Open(chan) => Arc::clone(chan),
+            ChannelState::Open(chan) => chan.clone(),
             _ => panic!("Not an open channel"),
         }
     }
