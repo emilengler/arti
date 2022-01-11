@@ -22,11 +22,11 @@ use futures::Sink;
 
 use std::convert::TryInto;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::task::Poll;
 
-use crate::channel::unique_id;
+use crate::channel::{unique_id, ChannelDetails};
 use crate::circuit::celltypes::{ClientCircChanMsg, CreateResponse};
 use tracing::{debug, trace};
 
@@ -82,8 +82,8 @@ pub struct Reactor {
     pub(super) circs: CircMap,
     /// Logging identifier for this channel
     pub(super) unique_id: UniqId,
-    /// If true, this channel is closing.
-    pub(super) closed: Arc<AtomicBool>,
+    /// Information shared with the frontend
+    pub(super) details: Arc<ChannelDetails>,
     /// Context for allocating unique circuit log identifiers.
     pub(super) circ_unique_id_ctx: unique_id::CircUniqIdContext,
     /// What link protocol is the channel using?
@@ -98,7 +98,7 @@ impl Reactor {
     /// Once this function returns, the channel is dead, and can't be
     /// used again.
     pub async fn run(mut self) -> Result<()> {
-        if self.closed.load(Ordering::SeqCst) {
+        if self.details.closed.load(Ordering::SeqCst) {
             return Err(Error::ChannelClosed);
         }
         debug!("{}: Running reactor", self.unique_id);
@@ -110,7 +110,7 @@ impl Reactor {
             }
         };
         debug!("{}: Reactor stopped: {:?}", self.unique_id, result);
-        self.closed.store(true, Ordering::SeqCst);
+        self.details.closed.store(true, Ordering::SeqCst);
         result
     }
 

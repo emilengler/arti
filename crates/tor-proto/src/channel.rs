@@ -103,6 +103,23 @@ type CellFrame<T> = futures_codec::Framed<T, crate::channel::codec::ChannelCodec
 /// `cell_tx: mpsc::Sender` doesn't work without mut.
 #[derive(Clone, Debug)]
 pub struct Channel {
+    /// A channel used to send control messages to the Reactor.
+    control: mpsc::UnboundedSender<CtrlMsg>,
+    /// A channel used to send cells to the Reactor.
+    cell_tx: mpsc::Sender<ChanCell>,
+    /// Information shared with the reactor
+    details: Arc<ChannelDetails>,
+}
+
+/// This is information shared between the reactor and the frontend.
+///
+/// This exists to make `Channel` cheap to clone, which is desirable because every circuit wants
+/// an owned mutable `Channel`.
+///
+/// `control` can't be here because we rely on it getting dropped when the last user goes away.
+#[derive(Debug)]
+pub(crate) struct ChannelDetails {
+    // TODO: remove the field `unique_id` in Reactor that is duplicated with here
     /// A unique identifier for this channel.
     unique_id: UniqId,
     /// Validated Ed25519 identity for this peer.
@@ -110,11 +127,7 @@ pub struct Channel {
     /// Validated RSA identity for this peer.
     rsa_id: RsaIdentity,
     /// If true, this channel is closing.
-    closed: Arc<AtomicBool>,
-    /// A channel used to send control messages to the Reactor.
-    control: mpsc::UnboundedSender<CtrlMsg>,
-    /// A channel used to send cells to the Reactor.
-    cell_tx: mpsc::Sender<ChanCell>,
+    closed: AtomicBool,
 }
 
 impl Sink<ChanCell> for Channel {
@@ -129,7 +142,7 @@ impl Sink<ChanCell> for Channel {
 
     fn start_send(self: Pin<&mut Self>, cell: ChanCell) -> Result<()> {
         let this = self.get_mut();
-        if this.closed.load(Ordering::SeqCst) {
+        if this.details.closed.load(Ordering::SeqCst) {
             return Err(Error::ChannelClosed);
         }
         this.check_cell(&cell)?;
@@ -139,7 +152,7 @@ impl Sink<ChanCell> for Channel {
                 Relay(_) | Padding(_) | VPadding(_) => {} // too frequent to log.
                 _ => trace!(
                     "{}: Sending {} for {}",
-                    this.unique_id,
+                    this.details.unique_id,
                     cell.msg().cmd(),
                     cell.circid()
                 ),
@@ -231,15 +244,20 @@ impl Channel {
 
         let (control_tx, control_rx) = mpsc::unbounded();
         let (cell_tx, cell_rx) = mpsc::channel(CHANNEL_BUFFER_SIZE);
-        let closed = Arc::new(AtomicBool::new(false));
+        let closed = AtomicBool::new(false);
 
-        let channel = Channel {
+        let details = ChannelDetails {
             unique_id,
             ed25519_id,
             rsa_id,
-            closed: Arc::clone(&closed),
+            closed,
+        };
+        let details = Arc::new(details);
+
+        let channel = Channel {
             control: control_tx,
             cell_tx,
+            details: details.clone(),
         };
 
         let reactor = Reactor {
@@ -249,9 +267,9 @@ impl Channel {
             output: sink,
             circs: circmap,
             unique_id,
-            closed,
             circ_unique_id_ctx: CircUniqIdContext::new(),
             link_protocol,
+            details: details.clone(),
         };
 
         (channel, reactor)
@@ -259,17 +277,17 @@ impl Channel {
 
     /// Return a process-unique identifier for this channel.
     pub fn unique_id(&self) -> UniqId {
-        self.unique_id
+        self.details.unique_id
     }
 
     /// Return the Ed25519 identity for the peer of this channel.
     pub fn peer_ed25519_id(&self) -> &Ed25519Identity {
-        &self.ed25519_id
+        &self.details.ed25519_id
     }
 
     /// Return the (legacy) RSA identity for the peer of this channel.
     pub fn peer_rsa_id(&self) -> &RsaIdentity {
-        &self.rsa_id
+        &self.details.rsa_id
     }
 
     /// Return an error if this channel is somehow mismatched with the
@@ -296,7 +314,7 @@ impl Channel {
 
     /// Return true if this channel is closed and therefore unusable.
     pub fn is_closing(&self) -> bool {
-        self.closed.load(Ordering::SeqCst)
+        self.details.closed.load(Ordering::SeqCst)
     }
 
     /// Check whether a cell type is permissible to be _sent_ on an
@@ -408,13 +426,18 @@ pub(crate) mod test {
     /// Make a new fake reactor-less channel.  For testing only, obviously.
     pub(crate) fn fake_channel() -> Channel {
         let unique_id = UniqId::new();
-        Channel {
+
+        let details = Arc::new(ChannelDetails {
             unique_id,
             ed25519_id: [6_u8; 32].into(),
             rsa_id: [10_u8; 20].into(),
-            closed: Arc::new(AtomicBool::new(false)),
+            closed: AtomicBool::new(false),
+        });
+
+        Channel {
             control: mpsc::unbounded().0,
             cell_tx: mpsc::channel(CHANNEL_BUFFER_SIZE).0,
+            details,
         }
     }
 
