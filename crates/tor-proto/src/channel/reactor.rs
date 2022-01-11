@@ -21,6 +21,7 @@ use futures::stream::Stream;
 use futures::Sink;
 
 use std::convert::TryInto;
+use std::fmt;
 use std::pin::Pin;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -91,6 +92,16 @@ pub struct Reactor {
     pub(super) link_protocol: u16,
 }
 
+/// Allows us to just say debug!("{}: Reactor did a thing", &self, ...)
+///
+/// There is no risk of confusion because no-one would try to print a
+/// Reactor for some other reason.
+impl fmt::Display for Reactor {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.unique_id, f)
+    }
+}
+
 impl Reactor {
     /// Launch the reactor, and run until the channel closes or we
     /// encounter an error.
@@ -101,7 +112,7 @@ impl Reactor {
         if self.details.closed.load(Ordering::SeqCst) {
             return Err(Error::ChannelClosed);
         }
-        debug!("{}: Running reactor", self.unique_id);
+        debug!("{}: Running reactor", &self);
         let result: Result<()> = loop {
             match self.run_once().await {
                 Ok(()) => (),
@@ -109,7 +120,7 @@ impl Reactor {
                 Err(ReactorError::Err(e)) => break Err(e),
             }
         };
-        debug!("{}: Reactor stopped: {:?}", self.unique_id, result);
+        debug!("{}: Reactor stopped: {:?}", &self, result);
         self.details.closed.store(true, Ordering::SeqCst);
         result
     }
@@ -204,7 +215,7 @@ impl Reactor {
 
     /// Handle a CtrlMsg other than Shutdown.
     async fn handle_control(&mut self, msg: CtrlMsg) -> Result<()> {
-        trace!("{}: reactor received {:?}", self.unique_id, msg);
+        trace!("{}: reactor received {:?}", &self, msg);
         match msg {
             CtrlMsg::Shutdown => panic!(), // was handled in reactor loop.
             CtrlMsg::CloseCircuit(id) => self.outbound_destroy_circ(id).await?,
@@ -234,7 +245,7 @@ impl Reactor {
 
         match msg {
             Relay(_) | Padding(_) | VPadding(_) => {} // too frequent to log.
-            _ => trace!("{}: received {} for {}", self.unique_id, msg.cmd(), circid),
+            _ => trace!("{}: received {} for {}", &self, msg.cmd(), circid),
         }
 
         match msg {
@@ -318,7 +329,7 @@ impl Reactor {
             Some(CircEnt::Opening(oneshot, _)) => {
                 trace!(
                     "{}: Passing destroy to pending circuit {}",
-                    self.unique_id,
+                    &self,
                     circid
                 );
                 oneshot
@@ -335,7 +346,7 @@ impl Reactor {
             Some(CircEnt::Open(mut sink)) => {
                 trace!(
                     "{}: Passing destroy to open circuit {}",
-                    self.unique_id,
+                    &self,
                     circid
                 );
                 sink.send(msg.try_into()?)
@@ -352,7 +363,7 @@ impl Reactor {
             None => {
                 trace!(
                     "{}: Destroy for nonexistent circuit {}",
-                    self.unique_id,
+                    &self,
                     circid
                 );
                 Err(Error::ChanProto("Destroy for nonexistent circuit".into()))
@@ -371,7 +382,7 @@ impl Reactor {
     async fn outbound_destroy_circ(&mut self, id: CircId) -> Result<()> {
         trace!(
             "{}: Circuit {} is gone; sending DESTROY",
-            self.unique_id,
+            &self,
             id
         );
         // Remove the circuit's entry from the map: nothing more
