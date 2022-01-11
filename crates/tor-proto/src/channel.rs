@@ -98,6 +98,7 @@ type CellFrame<T> = futures_codec::Framed<T, crate::channel::codec::ChannelCodec
 ///
 /// This struct is a frontend that can be used to send cells (using the `Sink<ChanCell>`
 /// impl and otherwise control the channel.  The main state is in the Reactor object.
+/// `Channel` is cheap to clone.
 ///
 /// (Users need a mutable reference because of the types in `Sink`, and ultimately because
 /// `cell_tx: mpsc::Sender` doesn't work without mut.
@@ -119,7 +120,6 @@ pub struct Channel {
 /// `control` can't be here because we rely on it getting dropped when the last user goes away.
 #[derive(Debug)]
 pub(crate) struct ChannelDetails {
-    // TODO: remove the field `unique_id` in Reactor that is duplicated with here
     /// A unique identifier for this channel.
     unique_id: UniqId,
     /// Validated Ed25519 identity for this peer.
@@ -266,7 +266,6 @@ impl Channel {
             input: futures::StreamExt::fuse(stream),
             output: sink,
             circs: circmap,
-            unique_id,
             circ_unique_id_ctx: CircUniqIdContext::new(),
             link_protocol,
             details: details.clone(),

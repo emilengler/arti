@@ -7,7 +7,6 @@
 //! or in the error handling behavior.
 
 use super::circmap::{CircEnt, CircMap};
-use super::UniqId;
 use crate::circuit::halfcirc::HalfCirc;
 use crate::util::err::ReactorError;
 use crate::{Error, Result};
@@ -81,8 +80,6 @@ pub struct Reactor {
     pub(super) output: BoxedChannelSink,
     /// A map from circuit ID to Sinks on which we can deliver cells.
     pub(super) circs: CircMap,
-    /// Logging identifier for this channel
-    pub(super) unique_id: UniqId,
     /// Information shared with the frontend
     pub(super) details: Arc<ChannelDetails>,
     /// Context for allocating unique circuit log identifiers.
@@ -98,7 +95,7 @@ pub struct Reactor {
 /// Reactor for some other reason.
 impl fmt::Display for Reactor {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(&self.unique_id, f)
+        fmt::Debug::fmt(&self.details.unique_id, f)
     }
 }
 
@@ -225,7 +222,7 @@ impl Reactor {
                 tx,
             } => {
                 let mut rng = rand::thread_rng();
-                let my_unique_id = self.unique_id;
+                let my_unique_id = self.details.unique_id;
                 let circ_unique_id = self.circ_unique_id_ctx.next(my_unique_id);
                 let ret: Result<_> = self
                     .circs
@@ -386,6 +383,7 @@ impl Reactor {
 pub(crate) mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use crate::channel::UniqId;
     use crate::circuit::CircParameters;
     use futures::sink::SinkExt;
     use futures::stream::StreamExt;
