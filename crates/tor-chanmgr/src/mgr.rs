@@ -185,8 +185,7 @@ impl<CF: ChannelFactory> AbstractChanMgr<CF> {
                     Ok(chan) => {
                         // The channel got built: remember it, tell the
                         // others, and return it.
-                        self.channels
-                            .replace(ident.clone(), Open(chan.clone()))?;
+                        self.channels.replace(ident.clone(), Open(chan.clone()))?;
                         // It's okay if all the receivers went away:
                         // that means that nobody was waiting for this channel.
                         let _ignore_err = send.send(Ok(chan.clone()));
