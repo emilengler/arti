@@ -2778,6 +2778,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tor-error"
+version = "0.0.1"
+dependencies = [
+ "bitflags",
+ "derive_more",
+]
+
+[[package]]
 name = "tor-events"
 version = "0.0.3"
 dependencies = [
