@@ -257,7 +257,7 @@ impl Channel {
         let channel = Channel {
             control: control_tx,
             cell_tx,
-            details: details.clone(),
+            details: Arc::clone(&details),
         };
 
         let reactor = Reactor {
