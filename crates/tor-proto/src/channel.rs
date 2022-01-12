@@ -268,7 +268,7 @@ impl Channel {
             circs: circmap,
             circ_unique_id_ctx: CircUniqIdContext::new(),
             link_protocol,
-            details: details.clone(),
+            details,
         };
 
         (channel, reactor)
