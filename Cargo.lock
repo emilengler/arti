@@ -2783,6 +2783,7 @@ version = "0.0.1"
 dependencies = [
  "bitflags",
  "derive_more",
+ "futures",
 ]
 
 [[package]]
