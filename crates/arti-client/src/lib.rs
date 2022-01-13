@@ -68,7 +68,7 @@
 //! let tor_client = TorClient::bootstrap(rt, config).await?;
 //!
 //! // Initiate a connection over Tor to example.com, port 80.
-//! let mut stream = tor_client.connect(("example.com", 80), None).await?;
+//! let mut stream = tor_client.connect(("example.com", 80)).await?;
 //!
 //! use futures::io::{AsyncReadExt, AsyncWriteExt};
 //!
@@ -182,10 +182,10 @@ pub use client::{ConnectPrefs, TorClient};
 pub use config::TorClientConfig;
 
 pub use tor_circmgr::IsolationToken;
-pub use tor_proto::stream::DataStream;
+pub use tor_proto::stream::{DataReader, DataStream, DataWriter};
 
 mod err;
 pub use err::Error;
 
-/// Result type used by this crate
-type Result<T> = std::result::Result<T, Error>;
+/// Alias for the [`Result`] type used by the `arti_client` crate.
+pub type Result<T> = std::result::Result<T, Error>;

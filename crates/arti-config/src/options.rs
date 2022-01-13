@@ -3,13 +3,13 @@
 use arti_client::config::{
     circ,
     dir::{self, DownloadScheduleConfig, NetworkConfig},
-    ClientAddrConfig, ClientAddrConfigBuilder, ClientTimeoutConfig, ClientTimeoutConfigBuilder,
-    StorageConfig, StorageConfigBuilder, TorClientConfig, TorClientConfigBuilder,
+    ClientAddrConfig, ClientAddrConfigBuilder, StorageConfig, StorageConfigBuilder,
+    StreamTimeoutConfig, StreamTimeoutConfigBuilder, TorClientConfig, TorClientConfigBuilder,
 };
 use derive_builder::Builder;
 use serde::Deserialize;
 use std::collections::HashMap;
-use tor_config::ConfigBuildError;
+use tor_config::{CfgPath, ConfigBuildError};
 
 /// Default options to use for our configuration.
 pub(crate) const ARTI_DEFAULTS: &str = concat!(include_str!("./arti_defaults.toml"),);
@@ -21,26 +21,32 @@ pub(crate) const ARTI_DEFAULTS: &str = concat!(include_str!("./arti_defaults.tom
 #[builder(build_fn(error = "ConfigBuildError"))]
 pub struct LoggingConfig {
     /// Filtering directives that determine tracing levels as described at
-    /// <https://docs.rs/tracing-subscriber/0.2.20/tracing_subscriber/filter/struct.EnvFilter.html>
+    /// <https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/targets/struct.Targets.html#impl-FromStr>
     ///
     /// You can override this setting with the -l, --log-level command line parameter.
     ///
     /// Example: "info,tor_proto::channel=trace"
-    // TODO(nickm) remove public elements when I revise this.
-    #[serde(default = "default_trace_filter")]
-    #[builder(default = "default_trace_filter()")]
-    pub trace_filter: String,
+    #[serde(default = "default_console_filter")]
+    #[builder(default = "default_console_filter()", setter(into, strip_option))]
+    console: Option<String>,
 
-    /// Whether to log to journald
-    // TODO(nickm) remove public elements when I revise this.
+    /// Filtering directives for the journald logger.
+    ///
+    /// Only takes effect if Arti is built with the `journald` filter.
+    #[serde(default)]
+    #[builder(default, setter(into, strip_option))]
+    journald: Option<String>,
+
+    /// Configuration for one or more logfiles.
     #[serde(default)]
     #[builder(default)]
-    pub journald: bool,
+    file: Vec<LogfileConfig>,
 }
 
-/// Return a default value for `trace_filter`.
-fn default_trace_filter() -> String {
-    "debug".to_owned()
+/// Return a default tracing filter value for `logging.console`.
+#[allow(clippy::unnecessary_wraps)]
+fn default_console_filter() -> Option<String> {
+    Some("debug".to_owned())
 }
 
 impl Default for LoggingConfig {
@@ -54,15 +60,93 @@ impl LoggingConfig {
     pub fn builder() -> LoggingConfigBuilder {
         LoggingConfigBuilder::default()
     }
+
+    /// Return the configured journald filter, if one is present
+    pub fn journald_filter(&self) -> Option<&str> {
+        match self.journald {
+            Some(ref s) if !s.is_empty() => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Return the configured stdout filter, if one is present
+    pub fn console_filter(&self) -> Option<&str> {
+        match self.console {
+            Some(ref s) if !s.is_empty() => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// Return a list of the configured log files
+    pub fn logfiles(&self) -> &[LogfileConfig] {
+        &self.file
+    }
 }
 
 impl From<LoggingConfig> for LoggingConfigBuilder {
     fn from(cfg: LoggingConfig) -> LoggingConfigBuilder {
         let mut builder = LoggingConfigBuilder::default();
+        if let Some(console) = cfg.console {
+            builder.console(console);
+        }
+        if let Some(journald) = cfg.journald {
+            builder.journald(journald);
+        }
         builder
-            .trace_filter(cfg.trace_filter)
-            .journald(cfg.journald);
-        builder
+    }
+}
+
+/// Configuration information for an (optionally rotating) logfile.
+#[derive(Deserialize, Debug, Builder, Clone, Eq, PartialEq)]
+pub struct LogfileConfig {
+    /// How often to rotate the file?
+    #[serde(default)]
+    #[builder(default)]
+    rotate: LogRotation,
+    /// Where to write the files?
+    path: CfgPath,
+    /// Filter to apply before writing
+    filter: String,
+}
+
+/// How often to rotate a log file
+#[derive(Deserialize, Debug, Clone, Copy, Eq, PartialEq)]
+#[non_exhaustive]
+#[serde(rename_all = "lowercase")]
+pub enum LogRotation {
+    /// Rotate logs daily
+    Daily,
+    /// Rotate logs hourly
+    Hourly,
+    /// Never rotate the log
+    Never,
+}
+
+impl Default for LogRotation {
+    fn default() -> Self {
+        Self::Never
+    }
+}
+
+impl LogfileConfig {
+    /// Return a new [`LogfileConfigBuilder`]
+    pub fn builder() -> LogfileConfigBuilder {
+        LogfileConfigBuilder::default()
+    }
+
+    /// Return the configured rotation interval.
+    pub fn rotate(&self) -> LogRotation {
+        self.rotate
+    }
+
+    /// Return the configured path to the log file.
+    pub fn path(&self) -> &CfgPath {
+        &self.path
+    }
+
+    /// Return the configured filter.
+    pub fn filter(&self) -> &str {
+        &self.filter
     }
 }
 
@@ -162,7 +246,7 @@ pub struct ArtiConfig {
     address_filter: ClientAddrConfig,
 
     /// Information about when to time out client requests.
-    stream_timeouts: ClientTimeoutConfig,
+    stream_timeouts: StreamTimeoutConfig,
 }
 
 impl From<ArtiConfig> for TorClientConfigBuilder {
@@ -243,7 +327,7 @@ pub struct ArtiConfigBuilder {
     /// Builder for the address_filter section.
     address_filter: ClientAddrConfigBuilder,
     /// Builder for the stream timeout rules.
-    stream_timeouts: ClientTimeoutConfigBuilder,
+    stream_timeouts: StreamTimeoutConfigBuilder,
 }
 
 impl ArtiConfigBuilder {
@@ -385,11 +469,11 @@ impl ArtiConfigBuilder {
         &mut self.address_filter
     }
 
-    /// Return a mutable reference to a [`ClientTimeoutConfigBuilder`].
+    /// Return a mutable reference to a [`StreamTimeoutConfigBuilder`].
     ///
     /// This section controls how Arti should handle an exit relay's DNS
     /// resolution.
-    pub fn stream_timeouts(&mut self) -> &mut ClientTimeoutConfigBuilder {
+    pub fn stream_timeouts(&mut self) -> &mut StreamTimeoutConfigBuilder {
         &mut self.stream_timeouts
     }
 }
@@ -465,7 +549,7 @@ mod test {
 
         let mut bld = ArtiConfig::builder();
         bld.proxy().socks_port(Some(9999));
-        bld.logging().journald(true).trace_filter("warn".to_owned());
+        bld.logging().console("warn");
         bld.tor_network()
             .authorities(vec![auth])
             .fallback_caches(vec![fallback]);

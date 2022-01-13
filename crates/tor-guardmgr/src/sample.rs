@@ -99,11 +99,6 @@ impl ListKind {
 }
 
 impl GuardSet {
-    /// Return a new empty guard set.
-    pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
     /// Return the lengths of the different elements of the guard set.
     ///
     /// Used to report bugs or corruption in consistency.
@@ -382,6 +377,18 @@ impl GuardSet {
         self.guards.insert(id.clone(), guard);
         self.sample.push(id);
         self.primary_guards_invalidated = true;
+    }
+
+    /// Return the number of our primary guards are missing their
+    /// microdescriptors in `dir`.
+    pub(crate) fn missing_primary_microdescriptors(&mut self, dir: &NetDir) -> usize {
+        self.primary
+            .iter()
+            .filter(|id| {
+                let g = self.guards.get(id).expect("Inconsistent guard state");
+                g.listed_in(dir).is_none()
+            })
+            .count()
     }
 
     /// Update the status of every guard  in this sample from a network
@@ -763,6 +770,8 @@ pub enum PickGuardError {
 #[cfg(test)]
 mod test {
     #![allow(clippy::unwrap_used)]
+    use tor_netdoc::doc::netstatus::{RelayFlags, RelayWeight};
+
     use super::*;
     use std::time::Duration;
 
@@ -776,7 +785,38 @@ mod test {
 
     #[test]
     fn sample_test() {
-        let netdir = netdir();
+        // Make a test network that gives every relay equal weight, and which
+        // has 20 viable (Guard + V2Dir + DirCache=2) candidates.  Otherwise the
+        // calculation of collision probability at the end of this function is
+        // too tricky.
+        let netdir = tor_netdir::testnet::construct_custom_netdir(|idx, builder| {
+            // Give every node eequal bandwidth.
+            builder.rs.weight(RelayWeight::Measured(1000));
+            // The default network has 40 relays, and the first 10 are
+            // not Guard by default.
+            if idx >= 10 {
+                builder.rs.add_flags(RelayFlags::GUARD);
+                if idx >= 20 {
+                    builder.rs.protos("DirCache=2".parse().unwrap());
+                } else {
+                    builder.rs.protos("".parse().unwrap());
+                }
+            }
+        })
+        .unwrap()
+        .unwrap_if_sufficient()
+        .unwrap();
+        // Make sure that we got the numbers we expected.
+        assert_eq!(40, netdir.relays().count());
+        assert_eq!(30, netdir.relays().filter(Relay::is_flagged_guard).count());
+        assert_eq!(
+            20,
+            netdir
+                .relays()
+                .filter(|r| r.is_flagged_guard() && r.is_dir_cache())
+                .count()
+        );
+
         let params = GuardParams {
             min_filtered_sample_size: 5,
             max_sample_bw_fraction: 1.0,
@@ -785,7 +825,7 @@ mod test {
 
         let mut samples: Vec<HashSet<GuardId>> = Vec::new();
         for _ in 0..3 {
-            let mut guards = GuardSet::new();
+            let mut guards = GuardSet::default();
             guards.extend_sample_as_needed(SystemTime::now(), &params, &netdir);
             assert_eq!(guards.guards.len(), params.min_filtered_sample_size);
             assert_eq!(guards.confirmed.len(), 0);
@@ -796,6 +836,7 @@ mod test {
             for (g, guard) in &guards.guards {
                 let relay = g.get_relay(&netdir).unwrap();
                 assert!(relay.is_flagged_guard());
+                assert!(relay.is_dir_cache());
                 assert!(guards.contains_relay(&relay));
                 assert!(!guard.is_expired(&params, SystemTime::now()));
             }
@@ -808,8 +849,8 @@ mod test {
             samples.push(guards.sample.into_iter().collect());
         }
 
-        // The probability of getting the same sample every time should be
-        // pretty low, but I haven't calculated it.
+        // The probability of getting the same sample 3 times in a row is (20 choose 5)^-2,
+        // which is pretty low.  (About 1 in 240 million.)
         assert!(samples[0] != samples[1] || samples[1] != samples[2]);
     }
 
@@ -823,7 +864,7 @@ mod test {
         let t1 = SystemTime::now();
         let t2 = SystemTime::now() + Duration::from_secs(20);
 
-        let mut guards = GuardSet::new();
+        let mut guards = GuardSet::default();
         guards.extend_sample_as_needed(t1, &params, &netdir);
 
         // Pick a guard and mark it as confirmed.
@@ -860,7 +901,7 @@ mod test {
         let t2 = SystemTime::now() + Duration::from_secs(20);
         let t3 = SystemTime::now() + Duration::from_secs(30);
 
-        let mut guards = GuardSet::new();
+        let mut guards = GuardSet::default();
         guards.extend_sample_as_needed(t1, &params, &netdir);
 
         // Pick a guard and mark it as confirmed.
@@ -904,7 +945,7 @@ mod test {
         let params = GuardParams::default();
         let t1 = SystemTime::now();
 
-        let mut guards = GuardSet::new();
+        let mut guards = GuardSet::default();
         guards.extend_sample_as_needed(t1, &params, &netdir);
         // note that there are only 10 Guard+V2Dir nodes in the netdir().
         assert_eq!(guards.sample.len(), 10);
@@ -940,7 +981,7 @@ mod test {
         let i1 = Instant::now();
         let sec = Duration::from_secs(1);
 
-        let mut guards = GuardSet::new();
+        let mut guards = GuardSet::default();
         guards.extend_sample_as_needed(st1, &params, &netdir);
         guards.select_primary_guards(&params);
 
@@ -1064,7 +1105,7 @@ mod test {
         let sec = Duration::from_secs(1);
         let usage = crate::GuardUsageBuilder::default().build().unwrap();
 
-        let mut guards = GuardSet::new();
+        let mut guards = GuardSet::default();
 
         guards.extend_sample_as_needed(st, &params, &netdir);
         guards.select_primary_guards(&params);
@@ -1099,7 +1140,7 @@ mod test {
         };
         let usage = crate::GuardUsageBuilder::default().build().unwrap();
 
-        let mut guards = GuardSet::new();
+        let mut guards = GuardSet::default();
 
         guards.extend_sample_as_needed(SystemTime::now(), &params, &netdir);
         guards.select_primary_guards(&params);
@@ -1125,5 +1166,37 @@ mod test {
         let (kind, p_id3) = guards.pick_guard(&usage, &params).unwrap();
         assert_eq!(kind, ListKind::Primary);
         assert_eq!(p_id3, p_id1);
+    }
+
+    #[test]
+    fn count_missing_mds() {
+        let netdir = netdir();
+        let params = GuardParams {
+            min_filtered_sample_size: 5,
+            n_primary: 2,
+            max_sample_bw_fraction: 1.0,
+            ..GuardParams::default()
+        };
+        let usage = crate::GuardUsageBuilder::default().build().unwrap();
+        let mut guards = GuardSet::default();
+        guards.extend_sample_as_needed(SystemTime::now(), &params, &netdir);
+        guards.select_primary_guards(&params);
+        assert_eq!(guards.primary.len(), 2);
+
+        let (_kind, p_id1) = guards.pick_guard(&usage, &params).unwrap();
+        guards.record_success(&p_id1, &params, SystemTime::now());
+        assert_eq!(guards.missing_primary_microdescriptors(&netdir), 0);
+
+        use tor_netdir::testnet;
+        let netdir2 = testnet::construct_custom_netdir(|idx, bld| {
+            if idx == p_id1.ed25519.as_bytes()[0] as usize {
+                bld.omit_md = true;
+            }
+        })
+        .unwrap()
+        .unwrap_if_sufficient()
+        .unwrap();
+
+        assert_eq!(guards.missing_primary_microdescriptors(&netdir2), 1);
     }
 }

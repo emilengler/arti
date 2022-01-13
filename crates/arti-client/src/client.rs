@@ -6,7 +6,7 @@
 //! `TorClient::connect()`.
 use crate::address::IntoTorAddr;
 
-use crate::config::{ClientAddrConfig, ClientTimeoutConfig, TorClientConfig};
+use crate::config::{ClientAddrConfig, StreamTimeoutConfig, TorClientConfig};
 use tor_circmgr::{DirInfo, IsolationToken, StreamIsolationBuilder, TargetPort};
 use tor_config::MutCfg;
 use tor_dirmgr::DirEvent;
@@ -23,6 +23,10 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use crate::{Error, Result};
+#[cfg(feature = "async-std")]
+use tor_rtcompat::async_std::AsyncStdRuntime;
+#[cfg(feature = "tokio")]
+use tor_rtcompat::tokio::TokioRuntimeHandle;
 use tracing::{debug, error, info, warn};
 
 /// An active client session on the Tor network.
@@ -52,7 +56,7 @@ pub struct TorClient<R: Runtime> {
     /// Client address configuration
     addrcfg: Arc<MutCfg<ClientAddrConfig>>,
     /// Client DNS configuration
-    timeoutcfg: Arc<MutCfg<ClientTimeoutConfig>>,
+    timeoutcfg: Arc<MutCfg<StreamTimeoutConfig>>,
     /// Mutex used to serialize concurrent attempts to reconfigure a TorClient.
     ///
     /// See [`TorClient::reconfigure`] for more information on its use.
@@ -166,10 +170,49 @@ impl ConnectPrefs {
     // TODO: Add some way to be IPFlexible, and require exit to support both.
 }
 
-impl<R: Runtime> TorClient<R> {
-    /// Bootstrap a network connection configured by `dir_cfg` and `circ_cfg`.
+#[cfg(feature = "tokio")]
+impl TorClient<TokioRuntimeHandle> {
+    /// Bootstrap a connection to the Tor network, using the current Tokio runtime.
     ///
-    /// Return a client once there is enough directory material to
+    /// Returns a client once there is enough directory material to
+    /// connect safely over the Tor network.
+    ///
+    /// This is a convenience wrapper around [`TorClient::bootstrap`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if called outside of the context of a Tokio runtime.
+    pub async fn bootstrap_with_tokio(
+        config: TorClientConfig,
+    ) -> Result<TorClient<TokioRuntimeHandle>> {
+        let rt = tor_rtcompat::tokio::current_runtime().expect("called outside of Tokio runtime");
+        Self::bootstrap(rt, config).await
+    }
+}
+
+#[cfg(feature = "async-std")]
+impl TorClient<AsyncStdRuntime> {
+    /// Bootstrap a connection to the Tor network, using the current async-std runtime.
+    ///
+    /// Returns a client once there is enough directory material to
+    /// connect safely over the Tor network.
+    ///
+    /// This is a convenience wrapper around [`TorClient::bootstrap`].
+    pub async fn bootstrap_with_async_std(
+        config: TorClientConfig,
+    ) -> Result<TorClient<AsyncStdRuntime>> {
+        // FIXME(eta): not actually possible for this to fail
+        let rt =
+            tor_rtcompat::async_std::current_runtime().expect("failed to get async-std runtime");
+        Self::bootstrap(rt, config).await
+    }
+}
+
+impl<R: Runtime> TorClient<R> {
+    /// Bootstrap a connection to the Tor network, using the provided `config` and `runtime` (a
+    /// [`tor_rtcompat`] [`Runtime`](tor_rtcompat::Runtime)).
+    ///
+    /// Returns a client once there is enough directory material to
     /// connect safely over the Tor network.
     pub async fn bootstrap(runtime: R, config: TorClientConfig) -> Result<TorClient<R>> {
         let circ_cfg = config.get_circmgr_config()?;
@@ -325,16 +368,25 @@ impl<R: Runtime> TorClient<R> {
     ///
     /// Note that because Tor prefers to do DNS resolution on the remote
     /// side of the network, this function takes its address as a string.
-    pub async fn connect<A: IntoTorAddr>(
+    pub async fn connect<A: IntoTorAddr>(&self, target: A) -> Result<DataStream> {
+        self.connect_with_prefs(target, ConnectPrefs::default())
+            .await
+    }
+
+    /// Launch an anonymized connection to the provided address and
+    /// port over the Tor network with connection preference flags.
+    ///
+    /// Note that because Tor prefers to do DNS resolution on the remote
+    /// side of the network, this function takes its address as a string.
+    pub async fn connect_with_prefs<A: IntoTorAddr>(
         &self,
         target: A,
-        flags: Option<ConnectPrefs>,
+        flags: ConnectPrefs,
     ) -> Result<DataStream> {
         let addr = target.into_tor_addr()?;
         addr.enforce_config(&self.addrcfg.get())?;
         let (addr, port) = addr.into_string_and_port();
 
-        let flags = flags.unwrap_or_default();
         let exit_ports = [flags.wrap_target_port(port)];
         let circ = self.get_or_launch_exit_circ(&exit_ports, &flags).await?;
         info!("Got a circuit for {}:{}", addr, port);
@@ -350,15 +402,20 @@ impl<R: Runtime> TorClient<R> {
     }
 
     /// On success, return a list of IP addresses.
-    pub async fn resolve(
+    pub async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>> {
+        self.resolve_with_prefs(hostname, ConnectPrefs::default())
+            .await
+    }
+
+    /// On success, return a list of IP addresses, but use flags.
+    pub async fn resolve_with_prefs(
         &self,
         hostname: &str,
-        flags: Option<ConnectPrefs>,
+        flags: ConnectPrefs,
     ) -> Result<Vec<IpAddr>> {
         let addr = (hostname, 0).into_tor_addr()?;
         addr.enforce_config(&self.addrcfg.get())?;
 
-        let flags = flags.unwrap_or_default();
         let circ = self.get_or_launch_exit_circ(&[], &flags).await?;
 
         let resolve_future = circ.resolve(hostname);
@@ -373,12 +430,19 @@ impl<R: Runtime> TorClient<R> {
     /// Perform a remote DNS reverse lookup with the provided IP address.
     ///
     /// On success, return a list of hostnames.
-    pub async fn resolve_ptr(
+    pub async fn resolve_ptr(&self, addr: IpAddr) -> Result<Vec<String>> {
+        self.resolve_ptr_with_prefs(addr, ConnectPrefs::default())
+            .await
+    }
+
+    /// Perform a remote DNS reverse lookup with the provided IP address.
+    ///
+    /// On success, return a list of hostnames.
+    pub async fn resolve_ptr_with_prefs(
         &self,
         addr: IpAddr,
-        flags: Option<ConnectPrefs>,
+        flags: ConnectPrefs,
     ) -> Result<Vec<String>> {
-        let flags = flags.unwrap_or_default();
         let circ = self.get_or_launch_exit_circ(&[], &flags).await?;
 
         let resolve_ptr_future = circ.resolve_ptr(addr);

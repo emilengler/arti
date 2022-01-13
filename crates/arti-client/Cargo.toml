@@ -1,6 +1,6 @@
 [package]
 name = "arti-client"
-version = "0.0.2"
+version = "0.0.3"
 authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
 edition = "2018"
 license = "MIT OR Apache-2.0"
@@ -23,27 +23,27 @@ static = [ "tor-rtcompat/static", "tor-dirmgr/static" ]
 experimental-api = []
 
 [dependencies]
-tor-circmgr = { path="../tor-circmgr", version = "0.0.2"}
-tor-config = { path="../tor-config", version = "0.0.2"}
-tor-chanmgr = { path="../tor-chanmgr", version = "0.0.2"}
-tor-dirmgr = { path="../tor-dirmgr", version = "0.0.2"}
-tor-persist = { path="../tor-persist", version = "0.0.2"}
-tor-proto = { path="../tor-proto", version = "0.0.2"}
-tor-rtcompat = { path="../tor-rtcompat", version = "0.0.2"}
+tor-circmgr = { path="../tor-circmgr", version = "0.0.3"}
+tor-config = { path="../tor-config", version = "0.0.3"}
+tor-chanmgr = { path="../tor-chanmgr", version = "0.0.3"}
+tor-dirmgr = { path="../tor-dirmgr", version = "0.0.3"}
+tor-persist = { path="../tor-persist", version = "0.0.3"}
+tor-proto = { path="../tor-proto", version = "0.0.3"}
+tor-rtcompat = { path="../tor-rtcompat", version = "0.0.3"}
 
-humantime-serde = "1.0.1"
-derive_builder = "0.10.2"
-directories = "4.0.1"
-futures = "0.3.13"
-tracing = "0.1.26"
-serde = { version = "1.0.124", features = ["derive"] }
-thiserror = "1.0.24"
+humantime-serde = "1"
+derive_builder = "0.10"
+directories = "4"
+futures = "0.3"
+tracing = "0.1.18"
+serde = { version = "1.0.103", features = ["derive"] }
+thiserror = "1"
 
 [dev-dependencies]
-tor-rtcompat = { path="../tor-rtcompat", version = "0.0.2", features=["tokio"] }
-tokio-crate = { package = "tokio", version = "1.7.0", features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros" ] }
-hyper = { version = "0.14.13", features = ["http1", "client", "runtime"] }
-pin-project = { version = "1.0" }
+tor-rtcompat = { path="../tor-rtcompat", version = "0.0.3", features=["tokio"] }
+tokio-crate = { package = "tokio", version = "1.4", features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros" ] }
+hyper = { version = "0.14", features = ["http1", "client", "runtime"] }
+pin-project = "1"
 tokio-util = { version = "0.6", features = ["compat"] }
-anyhow = { version = "1.0" }
+anyhow = "1.0.5"
 tracing-subscriber = "0.3.0"

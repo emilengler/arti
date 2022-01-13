@@ -400,7 +400,7 @@ impl<R: Runtime> Benchmark<R> {
 
         self.run(
             "with Arti",
-            tor_client.connect(TorAddr::dangerously_from(self.connect_addr)?, None),
+            tor_client.connect(TorAddr::dangerously_from(self.connect_addr)?),
         )
     }
 }
