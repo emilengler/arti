@@ -23,6 +23,7 @@ static = [ "tor-rtcompat/static", "tor-dirmgr/static" ]
 experimental-api = []
 
 [dependencies]
+tor-error = { path="../tor-error", version = "0.0.1" }
 tor-circmgr = { path="../tor-circmgr", version = "0.0.3"}
 tor-config = { path="../tor-config", version = "0.0.3"}
 tor-chanmgr = { path="../tor-chanmgr", version = "0.0.3"}

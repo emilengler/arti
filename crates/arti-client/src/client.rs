@@ -711,7 +711,9 @@ impl<R: Runtime> Drop for TorClient<R> {
     fn drop(&mut self) {
         match self.circmgr.store_persistent_state() {
             Ok(()) => info!("Flushed persistent state at exit."),
-            Err(tor_circmgr::Error::State(tor_persist::Error::NoLock)) => {
+            Err(tor_circmgr::Error::Other(e))
+                if e.kind() == tor_error::Kind::PersistentStateReadOnly =>
+            {
                 debug!("Lock not held; no state to flush.");
             }
             Err(e) => error!("Unable to flush state on client exit: {}", e),

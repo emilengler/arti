@@ -132,7 +132,7 @@
 //     filtered
 
 use futures::channel::mpsc;
-use futures::task::{SpawnError, SpawnExt};
+use futures::task::SpawnExt;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::convert::{TryFrom, TryInto};
@@ -141,6 +141,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug, info, trace, warn};
 
+use tor_error::TorError;
 use tor_llcrypto::pk;
 use tor_netdir::{params::NetParameters, NetDir, Relay};
 use tor_persist::{DynStorageHandle, StateMgr};
@@ -1015,23 +1016,8 @@ pub enum GuardRestriction {
     AvoidAllIds(HashSet<pk::ed25519::Ed25519Identity>),
 }
 
-/// An error caused while creating or updating a guard manager.
-#[derive(Clone, Debug, thiserror::Error)]
-#[non_exhaustive]
-pub enum GuardMgrError {
-    /// An error derived from the state manager.
-    #[error("Problem accessing persistent state")]
-    State(#[from] tor_persist::Error),
-    /// An error that occurred while trying to spawn a daemon task.
-    #[error("Unable to spawn task")]
-    Spawn(#[source] Arc<SpawnError>),
-}
-
-impl From<SpawnError> for GuardMgrError {
-    fn from(e: SpawnError) -> GuardMgrError {
-        GuardMgrError::Spawn(Arc::new(e))
-    }
-}
+/// XXX replace references to this type everywhere
+pub type GuardMgrError = TorError;
 
 #[cfg(test)]
 mod test {

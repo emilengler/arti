@@ -18,6 +18,7 @@ repository="https://gitlab.torproject.org/tpo/core/arti.git/"
 experimental-api = []
 
 [dependencies]
+tor-error = { path="../tor-error", version = "0.0.1"}
 tor-chanmgr = { path="../tor-chanmgr", version = "0.0.3"}
 tor-config = { path="../tor-config", version = "0.0.3"}
 tor-guardmgr = { path="../tor-guardmgr", version = "0.0.3"}
