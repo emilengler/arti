@@ -129,12 +129,12 @@ impl LockStatus {
 }
 
 /// An error type returned from a persistent state manager.
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
     /// An IO error occurred.
     #[error("IO error")]
-    IoError(#[source] Arc<std::io::Error>),
+    IoError(#[from] std::io::Error),
 
     /// Tried to save without holding an exclusive lock.
     //
@@ -146,11 +146,11 @@ pub enum Error {
 
     /// Problem when serializing JSON data.
     #[error("JSON serialization error")]
-    Serialize(#[source] Arc<serde_json::Error>),
+    Serialize(#[source] serde_json::Error),
 
     /// Problem when deserializing JSON data.
     #[error("JSON serialization error")]
-    Deserialize(#[source] Arc<serde_json::Error>),
+    Deserialize(#[source] serde_json::Error),
 }
 
 impl From<Error> for TorError {
@@ -169,20 +169,14 @@ impl From<Error> for TorError {
     }
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
-        Error::IoError(Arc::new(e))
-    }
-}
-
 /// Error conversion for JSON errors; use only when loading
 fn load_error(e: serde_json::Error) -> Error {
-    Error::Deserialize(Arc::new(e))
+    Error::Deserialize(e)
 }
 
 /// Error conversion for JSON errors; use only when storing
 fn store_error(e: serde_json::Error) -> Error {
-    Error::Serialize(Arc::new(e))
+    Error::Serialize(e)
 }
 
 /// A wrapper type for types whose representation may change in future versions of Arti.
