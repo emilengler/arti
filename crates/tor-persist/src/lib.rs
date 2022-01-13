@@ -156,9 +156,7 @@ pub enum Error {
 impl From<Error> for TorError {
     #[rustfmt::skip] // the tabular layout of the `match` makes this a lot clearer
     fn from(e: Error) -> TorError {
-        use tor_error::Flags as F;
-        use tor_error::Kind as K;
-        use tor_error::TorError as TE;
+        use tor_error::conversion_imports::*;
         use Error as E;
         match e {
             E::IoError(ioe)    => TE::new(K::PersistentStateAccessFailed, F::empty(),   ioe),

@@ -41,6 +41,8 @@ use derive_more::Display;
 use std::fmt::{self, Display};
 use std::sync::Arc;
 
+pub mod conversion_imports;
+
 /// Classifying errors in all the higher-level tor crates
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[non_exhaustive]
