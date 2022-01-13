@@ -260,7 +260,7 @@ impl<R: Runtime> GuardMgr<R> {
     ///
     /// It won't be able to hand out any guards until
     /// [`GuardMgr::update_network`] has been called.
-    pub fn new<S>(runtime: R, state_mgr: S) -> Result<Self, GuardMgrError>
+    pub fn new<S>(runtime: R, state_mgr: S) -> Result<Self, TorError>
     where
         S: StateMgr + Send + Sync + 'static,
     {
@@ -295,7 +295,7 @@ impl<R: Runtime> GuardMgr<R> {
 
     /// Flush our current guard state to the state manager, if there
     /// is any unsaved state.
-    pub fn store_persistent_state(&self) -> Result<(), GuardMgrError> {
+    pub fn store_persistent_state(&self) -> Result<(), TorError> {
         let inner = self.inner.lock().expect("Poisoned lock");
         trace!("Flushing guard state to disk.");
         inner.storage.store(&inner.guards)?;
@@ -306,7 +306,7 @@ impl<R: Runtime> GuardMgr<R> {
     ///
     /// We only call this method if we _don't_ have the lock on the state
     /// files.  If we have the lock, we only want to save.
-    pub fn reload_persistent_state(&self) -> Result<(), GuardMgrError> {
+    pub fn reload_persistent_state(&self) -> Result<(), TorError> {
         let mut inner = self.inner.lock().expect("Poisoned lock");
         if let Some(new_guards) = inner.storage.load()? {
             let now = self.runtime.wallclock();
@@ -318,7 +318,7 @@ impl<R: Runtime> GuardMgr<R> {
     /// Switch from having an unowned persistent state to having an owned one.
     ///
     /// Requires that we hold the lock on the state files.
-    pub fn upgrade_to_owned_persistent_state(&self) -> Result<(), GuardMgrError> {
+    pub fn upgrade_to_owned_persistent_state(&self) -> Result<(), TorError> {
         let mut inner = self.inner.lock().expect("Poisoned lock");
         debug_assert!(inner.storage.can_store());
         let new_guards = inner.storage.load()?.unwrap_or_default();
@@ -1015,9 +1015,6 @@ pub enum GuardRestriction {
     /// Don't pick a guard with any of the provided Ed25519 identities.
     AvoidAllIds(HashSet<pk::ed25519::Ed25519Identity>),
 }
-
-/// XXX replace references to this type everywhere
-pub type GuardMgrError = TorError;
 
 #[cfg(test)]
 mod test {
