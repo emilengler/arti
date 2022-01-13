@@ -58,6 +58,8 @@ pub use serde_json::Value as JsonValue;
 #[cfg(feature = "testing")]
 pub use testing::TestingStateMgr;
 
+use tor_error::TorError;
+
 /// An object that can manage persistent state.
 ///
 /// State is implemented as a simple key-value store, where the values
@@ -135,6 +137,10 @@ pub enum Error {
     IoError(#[source] Arc<std::io::Error>),
 
     /// Tried to save without holding an exclusive lock.
+    //
+    // TODO This error seems to actually be sometimes used to make store a no-op.
+    //      We should consider whether this is best handled as an error, but for now
+    //      this seems adequate.
     #[error("Storage not locked")]
     NoLock,
 
@@ -145,6 +151,22 @@ pub enum Error {
     /// Problem when deserializing JSON data.
     #[error("JSON serialization error")]
     Deserialize(#[source] Arc<serde_json::Error>),
+}
+
+impl From<Error> for TorError {
+    #[rustfmt::skip] // the tabular layout of the `match` makes this a lot clearer
+    fn from(e: Error) -> TorError {
+        use tor_error::Flags as F;
+        use tor_error::Kind as K;
+        use tor_error::TorError as TE;
+        use Error as E;
+        match e {
+            E::IoError(ioe)    => TE::new(K::PersistentStateAccessFailed, F::empty(),   ioe),
+            E::NoLock          => TE::new(K::PersistentStateReadOnly,     F::PERMANENT, e),
+            E::Serialize(je)   => TE::new(K::InternalError,               F::empty(),   je),
+            E::Deserialize(je) => TE::new(K::PersistentStateCorrupted,    F::PERMANENT, je),
+        }
+    }
 }
 
 impl From<std::io::Error> for Error {

@@ -2925,6 +2925,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror",
+ "tor-error",
 ]
 
 [[package]]

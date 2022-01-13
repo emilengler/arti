@@ -52,6 +52,28 @@ pub enum Kind {
     #[display(fmt = "arti misconfigured")]
     Misconfigured,
 
+    /// IO error accessing local persistent state
+    ///
+    /// Eg, disk full or permissions problem.
+    /// Usually the source will be [`std::io::Error`].
+    #[display(fmt = "could not read/write persistent state")]
+    PersistentStateAccessFailed,
+
+    /// Tor client's persistent state has been corrupted
+    ///
+    /// This could be because of a bug in the Tor code, or because something else has been messing
+    /// with thd data.
+    ///
+    /// This might also occur if the Tor code was upgraded and the new Tor is not compatible.
+    #[display(fmt = "could not read/write persistent state")]
+    PersistentStateCorrupted,
+
+    /// Tor client's persistent state is read-only, so could not be updated
+    ///
+    /// Usually,
+    #[display(fmt = "could not read/write persistent state")]
+    PersistentStateReadOnly,
+
     /// Tor client is shutting down
     ///
     /// The Tor client, or possibly the whole program or some other critical part of it, is
