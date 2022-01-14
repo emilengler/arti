@@ -153,8 +153,8 @@ bitflags! {
 /// This general boxed error is used when errors from multiple different layers or sources need to
 /// be handled.
 ///
-/// [`kind`](`TorError::kind`) and [`flags`](`TorError::flags`) give more details.  There is always
-/// a [`source`](std::error::Error::source), which can perhaps be downcast to a more specific
+/// [`kind`] and [`flags`](`TorError::flags`) give more details.  There is always
+/// a [`source`], which can perhaps be downcast to a more specific
 /// error.
 ///
 /// In addition to this, individual tor crates sometimes have their own `Error` type(s),
@@ -162,6 +162,23 @@ bitflags! {
 ///
 /// TODO The above statement is not actually true yet.  Rather than always adding the missing
 /// conversions, we intend to abolish some of the crate-specific errors.
+///
+/// # `Display` implementation
+///
+/// The `Display` impl will explain that this error was something to do with Tor and
+/// print a representation of the `Kind`.
+///
+/// In accordance with the
+/// [Rust Error Handling Working Group's reccomendations](https://blog.rust-lang.org/inside-rust/2021/07/01/What-the-error-handling-project-group-is-working-towards.html#guidelines-for-implementing-displayfmt-and-errorsource)
+/// the `Display` impl will *not* print the underlying [`source`].
+/// Applications which print errors for display by humans should use a reporter which
+/// iterates through the error source chain.
+///
+/// The precise text of the `Display` implementation is not stable.
+///
+/// [`source`]: (std::error::Error::source)
+/// [`kind`]: `TorError::kind`
+
 #[derive(Clone, Debug)] // TODO handwriting the debug impl might be nice
 pub struct TorError {
     /// Categorises the error
@@ -176,7 +193,6 @@ pub struct TorError {
 
 static_assertions::const_assert!(size_of::<TorError>() <= 3 * size_of::<usize>());
 
-// https://github.com/yaahc/blog.rust-lang.org/blob/master/posts/inside-rust/2021-05-15-What-the-error-handling-project-group-is-working-towards.md#guidelines-for-implementing-displayfmt-and-errorsource
 impl Display for TorError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "tor: {}", &self.kind)
