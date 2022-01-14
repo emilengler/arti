@@ -73,7 +73,7 @@ pub enum Kind {
     /// Tor client's persistent state is read-only, so could not be updated
     ///
     /// Usually,
-    #[display(fmt = "could not read/write persistent state")]
+    #[display(fmt = "could not write to read-only persistent state")]
     PersistentStateReadOnly,
 
     /// Tor client is shutting down
