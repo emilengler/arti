@@ -39,6 +39,7 @@ use bitflags::bitflags;
 use derive_more::Display;
 
 use std::fmt::{self, Display};
+use std::mem::size_of;
 use std::sync::Arc;
 
 pub mod conversion_imports;
@@ -46,7 +47,6 @@ pub mod conversion_imports;
 /// Classifying errors in all the higher-level tor crates
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[non_exhaustive]
-#[repr(u16)] // XXX this becomes part of the API, is that OK ?
 pub enum Kind {
     /// Arti configuration is incorrect
     ///
@@ -173,6 +173,8 @@ pub struct TorError {
     /// The underlying error, made Clone
     payload: Arc<dyn std::error::Error + Send + Sync + 'static>,
 }
+
+static_assertions::const_assert!(size_of::<TorError>() <= 3 * size_of::<usize>());
 
 // https://github.com/yaahc/blog.rust-lang.org/blob/master/posts/inside-rust/2021-05-15-What-the-error-handling-project-group-is-working-towards.md#guidelines-for-implementing-displayfmt-and-errorsource
 impl Display for TorError {

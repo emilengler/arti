@@ -14,5 +14,6 @@ categories = [ "tor" ]
 derive_more = "0.99"
 bitflags = "1"
 futures = "0.3"
+static_assertions = "1"
 
 [dev-dependencies]
