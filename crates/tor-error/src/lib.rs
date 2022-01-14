@@ -67,7 +67,7 @@ pub enum Kind {
     /// with thd data.
     ///
     /// This might also occur if the Tor code was upgraded and the new Tor is not compatible.
-    #[display(fmt = "could not read/write persistent state")]
+    #[display(fmt = "corrupted data in persistent state")]
     PersistentStateCorrupted,
 
     /// Tor client's persistent state is read-only, so could not be updated
