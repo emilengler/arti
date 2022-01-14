@@ -85,7 +85,7 @@ pub enum Kind {
 
     /// Internal error (bug)
     ///
-    /// Something supposedly-impossible problem has arisen.  This indicates a bug in local software.
+    /// A supposedly impossible problem has arisen.  This indicates a bug in Arti.
     #[display(fmt = "internal error (bug)")]
     InternalError,
 
