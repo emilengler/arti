@@ -433,6 +433,7 @@ impl PendingClientCirc {
             outbound: Default::default(),
             channel,
             input,
+            stream_rx: Default::default(),
             crypto_in: InboundClientCrypt::new(),
             hops: vec![],
             unique_id,

@@ -11,6 +11,10 @@
 //! acknowledging.
 
 use std::collections::VecDeque;
+use std::marker::PhantomData;
+use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::{Arc, Mutex};
+use std::task::Waker;
 
 use tor_cell::relaycell::msg::RelayMsg;
 use tor_cell::relaycell::RelayCell;
@@ -45,18 +49,106 @@ impl PartialEq<[u8; 20]> for CircTag {
     }
 }
 
-/// Absence of a tag, as with stream cells.
-pub(crate) type NoTag = ();
-
 /// A circuit's send window.
 pub(crate) type CircSendWindow = SendWindow<CircParams, CircTag>;
+/// A read-only view into a circuit's send window.
+pub(crate) type CircSendWindowView = SharedSendWindow<CircParams, ()>;
 /// A stream's send window.
-pub(crate) type StreamSendWindow = SendWindow<StreamParams, NoTag>;
+pub(crate) type StreamSendWindow = SharedSendWindow<StreamParams, Mutable>;
 
 /// A circuit's receive window.
 pub(crate) type CircRecvWindow = RecvWindow<CircParams>;
 /// A stream's receive window.
 pub(crate) type StreamRecvWindow = RecvWindow<StreamParams>;
+
+#[derive(Copy, Clone)]
+pub(crate) struct Mutable;
+
+/// Tracks how many cells we can send on a stream, and implements mechanisms for sharing this value
+/// and waking futures up if it changes.
+// NOTE(eta): So I initially wrote this using `Rc` and `Cell`, but that didn't fly, because
+//            it's going to be embedded in a future where everything has to be `Send`. Big sad.
+#[derive(Clone)]
+pub(crate) struct SharedSendWindow<P: WindowParams, M> {
+    /// The current count of cells we can safely send.
+    count: Arc<AtomicU16>,
+    /// A set of stored `Waker`s for any `StreamReceiver`s waiting on this value to be incremented.
+    waker: Arc<Mutex<Vec<Waker>>>,
+    /// A `PhantomData` to make use of `P` and `M`.
+    _phantom: PhantomData<(P, M)>,
+}
+
+impl<P: WindowParams> SharedSendWindow<P, Mutable> {
+    /// Initialize the send window with the provided value.
+    pub(crate) fn new(window: u16) -> Self {
+        Self {
+            count: Arc::new(AtomicU16::new(window)),
+            waker: Arc::new(Mutex::new(vec![])),
+            _phantom: PhantomData,
+        }
+    }
+
+    /// Create a read-only copy of this send window for sharing elsewhere.
+    pub(crate) fn share(&self) -> SharedSendWindow<P, ()> {
+        SharedSendWindow {
+            count: self.count.clone(),
+            waker: self.waker.clone(),
+            _phantom: PhantomData,
+        }
+    }
+    /// Remove one item from this window (since we've sent a cell).
+    /// If the window was empty, returns an error.
+    ///
+    /// Return the number of cells left in the window.
+    pub(crate) fn take(&self) -> Result<u16> {
+        // FIXME(eta): could use `fetch_sub`, but that overflows, so we'd need to check that
+        if let Some(val) = self.window().checked_sub(1) {
+            self.count.store(val, Ordering::Relaxed);
+            Ok(val)
+        } else {
+            Err(Error::CircProto(
+                "Called SharedSendWindow::take() on empty SharedSendWindow".into(),
+            ))
+        }
+    }
+
+    /// Handle an incoming sendme, and notify the stored waker, if one exists.
+    ///
+    /// On success, return the number of cells left in the window.
+    ///
+    /// On failure, return None: the caller should close the stream
+    /// or circuit with a protocol error.
+    #[must_use = "didn't check whether SENDME was expected and tag was right."]
+    pub(crate) fn put(&self) -> Result<u16> {
+        let v = self
+            .window()
+            .checked_add(P::increment())
+            .ok_or_else(|| Error::InternalError("Overflow on SENDME window".into()))?;
+        self.count.store(v, Ordering::Relaxed);
+        for waker in self
+            .waker
+            .lock()
+            .expect("sendwindow waker poisoned")
+            .drain(..)
+        {
+            waker.wake();
+        }
+        Ok(v)
+    }
+}
+
+impl<P: WindowParams, M> SharedSendWindow<P, M> {
+    /// Return the current send window value.
+    pub(crate) fn window(&self) -> u16 {
+        self.count.load(Ordering::Relaxed)
+    }
+
+    /// Store a `Waker` in order to be polled when the send window is incremented.
+    pub(crate) fn store_waker(&self, waker: Waker) {
+        let mut guard = self.waker.lock().expect("sendwindow waker poisoned");
+        guard.push(waker);
+    }
+}
 
 /// Tracks how many cells we can safely send on a circuit or stream.
 ///
@@ -69,7 +161,7 @@ where
     T: PartialEq + Eq + Clone,
 {
     /// Current value for this window
-    window: u16,
+    window: SharedSendWindow<P, Mutable>,
     /// Tag values that incoming "SENDME" messages need to match in order
     /// for us to send more data.
     tags: VecDeque<T>,
@@ -120,10 +212,14 @@ where
         let increment = P::increment();
         let capacity = (window + increment - 1) / increment;
         SendWindow {
-            window,
+            window: SharedSendWindow::new(window),
             tags: VecDeque::with_capacity(capacity as usize),
             _dummy: std::marker::PhantomData,
         }
+    }
+
+    pub(crate) fn share(&self) -> SharedSendWindow<P, ()> {
+        self.window.share()
     }
 
     /// Remove one item from this window (since we've sent a cell).
@@ -138,21 +234,14 @@ where
     where
         U: Clone + Into<T>,
     {
-        if let Some(val) = self.window.checked_sub(1) {
-            self.window = val;
-            if self.window % P::increment() == 0 {
-                // We record this tag.
-                // TODO: I'm not saying that this cell in particular
-                // matches the spec, but Tor seems to like it.
-                self.tags.push_back(tag.clone().into());
-            }
-
-            Ok(val)
-        } else {
-            Err(Error::CircProto(
-                "Called SendWindow::take() on empty SendWindow".into(),
-            ))
+        let val = self.window.take()?;
+        if val % P::increment() == 0 {
+            // We record this tag.
+            // TODO: I'm not saying that this cell in particular
+            // matches the spec, but Tor seems to like it.
+            self.tags.push_back(tag.clone().into());
         }
+        Ok(val)
     }
 
     /// Handle an incoming sendme with a provided tag.
@@ -183,18 +272,12 @@ where
             }
         }
         self.tags.pop_front();
-
-        let v = self
-            .window
-            .checked_add(P::increment())
-            .ok_or_else(|| Error::InternalError("Overflow on SENDME window".into()))?;
-        self.window = v;
-        Ok(v)
+        Ok(self.window.put()?)
     }
 
     /// Return the current send window value.
     pub(crate) fn window(&self) -> u16 {
-        self.window
+        self.window.window()
     }
 
     /// For testing: get a copy of the current send window, and the
@@ -202,7 +285,7 @@ where
     #[cfg(test)]
     pub(crate) fn window_and_expected_tags(&self) -> (u16, Vec<T>) {
         let tags = self.tags.iter().map(Clone::clone).collect();
-        (self.window, tags)
+        (self.window.window(), tags)
     }
 }
 

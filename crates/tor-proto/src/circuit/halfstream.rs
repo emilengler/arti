@@ -49,7 +49,7 @@ impl HalfStream {
     pub(super) fn handle_msg(&mut self, msg: &RelayMsg) -> Result<()> {
         match msg {
             RelayMsg::Sendme(_) => {
-                self.sendw.put(Some(()))?;
+                self.sendw.put()?;
                 Ok(())
             }
             RelayMsg::Data(_) => {
@@ -87,7 +87,7 @@ mod test {
     #[test]
     fn halfstream_sendme() -> Result<()> {
         let mut sendw = StreamSendWindow::new(101);
-        sendw.take(&())?; // Make sure that it will accept one sendme.
+        sendw.take()?; // Make sure that it will accept one sendme.
 
         let mut hs = HalfStream::new(sendw, StreamRecvWindow::new(20), true);
 
