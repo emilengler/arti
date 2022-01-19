@@ -566,7 +566,7 @@ mod test {
             .ipv6_subnet_family_prefix(48);
         bld.preemptive_circuits()
             .disable_at_threshold(12)
-            .initial_predicted_ports(vec![80, 443])
+            .predicted_ports(vec![80, 443])
             .prediction_lifetime(Duration::from_secs(3600))
             .min_exit_circs_for_port(2);
         bld.circuit_timing()

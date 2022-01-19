@@ -116,12 +116,9 @@ pub struct PreemptiveCircuitConfig {
     ///
     /// (Over time, new ports are added to the predicted list, in response to
     /// what the client has actually requested.)
-    ///
-    /// This value cannot be changed on a running Arti client, because doing so
-    /// would be meaningless.
     #[builder(default = "default_preemptive_ports()")]
     #[serde(default = "default_preemptive_ports")]
-    pub(crate) initial_predicted_ports: Vec<u16>,
+    pub(crate) predicted_ports: Vec<u16>,
 
     /// After we see the client request a connection to a new port, how long
     /// should we predict that the client will still want to have circuits
@@ -268,7 +265,7 @@ impl From<PreemptiveCircuitConfig> for PreemptiveCircuitConfigBuilder {
         let mut builder = PreemptiveCircuitConfigBuilder::default();
         builder
             .disable_at_threshold(cfg.disable_at_threshold)
-            .initial_predicted_ports(cfg.initial_predicted_ports)
+            .predicted_ports(cfg.predicted_ports)
             .prediction_lifetime(cfg.prediction_lifetime)
             .min_exit_circs_for_port(cfg.min_exit_circs_for_port);
         builder
