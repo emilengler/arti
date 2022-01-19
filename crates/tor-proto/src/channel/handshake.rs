@@ -106,7 +106,9 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> OutboundClientHandshake
         // Send versions cell
         {
             let my_versions = msg::Versions::new(LINK_PROTOCOLS)?;
-            self.tls.write(&my_versions.encode_for_handshake()).await?;
+            self.tls
+                .write_all(&my_versions.encode_for_handshake())
+                .await?;
             self.tls.flush().await?;
         }
 
@@ -115,9 +117,13 @@ impl<T: AsyncRead + AsyncWrite + Send + Unpin + 'static> OutboundClientHandshake
         let their_versions: msg::Versions = {
             // TODO: this could be turned into another function, I suppose.
             let mut hdr = [0_u8; 5];
-            self.tls.read(&mut hdr).await?;
+            let not_relay = || Err(Error::ChanProto("Doesn't seem to be a tor relay".into()));
+            match self.tls.read_exact(&mut hdr).await {
+                Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return not_relay(),
+                otherwise => otherwise,
+            }?;
             if hdr[0..3] != [0, 0, ChanCmd::VERSIONS.into()] {
-                return Err(Error::ChanProto("Doesn't seem to be a tor relay".into()));
+                return not_relay();
             }
             let msglen = u16::from_be_bytes(*array_ref![hdr, 3, 2]);
             let mut msg = vec![0; msglen as usize];
