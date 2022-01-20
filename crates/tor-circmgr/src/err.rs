@@ -2,6 +2,7 @@
 
 use retry_error::RetryError;
 use thiserror::Error;
+use tor_error::TorError;
 
 /// An error returned while looking up or building a circuit
 #[derive(Error, Debug, Clone)]
@@ -62,14 +63,6 @@ pub enum Error {
     #[error("Problem building a circuit: {0}")]
     Protocol(#[from] tor_proto::Error),
 
-    /// Problem loading or storing persistent state.
-    #[error("Problem loading or storing state: {0}")]
-    State(#[from] tor_persist::Error),
-
-    /// Problem creating or updating a guard manager.
-    #[error("Problem creating or updating guards list: {0}")]
-    GuardMgr(#[source] tor_guardmgr::GuardMgrError),
-
     /// Problem selecting a guard relay.
     #[error("Unable to select a guard relay: {0}")]
     Guard(#[from] tor_guardmgr::PickGuardError),
@@ -77,6 +70,16 @@ pub enum Error {
     /// We have an expired consensus
     #[error("Consensus is expired")]
     ExpiredConsensus,
+
+    /// Other
+    ///
+    /// This is used to hold an error from another Tor layer.
+    //
+    // TODO most if not all of the other fields can be abolished in favour of using this,
+    //      especially in the future when those other layers provide tor_error::Error
+    //      or have errors that are convertible to tor_error::Error
+    #[error("{0}")]
+    Other(#[from] TorError),
 }
 
 impl From<futures::channel::oneshot::Canceled> for Error {
@@ -97,11 +100,9 @@ impl From<tor_rtcompat::TimeoutError> for Error {
     }
 }
 
-impl From<tor_guardmgr::GuardMgrError> for Error {
-    fn from(err: tor_guardmgr::GuardMgrError) -> Error {
-        match err {
-            tor_guardmgr::GuardMgrError::State(e) => Error::State(e),
-            _ => Error::GuardMgr(err),
-        }
+impl From<tor_persist::Error> for Error {
+    // We need this explicit impl to help the compiler, because of the double conversion
+    fn from(err: tor_persist::Error) -> Error {
+        TorError::from(err).into()
     }
 }

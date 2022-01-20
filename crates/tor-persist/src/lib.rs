@@ -58,6 +58,8 @@ pub use serde_json::Value as JsonValue;
 #[cfg(feature = "testing")]
 pub use testing::TestingStateMgr;
 
+use tor_error::TorError;
+
 /// An object that can manage persistent state.
 ///
 /// State is implemented as a simple key-value store, where the values
@@ -127,32 +129,52 @@ impl LockStatus {
 }
 
 /// An error type returned from a persistent state manager.
-#[derive(thiserror::Error, Debug, Clone)]
+#[derive(thiserror::Error, Debug)]
 #[non_exhaustive]
 pub enum Error {
     /// An IO error occurred.
     #[error("IO error")]
-    IoError(#[source] Arc<std::io::Error>),
+    IoError(#[from] std::io::Error),
 
     /// Tried to save without holding an exclusive lock.
+    //
+    // TODO This error seems to actually be sometimes used to make store a no-op.
+    //      We should consider whether this is best handled as an error, but for now
+    //      this seems adequate.
     #[error("Storage not locked")]
     NoLock,
 
-    /// Problem when serializing or deserializing JSON data.
+    /// Problem when serializing JSON data.
     #[error("JSON serialization error")]
-    JsonError(#[source] Arc<serde_json::Error>),
+    Serialize(#[source] serde_json::Error),
+
+    /// Problem when deserializing JSON data.
+    #[error("JSON serialization error")]
+    Deserialize(#[source] serde_json::Error),
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Error {
-        Error::IoError(Arc::new(e))
+impl From<Error> for TorError {
+    #[rustfmt::skip] // the tabular layout of the `match` makes this a lot clearer
+    fn from(e: Error) -> TorError {
+        use tor_error::conversion_imports::*;
+        use Error as E;
+        match e {
+            E::IoError(ioe)    => TE::new(K::PersistentStateAccessFailed, F::empty(),   ioe),
+            E::NoLock          => TE::new(K::PersistentStateReadOnly,     F::PERMANENT, e),
+            E::Serialize(je)   => TE::new(K::InternalError,               F::empty(),   je),
+            E::Deserialize(je) => TE::new(K::PersistentStateCorrupted,    F::PERMANENT, je),
+        }
     }
 }
 
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Error {
-        Error::JsonError(Arc::new(e))
-    }
+/// Error conversion for JSON errors; use only when loading
+fn load_error(e: serde_json::Error) -> Error {
+    Error::Deserialize(e)
+}
+
+/// Error conversion for JSON errors; use only when storing
+fn store_error(e: serde_json::Error) -> Error {
+    Error::Serialize(e)
 }
 
 /// A wrapper type for types whose representation may change in future versions of Arti.
