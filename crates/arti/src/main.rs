@@ -227,7 +227,7 @@ fn main() -> Result<()> {
             socks_port
         );
 
-        process::use_max_file_limit();
+        process::use_max_file_limit(&client_config);
 
         #[cfg(feature = "tokio")]
         let runtime = tor_rtcompat::tokio::create_runtime()?;
