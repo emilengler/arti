@@ -23,7 +23,7 @@ impl PreemptiveCircuitPredictor {
     /// Create a new predictor, starting out with a set of ports we think are likely to be used.
     pub(crate) fn new(config: PreemptiveCircuitConfig) -> Self {
         let mut usages = HashMap::new();
-        for port in &config.initial_predicted_ports {
+        for port in &config.predicted_ports {
             // TODO(nickm) should this be IPv6? Should we have a way to configure IPv6 initial ports?
             usages.insert(Some(TargetPort::ipv4(*port)), Instant::now());
         }
@@ -44,12 +44,8 @@ impl PreemptiveCircuitPredictor {
 
     /// Replace the current configuration for this PreemptiveCircuitPredictor
     /// with `new_config`.
-    pub(crate) fn set_config(&self, mut new_config: PreemptiveCircuitConfig) {
-        self.config.map_and_replace(|cfg| {
-            // Force this to stay the same, since it can't meaningfully be changed.
-            new_config.initial_predicted_ports = cfg.initial_predicted_ports.clone();
-            new_config
-        });
+    pub(crate) fn set_config(&self, new_config: PreemptiveCircuitConfig) {
+        self.config.replace(new_config);
     }
 
     /// Make some predictions for what circuits should be built.
@@ -93,7 +89,7 @@ mod test {
     #[test]
     fn predicts_starting_ports() {
         let cfg = PreemptiveCircuitConfig::builder()
-            .initial_predicted_ports(vec![])
+            .predicted_ports(vec![])
             .prediction_lifetime(Duration::from_secs(2))
             .build()
             .unwrap();
@@ -110,7 +106,7 @@ mod test {
         );
 
         let cfg = PreemptiveCircuitConfig::builder()
-            .initial_predicted_ports(vec![80])
+            .predicted_ports(vec![80])
             .prediction_lifetime(Duration::from_secs(2))
             .build()
             .unwrap();
@@ -137,7 +133,7 @@ mod test {
     #[test]
     fn predicts_used_ports() {
         let cfg = PreemptiveCircuitConfig::builder()
-            .initial_predicted_ports(vec![])
+            .predicted_ports(vec![])
             .prediction_lifetime(Duration::from_secs(2))
             .build()
             .unwrap();
@@ -173,7 +169,7 @@ mod test {
     #[test]
     fn does_not_predict_old_ports() {
         let cfg = PreemptiveCircuitConfig::builder()
-            .initial_predicted_ports(vec![])
+            .predicted_ports(vec![])
             .prediction_lifetime(Duration::from_secs(2))
             .build()
             .unwrap();

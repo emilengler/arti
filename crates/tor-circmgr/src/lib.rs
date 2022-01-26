@@ -207,13 +207,6 @@ impl<R: Runtime> CircMgr<R> {
     ) -> std::result::Result<(), tor_config::ReconfigureError> {
         let old_path_rules = self.mgr.peek_builder().path_config();
         let predictor = self.predictor.lock().expect("poisoned lock");
-        let preemptive_circuits = predictor.config();
-        if preemptive_circuits.initial_predicted_ports
-            != new_config.preemptive_circuits.initial_predicted_ports
-        {
-            // This change has no effect, since the list of ports was _initial_.
-            how.cannot_change("preemptive_circuits.initial_predicted_ports")?;
-        }
 
         if how == tor_config::Reconfigure::CheckAllOrNothing {
             return Ok(());

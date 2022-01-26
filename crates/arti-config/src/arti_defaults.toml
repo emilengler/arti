@@ -110,7 +110,7 @@ disable_at_threshold = 12
 #
 # (Over time, new ports are added to this list in response to what the client
 # has actually requested.)
-initial_predicted_ports = [80, 443]
+predicted_ports = [80, 443]
 
 # After we see the client request a connection to a new port, how long should we
 # predict that the client will still want to have circuitsw available for that
