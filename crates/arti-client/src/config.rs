@@ -232,13 +232,13 @@ impl From<StorageConfig> for StorageConfigBuilder {
 #[builder(build_fn(error = "ConfigBuildError"))]
 #[non_exhaustive]
 pub struct SystemConfig {
-    /// Location on disk for cached directory information.
+    /// Minimum number of file descriptors we should launch with
     #[builder(setter(into), default = "default_max_files()")]
     #[serde(default = "default_max_files")]
     pub max_files: u64,
 }
 
-/// Return the default state directory.
+/// Return the default minimum number of file descriptors to launch with.
 fn default_max_files() -> u64 {
     16384
 }

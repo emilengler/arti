@@ -9,8 +9,6 @@ use arti_client::TorClientConfig;
 ///
 /// # Limitations
 ///
-/// Maybe this should take a value from the configuration instead.
-///
 /// This doesn't actually do anything on windows.
 pub(crate) fn use_max_file_limit(config: &TorClientConfig) {
     match rlimit::utils::increase_nofile_limit(config.system.max_files) {
