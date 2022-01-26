@@ -238,7 +238,7 @@ pub struct SystemConfig {
     pub max_files: u64,
 }
 
-/// Return the default minimum number of file descriptors to launch with.
+/// Return the default maximum number of file descriptors to launch with.
 fn default_max_files() -> u64 {
     16384
 }
