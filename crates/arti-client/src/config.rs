@@ -232,7 +232,7 @@ impl From<StorageConfig> for StorageConfigBuilder {
 #[builder(build_fn(error = "ConfigBuildError"))]
 #[non_exhaustive]
 pub struct SystemConfig {
-    /// Minimum number of file descriptors we should launch with
+    /// Maximum number of file descriptors we should launch with
     #[builder(setter(into), default = "default_max_files()")]
     #[serde(default = "default_max_files")]
     pub max_files: u64,
