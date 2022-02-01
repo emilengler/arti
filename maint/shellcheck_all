@@ -1,0 +1,3 @@
+#!/bin/sh
+
+git grep -l --or -E '#!/bin/bash|#!/bin/sh|#!sh|#!bash' | xargs shellcheck
