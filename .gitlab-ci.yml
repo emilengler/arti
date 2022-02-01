@@ -10,6 +10,7 @@ shellcheck:
   stage: build
   image: koalaman/shellcheck-alpine
   script:
+    - apk add git
     - ./maint/shellcheck_all
 
 rust-latest:
