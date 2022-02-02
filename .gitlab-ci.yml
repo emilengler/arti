@@ -10,6 +10,8 @@ variables:
 check-editorconfig:
   stage: check
   image: mstruebing/editorconfig-checker
+  script:
+    - ec
 
 shellcheck:
   stage: check
