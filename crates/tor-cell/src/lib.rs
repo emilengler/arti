@@ -88,6 +88,8 @@
 #![warn(clippy::unseparated_literal_suffix)]
 #![deny(clippy::unwrap_used)]
 
+#![cfg_attr(ci_arti_nightly, allow(clippy::needless_borrow))]
+
 pub mod chancell;
 mod err;
 pub mod relaycell;

@@ -125,6 +125,8 @@
 #![warn(clippy::unseparated_literal_suffix)]
 #![deny(clippy::unwrap_used)]
 
+#![cfg_attr(ci_arti_nightly, allow(clippy::needless_borrow))]
+
 // Glossary:
 //     Primary guard
 //     Sample
