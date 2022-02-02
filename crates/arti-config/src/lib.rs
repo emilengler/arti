@@ -127,15 +127,15 @@ impl ConfigurationSources {
 }
 
 /// As [`load()`], but load into a mutable `Config` object.
-fn load_mut<P: AsRef<Path>>(
+fn load_mut(
     cfg: &mut config::Config,
-    files: &[(P, MustRead)],
+    files: &[(PathBuf, MustRead)],
     opts: &[String],
 ) -> Result<(), config::ConfigError> {
     for (path, must_read) in files {
         // Not going to use File::with_name here, since it doesn't
         // quite do what we want.
-        let f: config::File<_> = path.as_ref().into();
+        let f: config::File<_> = path.as_path().into();
         let required = must_read == &MustRead::MustRead;
         cfg.merge(f.format(config::FileFormat::Toml).required(required))?;
     }
