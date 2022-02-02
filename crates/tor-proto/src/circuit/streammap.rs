@@ -8,14 +8,18 @@ use crate::{Error, Result};
 // it needs to stay opaque!
 use tor_cell::relaycell::{msg::RelayMsg, StreamId};
 
-use futures::channel::mpsc;
+use futures::channel::{mpsc, oneshot};
+use futures::{FutureExt, Stream, StreamExt};
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use rand::Rng;
 
 use crate::circuit::reactor::RECV_WINDOW_INIT;
 use crate::circuit::sendme::StreamRecvWindow;
+use crate::crypto::cell::HopNum;
 use tracing::info;
 
 /// The entry for a stream.
@@ -24,9 +28,10 @@ pub(super) enum StreamEnt {
     Open {
         /// Sink to send relay cells tagged for this stream into.
         sink: mpsc::Sender<RelayMsg>,
-        /// Stream for cells that should be sent down this stream.
-        rx: mpsc::Receiver<RelayMsg>,
-        /// Send window, for congestion control purposes.
+        /// Killswitch to terminate this stream's `StreamReceiver` if this stream entry is dropped,
+        /// or changed to another variant.
+        rx_killswitch: oneshot::Sender<()>,
+        /// Send window, for congestion control purposes. Shared with the `StreamReceiver`.
         send_window: sendme::StreamSendWindow,
         /// Number of cells dropped due to the stream disappearing before we can
         /// transform this into an `EndSent`.
@@ -55,6 +60,90 @@ impl StreamEnt {
                 ..
             } => Some(send_window),
             _ => None,
+        }
+    }
+}
+
+/// A wrapper around the mpsc Receiver for a given stream that associates the stream's ID
+/// with relay messages received through the channel, and modifies the end behaviour.
+///
+/// For efficiency, the main circuit reactor wants to multiplex all stream channels using
+/// `futures::stream::SelectAll`. However, this wouldn't work if we just used the raw
+/// `mpsc::Receiver<RelayMsg>`:
+///
+/// - all of the relay messages woulg get fused into one mega-stream, and we'd no longer have
+///   any idea what streams they were supposed to be for
+/// - when the mpsc Receiver hangs up, it would just gets silently removed from the set of
+///   polled streams, and we wouldn't get a notification
+///
+/// This type fixes this by implementing `Stream<Item = (HopNum, StreamId, Option<RelayMsg>)>`,
+/// where the `Option` is `None` if the stream has hung up.
+pub(super) struct StreamReceiver {
+    /// The inner receiver.
+    inner: mpsc::Receiver<RelayMsg>,
+    /// A oneshot channel that can be used to terminate this receiver early.
+    early_killswitch: oneshot::Receiver<()>,
+    /// The send window for this stream.
+    sendwindow: sendme::StreamSendWindow,
+    /// The send window for the hop that this stream is on.
+    hop_sendwindow: sendme::CircSendWindowView,
+    /// Which stream this is for.
+    id: StreamId,
+    /// Which circuit hop this stream is with.
+    hopn: HopNum,
+    /// Whether or not we've yielded a `None` to notify of hangup (after which we should stop
+    /// yielding values).
+    notified_hangup: bool,
+}
+
+impl StreamReceiver {
+    /// Create a new `StreamReceiver`.
+    pub(super) fn new(
+        rx: mpsc::Receiver<RelayMsg>,
+        early_killswitch: oneshot::Receiver<()>,
+        sendwindow: sendme::StreamSendWindow,
+        hop_sendwindow: sendme::CircSendWindowView,
+        for_hop: HopNum,
+        for_stream: StreamId,
+    ) -> Self {
+        Self {
+            inner: rx,
+            early_killswitch,
+            sendwindow,
+            hop_sendwindow,
+            id: for_stream,
+            hopn: for_hop,
+            notified_hangup: false,
+        }
+    }
+}
+
+impl Stream for StreamReceiver {
+    type Item = (HopNum, StreamId, Option<RelayMsg>);
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        if self.notified_hangup {
+            return Poll::Ready(None);
+        }
+        if self.early_killswitch.poll_unpin(cx).is_ready() {
+            self.notified_hangup = true;
+            return Poll::Ready(None);
+        }
+        if self.sendwindow.window() == 0 {
+            self.sendwindow.store_waker(cx.waker().clone());
+            return Poll::Pending;
+        }
+        if self.hop_sendwindow.window() == 0 {
+            self.hop_sendwindow.store_waker(cx.waker().clone());
+            return Poll::Pending;
+        }
+        match self.inner.poll_next_unpin(cx) {
+            Poll::Ready(Some(value)) => Poll::Ready(Some((self.hopn, self.id, Some(value)))),
+            Poll::Ready(None) => {
+                self.notified_hangup = true;
+                Poll::Ready(Some((self.hopn, self.id, None)))
+            }
+            Poll::Pending => Poll::Pending,
         }
     }
 }
@@ -96,21 +185,16 @@ impl StreamMap {
         }
     }
 
-    /// Get the `HashMap` inside this stream map.
-    pub(super) fn inner(&mut self) -> &mut HashMap<StreamId, StreamEnt> {
-        &mut self.m
-    }
-
     /// Add an entry to this map; return the newly allocated StreamId.
     pub(super) fn add_ent(
         &mut self,
         sink: mpsc::Sender<RelayMsg>,
-        rx: mpsc::Receiver<RelayMsg>,
+        rx_killswitch: oneshot::Sender<()>,
         send_window: sendme::StreamSendWindow,
     ) -> Result<StreamId> {
         let stream_ent = StreamEnt::Open {
             sink,
-            rx,
+            rx_killswitch,
             send_window,
             dropped: 0,
             received_connected: false,
@@ -187,10 +271,13 @@ impl StreamMap {
                 send_window,
                 dropped,
                 received_connected,
-                // notably absent: the channels for sink and stream, which will get dropped and
-                // closed (meaning reads/writes from/to this stream will now fail)
-                ..
+                rx_killswitch,
+                sink,
             } => {
+                // Kill the corresponding `StreamReceiver`, and drop the sink so the corresponding
+                // receiver hangs up.
+                let _ = rx_killswitch.send(());
+                std::mem::drop(sink);
                 // FIXME(eta): we don't copy the receive window, instead just creating a new one,
                 //             so a malicious peer can send us slightly more data than they should
                 //             be able to; see arti#230.
@@ -228,8 +315,8 @@ mod test {
         // Try add_ent
         for _ in 0..128 {
             let (sink, _) = mpsc::channel(128);
-            let (_, rx) = mpsc::channel(2);
-            let id = map.add_ent(sink, rx, StreamSendWindow::new(500))?;
+            let (rxk, _) = oneshot::channel();
+            let id = map.add_ent(sink, rxk, StreamSendWindow::new(500))?;
             let expect_id: StreamId = next_id.into();
             assert_eq!(expect_id, id);
             next_id = next_id.wrapping_add(1);

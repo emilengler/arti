@@ -20,8 +20,8 @@ use tor_cell::relaycell::msg::{End, RelayMsg, Sendme};
 use tor_cell::relaycell::{RelayCell, RelayCmd, StreamId};
 
 use futures::channel::{mpsc, oneshot};
-use futures::Sink;
-use futures::Stream;
+use futures::SinkExt;
+use futures::{Sink, StreamExt};
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
@@ -31,6 +31,7 @@ use crate::channel::Channel;
 #[cfg(test)]
 use crate::circuit::sendme::CircTag;
 use crate::circuit::sendme::StreamSendWindow;
+use crate::circuit::streammap::StreamReceiver;
 use crate::crypto::handshake::ntor::{NtorClient, NtorPublicKey};
 use crate::crypto::handshake::{ClientHandshake, KeyGenerator};
 use tor_cell::chancell;
@@ -168,12 +169,12 @@ pub(super) struct CircHop {
     sendwindow: sendme::CircSendWindow,
     /// Buffer for messages we can't send to this hop yet due to congestion control.
     ///
-    /// Contains the tag we should give to the send window, and the cell to send.
+    /// The boolean is passed as the value of `early` to `send_relay_cell`.
     ///
     /// This shouldn't grow unboundedly: we try and pop things off it first before
     /// doing things that would result in it growing (and stop before growing it
     /// if popping things off it can't be done).
-    outbound: VecDeque<([u8; 20], ChanCell)>,
+    outbound: VecDeque<(bool, RelayCell)>,
 }
 
 /// Enumeration to determine whether we require circuit-level SENDME cells to be
@@ -413,8 +414,9 @@ pub struct Reactor {
     pub(super) control: mpsc::UnboundedReceiver<CtrlMsg>,
     /// Buffer for cells we can't send out the channel yet due to it being full.
     ///
-    /// This should be used very very rarely: see `send_msg_direct`'s comments for more
-    /// information. (in fact, using it will generate a warning!)
+    /// We always try and dequeue off this first before doing anything else, ensuring that
+    /// it cannot grow unboundedly (and if we start having to enqueue things on here after
+    /// the channel shows backpressure, we stop pulling from receivers that could send here).
     pub(super) outbound: VecDeque<ChanCell>,
     /// The channel this circuit is using to send cells through.
     pub(super) channel: Channel,
@@ -422,6 +424,8 @@ pub struct Reactor {
     /// channel.
     // TODO: could use a SPSC channel here instead.
     pub(super) input: mpsc::Receiver<ClientCircChanMsg>,
+    /// Multiplexed set of stream-specific receivers.
+    pub(super) stream_rx: futures::stream::SelectAll<StreamReceiver>,
     /// The cryptographic state for this circuit for inbound cells.
     /// This object is divided into multiple layers, each of which is
     /// shared with one hop of the circuit.
@@ -468,7 +472,7 @@ impl Reactor {
             let mut did_things = false;
 
             // Check whether we've got a control message pending.
-            if let Poll::Ready(ret) = Pin::new(&mut self.control).poll_next(cx) {
+            if let Poll::Ready(ret) = self.control.poll_next_unpin(cx) {
                 match ret {
                     None => {
                         trace!("{}: reactor shutdown due to control drop", self.unique_id);
@@ -492,7 +496,7 @@ impl Reactor {
             }
 
             // Check whether we've got an input message pending.
-            if let Poll::Ready(ret) = Pin::new(&mut self.input).poll_next(cx) {
+            if let Poll::Ready(ret) = self.input.poll_next_unpin(cx) {
                 match ret {
                     None => {
                         trace!("{}: reactor shutdown due to input drop", self.unique_id);
@@ -517,9 +521,6 @@ impl Reactor {
             // since we need to check whether the channel can still receive cells after each one
             // that we send.
 
-            let mut streams_to_close = vec![];
-            let mut stream_relaycells = vec![];
-
             // Is the channel ready to receive anything at all?
             if self.channel.poll_ready(cx)? {
                 // (using this as a named block for early returns; not actually a loop)
@@ -528,7 +529,7 @@ impl Reactor {
                     // First, drain our queue of things we tried to send earlier, but couldn't.
                     while let Some(msg) = self.outbound.pop_front() {
                         trace!("{}: sending from enqueued: {:?}", self.unique_id, msg);
-                        Pin::new(&mut self.channel).start_send(msg)?;
+                        self.channel.start_send_unpin(msg)?;
 
                         // `futures::Sink::start_send` dictates we need to call `poll_ready` before
                         // each `start_send` call.
@@ -537,76 +538,53 @@ impl Reactor {
                         }
                     }
 
-                    // Let's look at our hops, and streams for each hop.
-                    for (i, hop) in self.hops.iter_mut().enumerate() {
-                        let hop_num = HopNum::from(i as u8);
-                        // If we can, drain our queue of things we tried to send earlier, but
-                        // couldn't due to congestion control.
-                        if hop.sendwindow.window() > 0 {
-                            'hop: while let Some((tag, msg)) = hop.outbound.pop_front() {
+                    // Do we have stuff in the hop queues that we need to drain?
+                    for i in 0..self.hops.len() {
+                        if self.hops[i].sendwindow.window() > 0 {
+                            'hop: while let Some((early, msg)) = self.hops[i].outbound.pop_front() {
                                 trace!(
                                     "{}: sending from hop-{}-enqueued: {:?}",
                                     self.unique_id,
                                     i,
                                     msg
                                 );
-                                Pin::new(&mut self.channel).start_send(msg)?;
-                                hop.sendwindow.take(&tag)?;
-                                if !self.channel.poll_ready(cx)? {
+                                self.send_relay_cell(cx, HopNum::from(i as u8), early, msg)?;
+                                if !self.channel.poll_ready(cx)? || !self.outbound.is_empty() {
                                     break 'outer;
                                 }
-                                if hop.sendwindow.window() == 0 {
+                                if self.hops[i].sendwindow.window() == 0 {
                                     break 'hop;
                                 }
                             }
                         }
-                        // Look at all of the streams on this hop.
-                        for (id, stream) in hop.map.inner().iter_mut() {
-                            if let StreamEnt::Open {
-                                rx, send_window, ..
-                            } = stream
-                            {
-                                // Do the stream and hop send windows allow us to obtain and
-                                // send something?
-                                //
-                                // FIXME(eta): not everything counts toward congestion control!
-                                if send_window.window() > 0 && hop.sendwindow.window() > 0 {
-                                    match Pin::new(rx).poll_next(cx) {
-                                        Poll::Ready(Some(m)) => {
-                                            stream_relaycells
-                                                .push((hop_num, RelayCell::new(*id, m)));
-                                        }
-                                        Poll::Ready(None) => {
-                                            // Stream receiver was dropped; close the stream.
-                                            // We can't close it here though due to borrowck; that
-                                            // will happen later.
-                                            streams_to_close.push((hop_num, *id));
-                                        }
-                                        Poll::Pending => {}
-                                    }
-                                }
-                            }
+                    }
+                    // Let's poll all open streams, until there isn't any more stuff to send or
+                    // our channel fills up.
+                    while let Poll::Ready(Some((hopn, sid, value))) =
+                        self.stream_rx.poll_next_unpin(cx)
+                    {
+                        if let Some(value) = value {
+                            self.send_relay_cell(cx, hopn, false, RelayCell::new(sid, value))?;
+                        } else {
+                            self.close_stream(cx, hopn, sid)?;
+                        }
+                        did_things = true;
+
+                        if !self.channel.poll_ready(cx)? || !self.outbound.is_empty() {
+                            break 'outer;
                         }
                     }
 
+                    // The loop wasn't a loop. We were just using it as a named block.
                     break;
                 }
             }
 
-            // Close the streams we said we'd close.
-            for (hopn, id) in streams_to_close {
-                self.close_stream(cx, hopn, id)?;
-                did_things = true;
-            }
-            // Send messages we said we'd send.
-            for (hopn, rc) in stream_relaycells {
-                self.send_relay_cell(cx, hopn, false, rc)?;
-                did_things = true;
-            }
-
-            let _ = Pin::new(&mut self.channel)
-                .poll_flush(cx)
+            let _ = self
+                .channel
+                .poll_flush_unpin(cx)
                 .map_err(|_| Error::ChannelClosed)?;
+
             if create_message.is_some() {
                 Poll::Ready(Ok(create_message))
             } else if did_things {
@@ -897,23 +875,29 @@ impl Reactor {
     /// that would send here while you know you're unable to forward the messages on).
     fn send_msg_direct(&mut self, cx: &mut Context<'_>, msg: ChanMsg) -> Result<()> {
         let cell = ChanCell::new(self.channel_id, msg);
-        if self.channel.poll_ready(cx)? {
-            Pin::new(&mut self.channel).start_send(cell)?;
+        // NOTE(eta): We need to check whether the outbound queue is empty before trying to send:
+        //            if we just checked whether the channel was ready, it'd be possible for
+        //            cells to be sent out of order, since it could transition from not ready to
+        //            ready during one cycle of the reactor!
+        //            (This manifests as a protocol violation.)
+        if self.outbound.is_empty() && self.channel.poll_ready(cx)? {
+            self.channel.start_send_unpin(cell)?;
         } else {
-            // This case shouldn't actually happen that often, if ever. We generally check whether
-            // the channel can be sent to before calling this function (the one exception at the
-            // time of writing is in circuit creation).
+            // This has been observed to happen in code that doesn't have bugs in it, simply due
+            // to the way `Channel`'s `poll_ready` implementation works (it can change due to
+            // the actions of another thread in between callers of this function checking it,
+            // and this function checking it).
             //
-            // If this is suddenly getting hit and it wasn't before, maybe you added something that
-            // doesn't bother to check the channel (`self.channel.poll_ready(cx)`) before calling
-            // this function, and that's getting used a lot?
-            //
-            // We don't want to drop cells on the floor, though, so this is good to have.
-            warn!(
+            // However, if it's happening a lot more than it used to, that probably indicates
+            // some caller that's not checking whether the channel is full before calling
+            // this function.
+            debug!(
                 "{}: having to enqueue cell due to backpressure: {:?}",
                 self.unique_id, cell
             );
             self.outbound.push_back(cell);
+            // Ensure we absolutely get scheduled again to clear `self.outbound`.
+            cx.waker().wake_by_ref();
         }
         Ok(())
     }
@@ -946,6 +930,24 @@ impl Reactor {
         cell: RelayCell,
     ) -> Result<()> {
         let c_t_w = sendme::cell_counts_towards_windows(&cell);
+        // Check whether the hop send window is empty, if this cell counts towards windows.
+        // NOTE(eta): It is imperative this happens *before* calling encrypt() below, otherwise
+        //            we'll have cells rejected due to a protocol violation! (Cells have to be
+        //            sent out in the order they were passed to encrypt().)
+        if c_t_w {
+            let hop_num = Into::<usize>::into(hop);
+            let hop = &mut self.hops[hop_num];
+            if hop.sendwindow.window() == 0 {
+                // Send window is empty! Push this cell onto the hop's outbound queue, and it'll
+                // get sent later.
+                debug!(
+                    "{}: having to use hop {} queue for cell: {:?}",
+                    self.unique_id, hop_num, cell
+                );
+                hop.outbound.push_back((early, cell));
+                return Ok(());
+            }
+        }
         let stream_id = cell.stream_id();
         let mut body: RelayCellBody = cell.encode(&mut rand::thread_rng())?.into();
         let tag = self.crypto_out.encrypt(&mut body, hop)?;
@@ -960,26 +962,14 @@ impl Reactor {
         if c_t_w {
             let hop_num = Into::<usize>::into(hop);
             let hop = &mut self.hops[hop_num];
-            if hop.sendwindow.window() == 0 {
-                let cell = ChanCell::new(self.channel_id, msg);
-                // Send window is empty! Push this cell onto the hop's outbound queue, and it'll
-                // get sent later.
-                trace!(
-                    "{}: having to use onto hop {} queue for cell: {:?}",
-                    self.unique_id,
-                    hop_num,
-                    cell
-                );
-                hop.outbound.push_back((*tag, cell));
-                return Ok(());
-            }
+            // We checked this earlier.
             hop.sendwindow.take(tag)?;
             if !stream_id.is_zero() {
                 // We need to decrement the stream-level sendme window.
                 // Stream data cells should only be dequeued and fed into this function if
                 // the window is above zero, so we don't need to worry about enqueuing things.
                 if let Some(window) = hop.map.get_mut(stream_id).and_then(StreamEnt::send_window) {
-                    window.take(&())?;
+                    window.take()?;
                 } else {
                     warn!(
                         "{}: sending a relay cell for non-existent or non-open stream with ID {}!",
@@ -1113,9 +1103,21 @@ impl Reactor {
             .hop_mut(hopnum)
             .ok_or_else(|| Error::InternalError(format!("No such hop {:?}", hopnum)))?;
         let send_window = StreamSendWindow::new(SEND_WINDOW_INIT);
-        let r = hop.map.add_ent(sender, rx, send_window)?;
+        let hop_send_window = hop.sendwindow.share();
+        let (killswitch_tx, killswitch_rx) = oneshot::channel();
+        let r = hop
+            .map
+            .add_ent(sender, killswitch_tx, send_window.clone())?;
         let cell = RelayCell::new(r, message);
         self.send_relay_cell(cx, hopnum, false, cell)?;
+        self.stream_rx.push(StreamReceiver::new(
+            rx,
+            killswitch_rx,
+            send_window,
+            hop_send_window,
+            hopnum,
+            r,
+        ));
         Ok(r)
     }
 
@@ -1150,7 +1152,6 @@ impl Reactor {
     ///
     /// Return true if we should exit.
     fn handle_cell(&mut self, cx: &mut Context<'_>, cell: ClientCircChanMsg) -> Result<CellStatus> {
-        trace!("{}: handling cell: {:?}", self.unique_id, cell);
         use ClientCircChanMsg::*;
         match cell {
             Relay(r) => Ok(self.handle_relay_cell(cx, r)?),
@@ -1253,7 +1254,7 @@ impl Reactor {
                     // We need to handle sendmes here, not in the stream's
                     // recv() method, or else we'd never notice them if the
                     // stream isn't reading.
-                    send_window.put(Some(()))?;
+                    send_window.put()?;
                     return Ok(CellStatus::Continue);
                 }
 

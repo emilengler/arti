@@ -18,6 +18,7 @@ use tor_guardmgr::GuardStatus;
 use tor_linkspec::{ChanTarget, OwnedChanTarget, OwnedCircTarget};
 use tor_proto::circuit::{CircParameters, ClientCirc, PendingClientCirc};
 use tor_rtcompat::{Runtime, SleepProviderExt};
+use tracing::warn;
 
 mod guardstatus;
 
@@ -77,7 +78,9 @@ async fn create_common<RT: Runtime, CT: ChanTarget>(
     let (pending_circ, reactor) = chan.new_circ().await?;
 
     rt.spawn(async {
-        let _ = reactor.run().await;
+        if let Err(e) = reactor.run().await {
+            warn!("reactor exited with failure: {}", e);
+        }
     })?;
 
     Ok(pending_circ)
