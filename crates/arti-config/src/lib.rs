@@ -88,13 +88,13 @@ impl ConfigurationSources {
     /// added to this object.
     ///
     /// If the listed file is absent, loading the configuration won't succeed.
-    pub fn push_file<P: AsRef<Path>>(&mut self, p: P) {
+    pub fn push_file(&mut self, p: &dyn AsRef<Path>) {
         self.files.push((p.as_ref().to_owned(), MustRead::MustRead));
     }
 
     /// As `push_file`, but if the listed file can't be loaded, loading the
     /// configuration can still succeed.
-    pub fn push_optional_file<P: AsRef<Path>>(&mut self, p: P) {
+    pub fn push_optional_file(&mut self, p: &dyn AsRef<Path>) {
         self.files
             .push((p.as_ref().to_owned(), MustRead::TolerateAbsence));
     }
@@ -105,8 +105,8 @@ impl ConfigurationSources {
     /// order that they are added to this object.
     ///
     /// The format for `s` is as in [`CmdLine`].
-    pub fn push_option<S: ToOwned<Owned = String> + ?Sized>(&mut self, option: &S) {
-        self.options.push(option.to_owned());
+    pub fn push_option(&mut self, option: &dyn AsRef<str>) {
+        self.options.push(option.as_ref().to_owned());
     }
 
     /// Return an iterator over the files that we care about.
