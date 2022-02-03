@@ -17,9 +17,11 @@ rust-latest:
   stage: build
   image: rust:latest
   script:
+    - rustup show
     - cargo build --verbose --target x86_64-unknown-linux-gnu
     - cargo test --verbose --target x86_64-unknown-linux-gnu
     - rustup component add clippy rustfmt
+    - rustup show
     - cargo clippy --all-features --all-targets -- -D warnings
     - cargo fmt -- --check
     - cp cargo-audit $CARGO_HOME/bin/ || cargo install cargo-audit
@@ -39,6 +41,7 @@ rust-latest-async-std-rustls:
   stage: build
   image: rust:latest
   script:
+    - rustup show
     - rustup component add clippy
     - cd crates/arti-client && cargo clippy --no-default-features --features=async-std,rustls
   tags:
@@ -49,6 +52,7 @@ rust-nightly:
   image: rustlang/rust:nightly
   allow_failure: true
   script:
+    - rustup show
     - cargo build --verbose --target x86_64-unknown-linux-gnu --all-features
     - cargo test --verbose --target x86_64-unknown-linux-gnu --all-features
     - rustup component add clippy
@@ -66,7 +70,7 @@ coverage:
     LLVM_PROFILE_FILE: "arti-%p-%m.profraw"
   script:
     - apt-get update && apt-get install -y python3-pip python3-setuptools
-    - pip3 install beautifulsoup4
+    - pip3 install beautifulsoup4 lxml
     - rustup toolchain add nightly
     - rustup default nightly
     - rustup component add llvm-tools-preview
