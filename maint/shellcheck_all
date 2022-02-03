@@ -1,3 +1,3 @@
 #!/bin/sh
 
-git grep -l --or -E '#!/bin/bash|#!/bin/sh|#!sh|#!bash' | xargs shellcheck
+git grep -P --line-number '^#! ?/bin/(:?ba)?sh\b' | sed -n 's/:1:[^:]*$//p' | xargs shellcheck
