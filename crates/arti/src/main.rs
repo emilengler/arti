@@ -196,16 +196,16 @@ fn main() -> Result<()> {
         let config_files = matches.values_of_os("config-files").unwrap_or_default();
         if config_files.len() == 0 {
             if let Some(default) = default_config_file() {
-                cfg_sources.push_optional_file(default);
+                cfg_sources.push_optional_file(&default);
             }
         } else {
-            config_files.for_each(|f| cfg_sources.push_file(f));
+            config_files.for_each(|f| cfg_sources.push_file(&f));
         }
 
         matches
             .values_of("option")
             .unwrap_or_default()
-            .for_each(|s| cfg_sources.push_option(s));
+            .for_each(|s| cfg_sources.push_option(&s));
 
         cfg_sources
     };

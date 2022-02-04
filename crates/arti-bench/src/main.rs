@@ -332,7 +332,7 @@ fn main() -> Result<()> {
     matches
         .values_of_os("arti-config")
         .unwrap_or_default()
-        .for_each(|f| config_sources.push_file(f));
+        .for_each(|f| config_sources.push_file(&f));
     let cfg = config_sources.load()?;
     let config: ArtiConfig = cfg.try_into()?;
     let tcc = config.tor_client_config()?;
