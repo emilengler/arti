@@ -145,7 +145,7 @@ impl tor_error::HasKind for Error {
         use ErrorKind as EK;
         match self {
             E::ObtainExitCircuit { cause, .. } => cause.kind(),
-            _ => EK::TODO,
+            _ => EK::Internal,
         }
     }
 }
