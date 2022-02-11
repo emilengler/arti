@@ -7,7 +7,7 @@ use tor_netdoc::doc::routerdesc::RdDigest;
 use tor_netdoc::doc::{authcert::AuthCertKeyIds, microdesc::MdDigest, netstatus::ConsensusFlavor};
 use tracing::warn;
 
-use super::{InputString, Store};
+use super::{ExpirationConfig, InputString, Store};
 use crate::{
     docmeta::{AuthCertMeta, ConsensusMeta},
     Error, Result,
@@ -43,7 +43,9 @@ impl Store for MemoryStore {
     fn upgrade_to_readwrite(&mut self) -> Result<bool> {
         Ok(true)
     }
-    fn expire_all(&mut self) -> Result<()> {
+    fn expire_all(&mut self, _: &ExpirationConfig) -> Result<()> {
+        warn!("stub");
+
         *self = Default::default();
 
         Ok(())
