@@ -8,10 +8,25 @@ use thiserror::Error;
 
 // ----------------------------------------------------------------------
 
-/// An object that can be converted to a [`TorAddr`] with a minimum
-/// of risk.
+/// An object that can be converted to a [`TorAddr`] with a minimum of risk.
+///
+/// Don't implement this trait for IP addresses and similar types; instead,
+/// implement [`DangerouslyIntoTorAddr`] for those.  (The trouble with accepting
+/// IP addresses is that, in order to get an IP address, most programs will do a
+/// local hostname lookup, which will leak the target address to the DNS
+/// resolver. The `DangerouslyIntoTorAddr` trait provides a contract for careful
+/// programs to say, "I have gotten this IP address from somewhere safe."  This
+/// trait is for string-based addresses and similar, which are _usually_ from a
+/// safer source.)
 ///
 /// [*See also: the `TorAddr` documentation.*](TorAddr)
+///
+/// # Design note
+///
+/// We use a separate trait here, instead of using `Into<TorAddr>` or
+/// `TryInto<TorAddr>`, to encourage the user to realize that something tricky
+/// is going on here, and to think twice before implementing `IntoTorAddr` for
+/// their own types.
 pub trait IntoTorAddr {
     /// Try to make a [`TorAddr`] to represent connecting to this
     /// address.
@@ -30,8 +45,11 @@ pub trait IntoTorAddr {
 ///
 /// [*See also: the `TorAddr` documentation.*](TorAddr)
 pub trait DangerouslyIntoTorAddr {
-    /// Try to make a [`TorAddr`] to represent connecting to this
-    /// address.
+    /// Try to make a [`TorAddr`] to represent connecting to this address.
+    ///
+    /// By calling this function, the caller asserts that this address was
+    /// obtained from some secure, private mechanism, and **not** from a local
+    /// DNS lookup or something similar.
     fn into_tor_addr_dangerously(self) -> Result<TorAddr, TorAddrError>;
 }
 
