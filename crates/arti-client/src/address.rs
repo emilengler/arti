@@ -18,8 +18,8 @@ use thiserror::Error;
 /// local hostname lookup, which will leak the target address to the DNS
 /// resolver. The `DangerouslyIntoTorAddr` trait provides a contract for careful
 /// programs to say, "I have gotten this IP address from somewhere safe."  This
-/// trait is for name-based addressing and similar, which is _usually_ from a
-/// safer source.)
+/// trait is for name-based addressing and similar, which _usually_ gets its
+/// addresses from a safer source.)
 ///
 /// [*See also: the `TorAddr` documentation.*](TorAddr)
 ///
@@ -27,9 +27,9 @@ use thiserror::Error;
 ///
 /// We use a separate trait here, instead of using `Into<TorAddr>` or
 /// `TryInto<TorAddr>`, because `IntoTorAddr` implies additional guarantees
-/// relating to privacy risk.  The separate trait alerts users that something tricky
-/// is going on here, and to think twice before implementing `IntoTorAddr` for
-/// their own types.
+/// relating to privacy risk.  The separate trait alerts users that something
+/// tricky is going on here, and encourages them to think twice before
+/// implementing `IntoTorAddr` for their own types.
 pub trait IntoTorAddr {
     /// Try to make a [`TorAddr`] to represent connecting to this
     /// address.
