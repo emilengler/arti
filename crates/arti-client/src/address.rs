@@ -10,13 +10,15 @@ use thiserror::Error;
 
 /// An object that can be converted to a [`TorAddr`] with a minimum of risk.
 ///
+/// Typically, this trait will be implemented for a hostname or service name.
+///
 /// Don't implement this trait for IP addresses and similar types; instead,
 /// implement [`DangerouslyIntoTorAddr`] for those.  (The trouble with accepting
 /// IP addresses is that, in order to get an IP address, most programs will do a
 /// local hostname lookup, which will leak the target address to the DNS
 /// resolver. The `DangerouslyIntoTorAddr` trait provides a contract for careful
 /// programs to say, "I have gotten this IP address from somewhere safe."  This
-/// trait is for string-based addresses and similar, which are _usually_ from a
+/// trait is for name-based addressing and similar, which is _usually_ from a
 /// safer source.)
 ///
 /// [*See also: the `TorAddr` documentation.*](TorAddr)
@@ -24,7 +26,8 @@ use thiserror::Error;
 /// # Design note
 ///
 /// We use a separate trait here, instead of using `Into<TorAddr>` or
-/// `TryInto<TorAddr>`, to encourage the user to realize that something tricky
+/// `TryInto<TorAddr>`, because `IntoTorAddr` implies additional guarantees
+/// relating to privacy risk.  The separate trait alerts users that something tricky
 /// is going on here, and to think twice before implementing `IntoTorAddr` for
 /// their own types.
 pub trait IntoTorAddr {
@@ -45,9 +48,9 @@ pub trait IntoTorAddr {
 ///
 /// [*See also: the `TorAddr` documentation.*](TorAddr)
 pub trait DangerouslyIntoTorAddr {
-    /// Try to make a [`TorAddr`] to represent connecting to this address.
+    /// Try to make a [`TorAddr`] to represent connecting to `self`.
     ///
-    /// By calling this function, the caller asserts that this address was
+    /// By calling this function, the caller asserts that `self` was
     /// obtained from some secure, private mechanism, and **not** from a local
     /// DNS lookup or something similar.
     fn into_tor_addr_dangerously(self) -> Result<TorAddr, TorAddrError>;
