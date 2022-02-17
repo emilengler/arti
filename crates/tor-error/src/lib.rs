@@ -411,7 +411,7 @@ pub enum ErrorKind {
 
     /// An operation failed because a local namespace is too full to grow.
     ///
-    /// This error can occur if you try to put too many steams onto a single
+    /// This error can occur if you try to put too many streams onto a single
     /// circuit, or too many circuits onto a single channel.  Both are very
     /// unlikely in practice.
     ///
