@@ -82,7 +82,7 @@ pub use rs::NsConsensusRouterStatus;
 /// In a consensus, this type describes when the consensus may safely
 /// be used.  In a vote, this type describes the proposed lifetime for a
 /// consensus.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Lifetime {
     /// Time at which the document becomes valid
     valid_after: time::SystemTime,

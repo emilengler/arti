@@ -16,6 +16,7 @@ mmap = ["memmap2"]
 static = ["rusqlite/bundled"]
 # (Incomplete) support for downloading and storing router descriptors
 routerdesc = ["tor-dirclient/routerdesc"]
+memorystore = []
 
 [dependencies]
 retry-error = { path = "../retry-error", version = "0.0.3"}

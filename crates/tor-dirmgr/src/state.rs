@@ -930,6 +930,9 @@ mod test {
     fn temp_store() -> (TempDir, Mutex<DynStore>) {
         let tempdir = TempDir::new().unwrap();
 
+        #[cfg(feature = "memorystore")]
+        let store = crate::storage::MemoryStore::new();
+        #[cfg(not(feature = "memorystore"))]
         let store = crate::storage::SqliteStore::from_path(tempdir.path(), false).unwrap();
 
         (tempdir, Mutex::new(Box::new(store)))

@@ -179,6 +179,10 @@ pub enum StorageConfig {
         /// directory information.
         directory: PathBuf,
     },
+
+    #[cfg(feature = "memorystore")]
+    /// Create a new memory-backed storage.
+    Memory,
 }
 
 /// Configuration type for network directory operations.
@@ -265,6 +269,9 @@ impl DirMgrConfig {
             StorageConfig::Sqlite { directory } => {
                 Ok(Box::new(SqliteStore::from_path(directory, readonly)?))
             }
+
+            #[cfg(feature = "memorystore")]
+            StorageConfig::Memory => Ok(Box::new(crate::storage::MemoryStore::new())),
         }
     }
 

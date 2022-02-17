@@ -155,6 +155,11 @@ pub enum StorageCacheConfig {
         /// Location on disk.
         directory: CfgPath,
     },
+
+    /// Use memory-backed storage.
+    #[cfg(feature = "memorystore")]
+    #[serde(rename = "memory")]
+    Memory,
 }
 
 /// Configuration for how information should be stored.
@@ -228,6 +233,8 @@ impl StorageConfig {
                     problem: e.to_string(),
                 })?,
             },
+            #[cfg(feature = "memorystore")]
+            StorageCacheConfig::Memory {} => dir::StorageConfig::Memory,
         })
     }
 }

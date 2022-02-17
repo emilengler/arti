@@ -943,6 +943,10 @@ mod test {
     use tor_netdoc::doc::{authcert::AuthCertKeyIds, netstatus::Lifetime};
 
     pub(crate) fn choose_storage(_directory: &Path) -> StorageConfig {
+        #[cfg(feature = "memorystore")]
+        return StorageConfig::Memory;
+
+        #[cfg(not(feature = "memorystore"))]
         StorageConfig::Sqlite {
             directory: _directory.to_owned(),
         }

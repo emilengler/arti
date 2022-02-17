@@ -19,6 +19,8 @@ rustls = [ "tor-rtcompat/rustls" ]
 static = [ "tor-rtcompat/static", "tor-dirmgr/static" ]
 error_detail = [ ]
 
+memorystore = []
+
 # Enable experimental APIs that are not yet officially supported.
 #
 # These APIs are not covered by semantic versioning.  Using this

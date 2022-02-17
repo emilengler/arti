@@ -20,8 +20,14 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 use std::{path::Path, str::Utf8Error};
 
+#[cfg(feature = "memorystore")]
+mod memory;
+#[allow(unused)]
 mod sqlite;
 
+#[cfg(feature = "memorystore")]
+pub(crate) use memory::MemoryStore;
+#[allow(unused)]
 pub(crate) use sqlite::SqliteStore;
 
 /// Convenient Sized & dynamic [`Store`]
