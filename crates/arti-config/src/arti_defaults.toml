@@ -56,13 +56,14 @@ console = "debug"
 # Supported variables are ARTI_CACHE, ARTI_CONFIG, ARTI_SHARED_DATA,
 # ARTI_LOCAL_DATA, and USER_HOME.
 #
-# Multiple processes can share the same cache_dir.  If they do, one of them
-# will download directory information for all of the others.
+# Multiple processes can share the same sqlite directory for cache.
+# If they do, one of them will download directory information for all of
+# the others.
 #
 # The state directory is not yet used.
 [storage]
-cache_dir = "${ARTI_CACHE}"
 state_dir = "${ARTI_LOCAL_DATA}"
+cache = { sqlite = { directory = "${ARTI_CACHE}" } }
 
 # Replacement values for consensus parameters.  This is an advanced option
 # and you probably should leave it alone. Not all parameters are supported.

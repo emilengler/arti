@@ -573,6 +573,7 @@ mod test {
     use std::time::Duration;
 
     use super::*;
+    use arti_client::config::StorageCacheConfig;
 
     #[test]
     fn default_config() {
@@ -624,7 +625,9 @@ mod test {
             .authorities(vec![auth])
             .fallback_caches(vec![fallback]);
         bld.storage()
-            .cache_dir(CfgPath::new("/var/tmp/foo".to_owned()))
+            .cache(StorageCacheConfig::Sqlite {
+                directory: CfgPath::new("/var/tmp/foo".to_owned()),
+            })
             .state_dir(CfgPath::new("/var/tmp/bar".to_owned()));
         bld.download_schedule()
             .retry_certs(DownloadSchedule::new(10, sec, 3))

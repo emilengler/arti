@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::time::SystemTime;
 use std::{path::Path, str::Utf8Error};
 
-pub(crate) mod sqlite;
+mod sqlite;
 
 pub(crate) use sqlite::SqliteStore;
 
@@ -199,7 +199,7 @@ pub(crate) trait Store {
     ///
     /// If `pending` is given, we will only return a consensus with
     /// the given "pending" status.  (A pending consensus doesn't have
-    /// enough descriptors yet.)  If `pending_ok` is None, we'll
+    /// enough descriptors yet.)  If `pending` is None, we'll
     /// return a consensus with any pending status.
     fn latest_consensus(
         &self,

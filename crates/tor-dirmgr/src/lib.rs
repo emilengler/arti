@@ -88,7 +88,7 @@ use std::{fmt::Debug, time::SystemTime};
 pub use authority::{Authority, AuthorityBuilder};
 pub use config::{
     DirMgrConfig, DirMgrConfigBuilder, DownloadScheduleConfig, DownloadScheduleConfigBuilder,
-    NetworkConfig, NetworkConfigBuilder,
+    NetworkConfig, NetworkConfigBuilder, StorageConfig,
 };
 pub use docid::DocId;
 pub use err::Error;
@@ -524,8 +524,8 @@ impl<R: Runtime> DirMgr<R> {
         // We don't support changing these: doing so basically would require us
         // to abort all our in-progress downloads, since they might be based on
         // no-longer-viable information.
-        if new_config.cache_path() != config.cache_path() {
-            how.cannot_change("storage.cache_path")?;
+        if new_config.storage() != config.storage() {
+            how.cannot_change("storage")?;
         }
         if new_config.authorities() != config.authorities() {
             how.cannot_change("network.authorities")?;
@@ -938,14 +938,20 @@ mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use crate::docmeta::{AuthCertMeta, ConsensusMeta};
-    use std::time::Duration;
+    use std::{path::Path, time::Duration};
     use tempfile::TempDir;
     use tor_netdoc::doc::{authcert::AuthCertKeyIds, netstatus::Lifetime};
+
+    pub(crate) fn choose_storage(_directory: &Path) -> StorageConfig {
+        StorageConfig::Sqlite {
+            directory: _directory.to_owned(),
+        }
+    }
 
     pub(crate) fn new_mgr<R: Runtime>(runtime: R) -> (TempDir, DirMgr<R>) {
         let dir = TempDir::new().unwrap();
         let config = DirMgrConfig::builder()
-            .cache_path(dir.path())
+            .storage_config(choose_storage(dir.path()))
             .build()
             .unwrap();
         let dirmgr = DirMgr::from_config(config, runtime, None, false).unwrap();

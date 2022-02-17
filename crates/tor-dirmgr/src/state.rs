@@ -891,8 +891,10 @@ mod test {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::cognitive_complexity)]
     use super::*;
+    use crate::test::choose_storage;
     use crate::{Authority, DownloadScheduleConfig};
     use std::convert::TryInto;
+    use std::path::Path;
     use std::sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -949,7 +951,7 @@ mod test {
                 netcfg.authorities(a);
             }
             let cfg = DirMgrConfig::builder()
-                .cache_path("/we_will_never_use_this/")
+                .storage_config(choose_storage(Path::new("/we_will_never_use_this/")))
                 .network_config(netcfg.build().unwrap())
                 .build()
                 .unwrap();

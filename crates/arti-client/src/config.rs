@@ -23,7 +23,7 @@ pub mod dir {
     pub use tor_dirmgr::{
         Authority, AuthorityBuilder, DirMgrConfig, DirMgrConfigBuilder, DownloadSchedule,
         DownloadScheduleConfig, DownloadScheduleConfigBuilder, FallbackDir, FallbackDirBuilder,
-        NetworkConfig, NetworkConfigBuilder,
+        NetworkConfig, NetworkConfigBuilder, StorageConfig,
     };
 }
 
@@ -145,7 +145,19 @@ fn default_dns_resolve_ptr_timeout() -> Duration {
     Duration::new(10, 0)
 }
 
-/// Configuration for where information should be stored on disk.
+/// Configuration for how cache informations should be stored.
+#[derive(Deserialize, Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum StorageCacheConfig {
+    /// Use Sqlite.
+    #[serde(rename = "sqlite")]
+    Sqlite {
+        /// Location on disk.
+        directory: CfgPath,
+    },
+}
+
+/// Configuration for how information should be stored.
 ///
 /// By default, cache information will be stored in `${ARTI_CACHE}`, and
 /// persistent state will be stored in `${ARTI_LOCAL_DATA}`.  That means that
@@ -164,19 +176,21 @@ fn default_dns_resolve_ptr_timeout() -> Duration {
 #[serde(deny_unknown_fields)]
 #[builder(build_fn(error = "ConfigBuildError"))]
 pub struct StorageConfig {
-    /// Location on disk for cached directory information.
-    #[builder(setter(into), default = "default_cache_dir()")]
-    #[serde(default = "default_cache_dir")]
-    cache_dir: CfgPath,
+    /// How to store cache.
+    #[builder(setter(into), default = "default_cache()")]
+    #[serde(default = "default_cache")]
+    cache: StorageCacheConfig,
     /// Location on disk for less-sensitive persistent state information.
-    #[builder(setter(into), default = "default_state_dir()")]
+    #[builder(default = "default_state_dir()")]
     #[serde(default = "default_state_dir")]
     state_dir: CfgPath,
 }
 
 /// Return the default cache directory.
-fn default_cache_dir() -> CfgPath {
-    CfgPath::new("${ARTI_CACHE}".to_owned())
+fn default_cache() -> StorageCacheConfig {
+    StorageCacheConfig::Sqlite {
+        directory: CfgPath::new("${ARTI_CACHE}".to_owned()),
+    }
 }
 
 /// Return the default state directory.
@@ -205,21 +219,23 @@ impl StorageConfig {
                 problem: e.to_string(),
             })
     }
-    /// Try to expand `cache_dir` to be a path buffer.
-    pub(crate) fn expand_cache_dir(&self) -> Result<PathBuf, ConfigBuildError> {
-        self.cache_dir
-            .path()
-            .map_err(|e| ConfigBuildError::Invalid {
-                field: "cache_dir".to_owned(),
-                problem: e.to_string(),
-            })
+    /// Try to expand `cache` to be full [`StorageConfig`].
+    pub(crate) fn expand_cache(&self) -> Result<dir::StorageConfig, ConfigBuildError> {
+        Ok(match &self.cache {
+            StorageCacheConfig::Sqlite { directory } => dir::StorageConfig::Sqlite {
+                directory: directory.path().map_err(|e| ConfigBuildError::Invalid {
+                    field: "directory".to_owned(),
+                    problem: e.to_string(),
+                })?,
+            },
+        })
     }
 }
 
 impl From<StorageConfig> for StorageConfigBuilder {
     fn from(cfg: StorageConfig) -> StorageConfigBuilder {
         let mut builder = StorageConfigBuilder::default();
-        builder.state_dir(cfg.state_dir).cache_dir(cfg.cache_dir);
+        builder.state_dir(cfg.state_dir).cache(cfg.cache);
         builder
     }
 }
@@ -337,7 +353,7 @@ impl TorClientConfig {
         let mut dircfg = dir::DirMgrConfigBuilder::default();
         dircfg.network_config(self.tor_network.clone());
         dircfg.schedule_config(self.download_schedule.clone());
-        dircfg.cache_path(self.storage.expand_cache_dir()?);
+        dircfg.storage_config(self.storage.expand_cache()?);
         for (k, v) in &self.override_net_params {
             dircfg.override_net_param(k.clone(), *v);
         }
@@ -443,7 +459,9 @@ impl TorClientConfigBuilder {
         let mut builder = Self::default();
         builder
             .storage()
-            .cache_dir(CfgPath::from_path(cache_dir))
+            .cache(StorageCacheConfig::Sqlite {
+                directory: CfgPath::from_path(cache_dir),
+            })
             .state_dir(CfgPath::from_path(state_dir));
         builder
     }
@@ -606,7 +624,9 @@ mod test {
             .authorities(vec![auth])
             .fallback_caches(vec![fallback]);
         bld.storage()
-            .cache_dir(CfgPath::new("/var/tmp/foo".to_owned()))
+            .cache(StorageCacheConfig::Sqlite {
+                directory: CfgPath::new("/var/tmp/foo".to_owned()),
+            })
             .state_dir(CfgPath::new("/var/tmp/bar".to_owned()));
         bld.download_schedule()
             .retry_certs(DownloadSchedule::new(10, sec, 3))
