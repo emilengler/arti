@@ -93,7 +93,7 @@ mod proxy;
 mod trace;
 mod watch_cfg;
 
-use arti_client::{TorClient, TorClientConfig};
+use arti_client::{ClientSetupOptions, TorClient, TorClientConfig};
 use arti_config::{default_config_file, ArtiConfig};
 use tor_rtcompat::{BlockOn, Runtime};
 
@@ -111,7 +111,13 @@ async fn run<R: Runtime>(
 ) -> Result<()> {
     use arti_client::BootstrapBehavior::Manual;
     use futures::FutureExt;
-    let client = TorClient::create_unbootstrapped(runtime.clone(), client_config, Manual)?;
+    let client = TorClient::create_unbootstrapped(
+        runtime.clone(),
+        client_config,
+        ClientSetupOptions {
+            autobootstrap: Manual,
+        },
+    )?;
     futures::select!(
         r = exit::wait_for_ctrl_c().fuse() => r,
         r = async {

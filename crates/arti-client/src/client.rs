@@ -105,6 +105,34 @@ pub enum BootstrapBehavior {
     Manual,
 }
 
+/// Preferences for setting up a client
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[allow(clippy::exhaustive_structs)]
+pub struct ClientSetupOptions {
+    /// Auto-bootstrap flags for a relay.
+    ///
+    /// ## If `autobootstrap` is [`Manual`](BootstrapBehavior::Manual)
+    ///
+    /// If `autobootstrap` is set to `Manual`, the returned `TorClient` (and its clones) will never
+    /// attempt to bootstrap themselves. You must manually call [`bootstrap`](TorClient::bootstrap)
+    /// in order for the client(s) to become usable.
+    ///
+    /// Attempts to use the client (e.g. by creating connections or resolving hosts over the Tor
+    /// network) before calling [`bootstrap`](TorClient::bootstrap) will fail, and
+    /// return an error that has kind [`ErrorKind::BootstrapRequired`](crate::ErrorKind::BootstrapRequired).
+    ///
+    /// This option is useful if you wish to have control over the bootstrap process (for example,
+    /// you might wish to avoid initiating network connections until explicit user confirmation
+    /// is given).
+    ///
+    /// ## If `autobootstrap` is [`OnDemand`](BootstrapBehavior::OnDemand)
+    ///
+    /// If `autoboostrap` is set to `OnDemand`, the returned `TorClient` (and its clones) will
+    /// automatically bootstrap before doing any operation that would require them to be
+    /// bootstrapped.
+    pub autobootstrap: BootstrapBehavior,
+}
+
 /// Preferences for how to route a stream over the Tor network.
 #[derive(Debug, Clone, Default)]
 pub struct StreamPrefs {
@@ -324,40 +352,27 @@ impl<R: Runtime> TorClient<R> {
         runtime: R,
         config: TorClientConfig,
     ) -> crate::Result<TorClient<R>> {
-        let ret = TorClient::create_unbootstrapped(runtime, config, BootstrapBehavior::Manual)?;
+        let ret = TorClient::create_unbootstrapped(
+            runtime,
+            config,
+            ClientSetupOptions {
+                autobootstrap: BootstrapBehavior::Manual,
+            },
+        )?;
         ret.bootstrap().await?;
         Ok(ret)
     }
 
     /// Create a `TorClient` without bootstrapping a connection to the network.
     ///
-    /// The behaviour of this client depends on the value of `autobootstrap`.
-    ///
-    /// ## If `autobootstrap` is [`Manual`](BootstrapBehavior::Manual)
-    ///
-    /// If `autobootstrap` is set to `Manual`, the returned `TorClient` (and its clones) will never
-    /// attempt to bootstrap themselves. You must manually call [`bootstrap`](TorClient::bootstrap)
-    /// in order for the client(s) to become usable.
-    ///
-    /// Attempts to use the client (e.g. by creating connections or resolving hosts over the Tor
-    /// network) before calling [`bootstrap`](TorClient::bootstrap) will fail, and
-    /// return an error that has kind [`ErrorKind::BootstrapRequired`](crate::ErrorKind::BootstrapRequired).
-    ///
-    /// This option is useful if you wish to have control over the bootstrap process (for example,
-    /// you might wish to avoid initiating network connections until explicit user confirmation
-    /// is given).
-    ///
-    /// ## If `autobootstrap` is [`OnDemand`](BootstrapBehavior::OnDemand)
-    ///
-    /// If `autoboostrap` is set to `OnDemand`, the returned `TorClient` (and its clones) will
-    /// automatically bootstrap before doing any operation that would require them to be
-    /// bootstrapped.
+    /// The behaviour of this client depends on the parameters in `setup_options`.
     pub fn create_unbootstrapped(
         runtime: R,
         config: TorClientConfig,
-        autobootstrap: BootstrapBehavior,
+        setup_options: ClientSetupOptions,
     ) -> crate::Result<Self> {
-        TorClient::create_inner(runtime, config, autobootstrap).map_err(ErrorDetail::into)
+        TorClient::create_inner(runtime, config, setup_options.autobootstrap)
+            .map_err(ErrorDetail::into)
     }
 
     /// Implementation of `create_unbootstrapped`, split out in order to avoid manually specifying
@@ -1085,7 +1100,14 @@ mod test {
             let cfg = TorClientConfigBuilder::from_directories(state_dir, cache_dir)
                 .build()
                 .unwrap();
-            let _ = TorClient::create_unbootstrapped(rt, cfg, BootstrapBehavior::Manual).unwrap();
+            let _ = TorClient::create_unbootstrapped(
+                rt,
+                cfg,
+                ClientSetupOptions {
+                    autobootstrap: BootstrapBehavior::Manual,
+                },
+            )
+            .unwrap();
         });
     }
 
@@ -1097,8 +1119,14 @@ mod test {
             let cfg = TorClientConfigBuilder::from_directories(state_dir, cache_dir)
                 .build()
                 .unwrap();
-            let client =
-                TorClient::create_unbootstrapped(rt, cfg, BootstrapBehavior::Manual).unwrap();
+            let client = TorClient::create_unbootstrapped(
+                rt,
+                cfg,
+                ClientSetupOptions {
+                    autobootstrap: BootstrapBehavior::Manual,
+                },
+            )
+            .unwrap();
             let result = client.connect("example.com:80").await;
             assert!(result.is_err());
             assert_eq!(result.err().unwrap().kind(), ErrorKind::BootstrapRequired);
