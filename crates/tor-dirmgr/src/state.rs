@@ -21,12 +21,12 @@ use tor_netdoc::doc::netstatus::Lifetime;
 use tracing::{info, warn};
 
 use crate::event::{DirStatus, DirStatusInner};
+use crate::storage::{DynStore, EXPIRATION_DEFAULTS};
 use crate::DirEvent;
 use crate::{
     docmeta::{AuthCertMeta, ConsensusMeta},
     retry::DownloadSchedule,
     shared_ref::SharedMutArc,
-    storage::sqlite::SqliteStore,
     CacheUsage, ClientRequest, DirMgrConfig, DirState, DocId, DocumentText, Error, Readiness,
     Result,
 };
@@ -214,7 +214,7 @@ impl<DM: WriteNetDir> DirState for GetConsensusState<DM> {
     fn add_from_cache(
         &mut self,
         docs: HashMap<DocId, DocumentText>,
-        _storage: Option<&Mutex<SqliteStore>>,
+        _storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool> {
         let text = match docs.into_iter().next() {
             None => return Ok(false),
@@ -235,7 +235,7 @@ impl<DM: WriteNetDir> DirState for GetConsensusState<DM> {
         &mut self,
         text: &str,
         _request: &ClientRequest,
-        storage: Option<&Mutex<SqliteStore>>,
+        storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool> {
         if let Some(meta) = self.add_consensus_text(false, text)? {
             if let Some(store) = storage {
@@ -390,7 +390,7 @@ impl<DM: WriteNetDir> DirState for GetCertsState<DM> {
     fn add_from_cache(
         &mut self,
         docs: HashMap<DocId, DocumentText>,
-        _storage: Option<&Mutex<SqliteStore>>,
+        _storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool> {
         let mut changed = false;
         // Here we iterate over the documents we want, taking them from
@@ -414,7 +414,7 @@ impl<DM: WriteNetDir> DirState for GetCertsState<DM> {
         &mut self,
         text: &str,
         request: &ClientRequest,
-        storage: Option<&Mutex<SqliteStore>>,
+        storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool> {
         let asked_for: HashSet<_> = match request {
             ClientRequest::AuthCert(a) => a.keys().collect(),
@@ -677,7 +677,7 @@ impl<DM: WriteNetDir> GetMicrodescsState<DM> {
     /// storage.
     ///
     /// Called when a consensus is no longer pending.
-    fn mark_consensus_usable(&self, storage: Option<&Mutex<SqliteStore>>) -> Result<()> {
+    fn mark_consensus_usable(&self, storage: Option<&Mutex<DynStore>>) -> Result<()> {
         if let Some(store) = storage {
             let mut store = store.lock().expect("Directory storage lock poisoned");
             info!("Marked consensus usable.");
@@ -685,7 +685,7 @@ impl<DM: WriteNetDir> GetMicrodescsState<DM> {
             // Now that a consensus is usable, older consensuses may
             // need to expire.
             if self.expire_when_complete {
-                store.expire_all()?;
+                store.expire_all(&EXPIRATION_DEFAULTS)?;
             }
         }
         Ok(())
@@ -730,7 +730,7 @@ impl<DM: WriteNetDir> DirState for GetMicrodescsState<DM> {
     fn add_from_cache(
         &mut self,
         docs: HashMap<DocId, DocumentText>,
-        storage: Option<&Mutex<SqliteStore>>,
+        storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool> {
         let mut microdescs = Vec::new();
         for (id, text) in docs {
@@ -762,7 +762,7 @@ impl<DM: WriteNetDir> DirState for GetMicrodescsState<DM> {
         &mut self,
         text: &str,
         request: &ClientRequest,
-        storage: Option<&Mutex<SqliteStore>>,
+        storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool> {
         let requested: HashSet<_> = if let ClientRequest::Microdescs(req) = request {
             req.digests().collect()
@@ -788,14 +788,20 @@ impl<DM: WriteNetDir> DirState for GetMicrodescsState<DM> {
 
         let mark_listed = self.meta.lifetime().valid_after();
         if let Some(store) = storage {
-            let mut s = store.lock().expect("Directory storage lock poisoned");
+            let mut s = store
+                .lock()
+                //.get_mut()
+                .expect("Directory storage lock poisoned");
             if !self.newly_listed.is_empty() {
-                s.update_microdescs_listed(self.newly_listed.iter(), mark_listed)?;
+                s.update_microdescs_listed(&self.newly_listed, mark_listed)?;
                 self.newly_listed.clear();
             }
             if !new_mds.is_empty() {
                 s.store_microdescs(
-                    new_mds.iter().map(|(txt, md)| (&txt[..], md.digest())),
+                    &new_mds
+                        .iter()
+                        .map(|(text, md)| (*text, md.digest()))
+                        .collect::<Vec<_>>(),
                     mark_listed,
                 )?;
             }
@@ -885,8 +891,10 @@ mod test {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::cognitive_complexity)]
     use super::*;
+    use crate::test::choose_storage;
     use crate::{Authority, DownloadScheduleConfig};
     use std::convert::TryInto;
+    use std::path::Path;
     use std::sync::{
         atomic::{self, AtomicBool},
         Arc,
@@ -918,12 +926,16 @@ mod test {
         }
     }
 
-    /// Makes a memory-backed SqliteStore.
-    fn temp_store() -> (TempDir, Mutex<SqliteStore>) {
+    /// Makes a memory-backed storage.
+    fn temp_store() -> (TempDir, Mutex<DynStore>) {
         let tempdir = TempDir::new().unwrap();
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        let store = SqliteStore::from_conn(conn, tempdir.path()).unwrap();
-        (tempdir, Mutex::new(store))
+
+        #[cfg(feature = "memorystore")]
+        let store = crate::storage::MemoryStore::new();
+        #[cfg(not(feature = "memorystore"))]
+        let store = crate::storage::SqliteStore::from_path(tempdir.path(), false).unwrap();
+
+        (tempdir, Mutex::new(Box::new(store)))
     }
 
     struct DirRcv {
@@ -942,7 +954,7 @@ mod test {
                 netcfg.authorities(a);
             }
             let cfg = DirMgrConfig::builder()
-                .cache_path("/we_will_never_use_this/")
+                .storage_config(choose_storage(Path::new("/we_will_never_use_this/")))
                 .network_config(netcfg.build().unwrap())
                 .build()
                 .unwrap();

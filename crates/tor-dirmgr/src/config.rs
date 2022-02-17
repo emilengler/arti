@@ -9,9 +9,8 @@
 //! here must be reflected in the version of `arti-client`.
 
 use crate::retry::DownloadSchedule;
-use crate::storage::sqlite::SqliteStore;
-use crate::Authority;
-use crate::Result;
+use crate::storage::{DynStore, SqliteStore};
+use crate::{Authority, Result};
 use tor_config::ConfigBuildError;
 use tor_netdir::fallback::FallbackDir;
 use tor_netdoc::doc::netstatus;
@@ -170,6 +169,22 @@ impl From<DownloadScheduleConfig> for DownloadScheduleConfigBuilder {
     }
 }
 
+/// Configuration for the storage used.
+#[derive(Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+pub enum StorageConfig {
+    /// Load an Sqlite directory at the given `directory`.
+    Sqlite {
+        /// Location to use for storing and reading current-format
+        /// directory information.
+        directory: PathBuf,
+    },
+
+    #[cfg(feature = "memorystore")]
+    /// Create a new memory-backed storage.
+    Memory,
+}
+
 /// Configuration type for network directory operations.
 ///
 /// This type is immutable once constructed.
@@ -183,12 +198,11 @@ impl From<DownloadScheduleConfig> for DownloadScheduleConfigBuilder {
 #[derive(Debug, Clone, Builder, Eq, PartialEq)]
 #[builder(build_fn(error = "ConfigBuildError"))]
 pub struct DirMgrConfig {
-    /// Location to use for storing and reading current-format
-    /// directory information.
+    /// Configuration of the storage.
     ///
     /// Cannot be changed on a running Arti client.
     #[builder(setter(into))]
-    cache_path: PathBuf,
+    storage_config: StorageConfig,
 
     /// Configuration information about the network.
     #[builder(default)]
@@ -246,19 +260,24 @@ impl DirMgrConfig {
         DirMgrConfigBuilder::default()
     }
 
-    /// Create a SqliteStore from this configuration.
+    /// Create a store from this configuration.
     ///
     /// Note that each time this is called, a new store object will be
     /// created: you probably only want to call this once.
-    ///
-    /// The `readonly` argument is as for [`SqliteStore::from_path`]
-    pub(crate) fn open_sqlite_store(&self, readonly: bool) -> Result<SqliteStore> {
-        SqliteStore::from_path(&self.cache_path, readonly)
+    pub(crate) fn open_store(&self, readonly: bool) -> Result<DynStore> {
+        match &self.storage_config {
+            StorageConfig::Sqlite { directory } => {
+                Ok(Box::new(SqliteStore::from_path(directory, readonly)?))
+            }
+
+            #[cfg(feature = "memorystore")]
+            StorageConfig::Memory => Ok(Box::new(crate::storage::MemoryStore::new())),
+        }
     }
 
     /// Return the configured cache path.
-    pub(crate) fn cache_path(&self) -> &std::path::Path {
-        self.cache_path.as_ref()
+    pub(crate) fn storage(&self) -> &StorageConfig {
+        &self.storage_config
     }
 
     /// Return a slice of the configured authorities
@@ -288,7 +307,7 @@ impl DirMgrConfig {
     /// Any fields which aren't allowed to change at runtime are copied from self.
     pub(crate) fn update_config(&self, new_config: &DirMgrConfig) -> DirMgrConfig {
         DirMgrConfig {
-            cache_path: self.cache_path.clone(),
+            storage_config: self.storage_config.clone(),
             network_config: NetworkConfig {
                 fallback_caches: new_config.network_config.fallback_caches.clone(),
                 authorities: self.network_config.authorities.clone(),
@@ -360,6 +379,7 @@ mod test {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::unnecessary_wraps)]
     use super::*;
+    use crate::test::choose_storage;
     use tempfile::tempdir;
 
     #[test]
@@ -367,7 +387,7 @@ mod test {
         let tmp = tempdir().unwrap();
 
         let dir = DirMgrConfigBuilder::default()
-            .cache_path(tmp.path().to_path_buf())
+            .storage_config(choose_storage(tmp.path()))
             .build()
             .unwrap();
 
@@ -451,7 +471,7 @@ mod test {
 
         let cfg = bld
             .override_net_param("circwindow".into(), 999)
-            .cache_path(tmp.path())
+            .storage_config(choose_storage(tmp.path()))
             .network_config(NetworkConfig::default())
             .schedule_config(DownloadScheduleConfig::default())
             .build()

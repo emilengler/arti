@@ -69,7 +69,7 @@ mod storage;
 
 use crate::docid::{CacheUsage, ClientRequest, DocQuery};
 use crate::shared_ref::SharedMutArc;
-use crate::storage::sqlite::SqliteStore;
+use crate::storage::DynStore;
 use postage::watch;
 pub use retry::DownloadSchedule;
 use tor_circmgr::CircMgr;
@@ -88,7 +88,7 @@ use std::{fmt::Debug, time::SystemTime};
 pub use authority::{Authority, AuthorityBuilder};
 pub use config::{
     DirMgrConfig, DirMgrConfigBuilder, DownloadScheduleConfig, DownloadScheduleConfigBuilder,
-    NetworkConfig, NetworkConfigBuilder,
+    NetworkConfig, NetworkConfigBuilder, StorageConfig,
 };
 pub use docid::DocId;
 pub use err::Error;
@@ -119,7 +119,8 @@ pub struct DirMgr<R: Runtime> {
     /// Handle to our sqlite cache.
     // TODO(nickm): I'd like to use an rwlock, but that's not feasible, since
     // rusqlite::Connection isn't Sync.
-    store: Mutex<SqliteStore>,
+    // TODO is needed?
+    store: Mutex<DynStore>,
     /// Our latest sufficiently bootstrapped directory, if we have one.
     ///
     /// We use the RwLock so that we can give this out to a bunch of other
@@ -523,8 +524,8 @@ impl<R: Runtime> DirMgr<R> {
         // We don't support changing these: doing so basically would require us
         // to abort all our in-progress downloads, since they might be based on
         // no-longer-viable information.
-        if new_config.cache_path() != config.cache_path() {
-            how.cannot_change("storage.cache_path")?;
+        if new_config.storage() != config.storage() {
+            how.cannot_change("storage")?;
         }
         if new_config.authorities() != config.authorities() {
             how.cannot_change("network.authorities")?;
@@ -585,7 +586,7 @@ impl<R: Runtime> DirMgr<R> {
     }
 
     /// Return a reference to the store, if it is currently read-write.
-    fn store_if_rw(&self) -> Option<&Mutex<SqliteStore>> {
+    fn store_if_rw(&self) -> Option<&Mutex<DynStore>> {
         let rw = !self
             .store
             .lock()
@@ -609,7 +610,7 @@ impl<R: Runtime> DirMgr<R> {
         circmgr: Option<Arc<CircMgr<R>>>,
         offline: bool,
     ) -> Result<Self> {
-        let store = Mutex::new(config.open_sqlite_store(offline)?);
+        let store = Mutex::new(config.open_store(offline)?);
         let netdir = SharedMutArc::new();
         let events = event::FlagPublisher::new();
 
@@ -890,7 +891,7 @@ trait DirState: Send {
     fn add_from_cache(
         &mut self,
         docs: HashMap<DocId, DocumentText>,
-        storage: Option<&Mutex<SqliteStore>>,
+        storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool>;
 
     /// Add information that we have just downloaded to this state; returns
@@ -910,7 +911,7 @@ trait DirState: Send {
         &mut self,
         text: &str,
         request: &ClientRequest,
-        storage: Option<&Mutex<SqliteStore>>,
+        storage: Option<&Mutex<DynStore>>,
     ) -> Result<bool>;
     /// Return a summary of this state as a [`DirStatus`].
     fn bootstrap_status(&self) -> event::DirStatus;
@@ -937,14 +938,24 @@ mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
     use crate::docmeta::{AuthCertMeta, ConsensusMeta};
-    use std::time::Duration;
+    use std::{path::Path, time::Duration};
     use tempfile::TempDir;
     use tor_netdoc::doc::{authcert::AuthCertKeyIds, netstatus::Lifetime};
+
+    pub(crate) fn choose_storage(_directory: &Path) -> StorageConfig {
+        #[cfg(feature = "memorystore")]
+        return StorageConfig::Memory;
+
+        #[cfg(not(feature = "memorystore"))]
+        StorageConfig::Sqlite {
+            directory: _directory.to_owned(),
+        }
+    }
 
     pub(crate) fn new_mgr<R: Runtime>(runtime: R) -> (TempDir, DirMgr<R>) {
         let dir = TempDir::new().unwrap();
         let config = DirMgrConfig::builder()
-            .cache_path(dir.path())
+            .storage_config(choose_storage(dir.path()))
             .build()
             .unwrap();
         let dirmgr = DirMgr::from_config(config, runtime, None, false).unwrap();
@@ -991,7 +1002,7 @@ mod test {
 
                 store
                     .store_microdescs(
-                        vec![
+                        &[
                             ("Fake micro 1", &d1),
                             ("Fake micro 2", &d2),
                             ("Fake micro 3", &d3),
@@ -1002,7 +1013,7 @@ mod test {
 
                 #[cfg(feature = "routerdesc")]
                 store
-                    .store_routerdescs(vec![("Fake rd1", now, &d4), ("Fake rd2", now, &d5)])
+                    .store_routerdescs(&[("Fake rd1", now, &d4), ("Fake rd2", now, &d5)])
                     .unwrap();
 
                 store

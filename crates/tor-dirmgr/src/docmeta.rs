@@ -18,7 +18,7 @@ use std::time::SystemTime;
 ///
 /// This information is ordinarily derived from the consensus, but doesn't
 /// have to be.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ConsensusMeta {
     /// The time over which the consensus is valid.
     lifetime: Lifetime,
