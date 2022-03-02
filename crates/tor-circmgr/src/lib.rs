@@ -424,7 +424,7 @@ impl<R: Runtime> CircMgr<R> {
             // Actually launch the circuit!
             let usage = TargetCircUsage::TimeoutTesting;
             let dirinfo = netdir.into();
-            let mgr = Arc::clone(&self.mgr);
+            let mgr = self.mgr.clone();
             debug!("Launching a circuit to test build times.");
             let _ = mgr.launch_by_usage(&usage, dirinfo)?;
         }

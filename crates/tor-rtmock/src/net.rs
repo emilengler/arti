@@ -155,7 +155,7 @@ impl MockNetwork {
     pub fn builder(self: &Arc<Self>) -> ProviderBuilder {
         ProviderBuilder {
             addrs: vec![],
-            net: Arc::clone(self),
+            net: self.clone(),
         }
     }
 
@@ -224,7 +224,7 @@ impl ProviderBuilder {
     pub fn provider(&self) -> MockNetProvider {
         let inner = MockNetProviderInner {
             addrs: self.addrs.clone(),
-            net: Arc::clone(&self.net),
+            net: self.net.clone(),
             next_port: AtomicU16::new(1),
         };
         MockNetProvider {

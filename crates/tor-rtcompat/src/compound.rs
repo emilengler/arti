@@ -31,7 +31,7 @@ pub struct CompoundRuntime<SpawnR, SleepR, TcpR, TlsR> {
 impl<SpawnR, SleepR, TcpR, TlsR> Clone for CompoundRuntime<SpawnR, SleepR, TcpR, TlsR> {
     fn clone(&self) -> Self {
         Self {
-            inner: Arc::clone(&self.inner),
+            inner: self.inner.clone(),
         }
     }
 }

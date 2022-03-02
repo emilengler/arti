@@ -269,7 +269,7 @@ impl Channel {
         let channel = Channel {
             control: control_tx,
             cell_tx,
-            details: Arc::clone(&details),
+            details: details.clone(),
         };
 
         let reactor = Reactor {
@@ -550,7 +550,7 @@ pub(crate) mod test {
     #[test]
     fn duration_unused_at() {
         let details = fake_channel_details();
-        let ch = fake_channel(Arc::clone(&details));
+        let ch = fake_channel(details.clone());
         details.unused_since.update();
         assert!(ch.duration_unused().is_some());
     }

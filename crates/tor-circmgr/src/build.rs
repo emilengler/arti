@@ -222,14 +222,14 @@ impl<R: Runtime, C: Buildable + Sync + Send + 'static> Builder<R, C> {
         // isolated here.
         let hops_built = Arc::new(AtomicU32::new(0));
 
-        let self_clone = Arc::clone(self);
+        let self_clone = self.clone();
         let params = params.clone();
 
         let circuit_future = self_clone.build_notimeout(
             path,
             params,
             start_time,
-            Arc::clone(&hops_built),
+            hops_built.clone(),
             guard_status,
         );
 
@@ -734,7 +734,7 @@ mod test {
         let builder: Builder<_, Mutex<FakeCirc>> = Builder::new(
             rt.clone(),
             chanmgr,
-            timeouts::Estimator::new(Arc::clone(&timeouts)),
+            timeouts::Estimator::new(timeouts.clone()),
         );
 
         let params = CircParameters::default();

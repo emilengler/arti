@@ -60,7 +60,7 @@ where
     type TlsStream = async_rustls::client::TlsStream<S>;
 
     fn tls_connector(&self) -> Self::Connector {
-        let connector = async_rustls::TlsConnector::from(Arc::clone(&self.config));
+        let connector = async_rustls::TlsConnector::from(self.config.clone());
         RustlsConnector {
             connector,
             _phantom: std::marker::PhantomData,

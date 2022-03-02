@@ -442,7 +442,7 @@ impl<B: AbstractCircBuilder> PendingEntry<B> {
     fn find_best(ents: &[Arc<Self>], usage: &<B::Spec as AbstractSpec>::Usage) -> Vec<Arc<Self>> {
         // TODO: Actually look over the whole list to see which is better.
         let _ = usage; // currently unused
-        vec![Arc::clone(&ents[0])]
+        vec![ents[0].clone()]
     }
 }
 
@@ -609,7 +609,7 @@ impl<B: AbstractCircBuilder> CircList<B> {
     /// Return the request, and a new receiver stream that it should
     /// use for notification of possible circuits to use.
     fn add_pending_request(&mut self, pending: &Arc<PendingRequest<B>>) {
-        self.pending_requests.insert(Arc::clone(pending));
+        self.pending_requests.insert(pending.clone());
     }
 
     /// Return all pending requests that would be satisfied by a circuit
@@ -771,7 +771,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
                     // We successfully found an action: Take that action.
                     let outcome = self
                         .runtime
-                        .timeout(remaining, Arc::clone(self).take_action(action, usage))
+                        .timeout(remaining, self.clone().take_action(action, usage))
                         .await;
 
                     match outcome {
@@ -817,7 +817,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         let action = self.prepare_action(usage, dir, false)?;
         if let Action::Build(plans) = action {
             for plan in plans {
-                let self_clone = Arc::clone(self);
+                let self_clone = self.clone();
                 let _ignore_receiver = self_clone.spawn_launch(usage, plan);
             }
         }
@@ -900,7 +900,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
             Action::Build(plans) => {
                 let futures = FuturesUnordered::new();
                 for plan in plans {
-                    let self_clone = Arc::clone(&self);
+                    let self_clone = self.clone();
                     // (This is where we actually launch circuits.)
                     futures.push(self_clone.spawn_launch(usage, plan));
                 }
@@ -1031,7 +1031,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
         let plan = CircBuildPlan {
             plan,
             sender,
-            pending: Arc::clone(&pending),
+            pending: pending.clone(),
         };
 
         Ok((pending, plan))
@@ -1053,7 +1053,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
             .expect("Poisoned lock for circuit list")
             .add_pending_circ(pending);
 
-        Ok(Arc::clone(self).spawn_launch(usage, plan))
+        Ok(self.clone().spawn_launch(usage, plan))
     }
 
     /// Spawn a background task to launch a circuit, and report its status.
@@ -1087,7 +1087,7 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
 
         runtime
             .spawn(async move {
-                let self_clone = Arc::clone(&self);
+                let self_clone = self.clone();
                 let future = AssertUnwindSafe(self_clone.do_launch(plan, pending)).catch_unwind();
                 let (new_spec, reply) = match future.await {
                     Ok(x) => x, // Success or regular failure

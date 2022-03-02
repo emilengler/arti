@@ -440,7 +440,7 @@ impl PendingClientCirc {
             channel_id: id,
             crypto_out,
             meta_handler: None,
-            num_hops: Arc::clone(&num_hops),
+            num_hops: num_hops.clone(),
         };
 
         let circuit = ClientCirc {

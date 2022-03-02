@@ -87,7 +87,7 @@ async fn fetch_multiple<R: Runtime>(
     // TODO: instead of waiting for all the queries to finish, we
     // could stream the responses back or something.
     let responses: Vec<Result<(ClientRequest, DirResponse)>> = futures::stream::iter(requests)
-        .map(|query| fetch_single(Arc::clone(&dirmgr), query))
+        .map(|query| fetch_single(dirmgr.clone(), query))
         .buffer_unordered(parallelism)
         .collect()
         .await;
@@ -184,7 +184,7 @@ async fn download_attempt<R: Runtime>(
 ) -> Result<bool> {
     let mut changed = false;
     let missing = state.missing_docs();
-    let fetched = fetch_multiple(Arc::clone(dirmgr), missing, parallelism).await?;
+    let fetched = fetch_multiple(dirmgr.clone(), missing, parallelism).await?;
     for (client_req, dir_response) in fetched {
         let text =
             String::from_utf8(dir_response.into_output()).map_err(Error::BadUtf8FromDirectory)?;
@@ -511,7 +511,7 @@ mod test {
 
             // Try just a load.
             let state = Box::new(DemoState::new1());
-            let result = super::load(Arc::clone(&mgr), state).await.unwrap();
+            let result = super::load(mgr.clone(), state).await.unwrap();
             assert!(result.is_ready(Readiness::Complete));
 
             // Try a bootstrap that could (but won't!) download.

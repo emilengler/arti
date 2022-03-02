@@ -977,7 +977,7 @@ mod test {
 
     impl WriteNetDir for DirRcv {
         fn config(&self) -> Arc<DirMgrConfig> {
-            Arc::clone(&self.cfg)
+            self.cfg.clone()
         }
         fn netdir(&self) -> &SharedMutArc<NetDir> {
             &self.netdir

@@ -165,7 +165,7 @@ impl<F: FlagEvent> FlagPublisher<F> {
                 .map(|a| a.load(Ordering::SeqCst))
                 .collect(),
             listener,
-            inner: Arc::clone(&self.inner),
+            inner: self.inner.clone(),
         }
     }
 
@@ -180,7 +180,7 @@ impl<F> Clone for FlagPublisher<F> {
     fn clone(&self) -> FlagPublisher<F> {
         self.inner.n_publishers.fetch_add(1, Ordering::SeqCst);
         FlagPublisher {
-            inner: Arc::clone(&self.inner),
+            inner: self.inner.clone(),
         }
     }
 }
