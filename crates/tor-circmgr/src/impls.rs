@@ -108,7 +108,7 @@ impl<R: Runtime> crate::mgr::AbstractCircBuilder for crate::build::CircuitBuilde
         // This will probably require a different API for circuit
         // construction.
         match self
-            .build_owned(path, &params, Arc::clone(&guard_status))
+            .build_owned(path, &params, guard_status.clone())
             .await
         {
             Ok(circuit) => {

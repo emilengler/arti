@@ -415,7 +415,7 @@ impl PartialNetDir {
             if let MdEntry::Present { md, .. } = ent {
                 if self.netdir.mds.contains(md.digest()) {
                     loaded.push(md.digest());
-                    self.netdir.add_arc_microdesc(Arc::clone(md));
+                    self.netdir.add_arc_microdesc(md.clone());
                 }
             }
         }

@@ -203,8 +203,8 @@ fn serve_payload(
         .incoming()
         .into_iter()
         .map(|stream| {
-            let send = Arc::clone(send);
-            let receive = Arc::clone(receive);
+            let send = send.clone();
+            let receive = receive.clone();
             std::thread::spawn(move || run_timing(stream?, &send, &receive))
         })
         .collect()
@@ -595,8 +595,8 @@ impl<R: Runtime> Benchmark<R> {
             let futures = streams
                 .into_iter()
                 .map(|stream| {
-                    let up = Arc::clone(&self.upload_payload);
-                    let dp = Arc::clone(&self.download_payload);
+                    let up = self.upload_payload.clone();
+                    let dp = self.download_payload.clone();
                     Box::pin(async move { client(stream, up, dp).await })
                 })
                 .collect::<futures::stream::FuturesUnordered<_>>()

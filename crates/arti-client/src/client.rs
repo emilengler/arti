@@ -350,12 +350,12 @@ impl<R: Runtime> TorClient<R> {
         };
         let chanmgr = Arc::new(tor_chanmgr::ChanMgr::new(runtime.clone()));
         let circmgr =
-            tor_circmgr::CircMgr::new(circ_cfg, statemgr.clone(), &runtime, Arc::clone(&chanmgr))
+            tor_circmgr::CircMgr::new(circ_cfg, statemgr.clone(), &runtime, chanmgr.clone())
                 .map_err(ErrorDetail::CircMgrSetup)?;
         let dirmgr = tor_dirmgr::DirMgr::create_unbootstrapped(
             dir_cfg,
             runtime.clone(),
-            Arc::clone(&circmgr),
+            circmgr.clone(),
         )?;
 
         let conn_status = chanmgr.bootstrap_events();
@@ -780,7 +780,7 @@ impl<R: Runtime> TorClient<R> {
     /// built with the `experimental-api` feature.
     #[cfg(feature = "experimental-api")]
     pub fn dirmgr(&self) -> Arc<tor_dirmgr::DirMgr<R>> {
-        Arc::clone(&self.dirmgr)
+        self.dirmgr.clone()
     }
 
     /// Return a reference to this this client's circuit manager.
@@ -789,7 +789,7 @@ impl<R: Runtime> TorClient<R> {
     /// built with the `experimental-api` feature.
     #[cfg(feature = "experimental-api")]
     pub fn circmgr(&self) -> Arc<tor_circmgr::CircMgr<R>> {
-        Arc::clone(&self.circmgr)
+        self.circmgr.clone()
     }
 
     /// Return a reference to the runtime being used by this client.

@@ -657,7 +657,7 @@ impl<R: Runtime> DirMgr<R> {
     /// Return false if there is no such consensus.
     async fn load_directory(self: &Arc<Self>) -> Result<bool> {
         let state = state::GetConsensusState::new(Arc::downgrade(self), CacheUsage::CacheOnly)?;
-        let _ = bootstrap::load(Arc::clone(self), Box::new(state)).await?;
+        let _ = bootstrap::load(self.clone(), Box::new(state)).await?;
 
         Ok(self.netdir.get().is_some())
     }

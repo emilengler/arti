@@ -47,7 +47,7 @@ impl<T: Eq + Hash> InternCache<T> {
             pp
         } else {
             let arc = Arc::new(value);
-            cache.insert(Arc::clone(&arc));
+            cache.insert(arc.clone());
             arc
         }
     }

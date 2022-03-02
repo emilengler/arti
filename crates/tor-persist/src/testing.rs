@@ -81,7 +81,7 @@ impl TestingStateMgr {
         let inner = self.inner.lock().expect("Lock poisoned.");
         let new_inner = TestingStateMgrInner {
             lock_held: false,
-            storage: Arc::clone(&inner.storage),
+            storage: inner.storage.clone(),
         };
         TestingStateMgr {
             inner: Arc::new(Mutex::new(new_inner)),

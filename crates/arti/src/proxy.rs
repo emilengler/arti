@@ -480,7 +480,7 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
         };
         let client_ref = tor_client.clone();
         let runtime_copy = runtime.clone();
-        let isolation_map_ref = Arc::clone(&isolation_map);
+        let isolation_map_ref = isolation_map.clone();
         runtime.spawn(async move {
             let res = handle_socks_conn(
                 runtime_copy,
