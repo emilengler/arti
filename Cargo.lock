@@ -3533,6 +3533,7 @@ dependencies = [
  "rustls",
  "tokio",
  "tokio-util",
+ "tracing",
  "x509-signature",
 ]
 

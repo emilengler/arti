@@ -28,6 +28,7 @@ async-trait = "0.1.2"
 educe = "0.4.6"
 futures = "0.3.14"
 pin-project = "1"
+tracing = "0.1.18"
 native-tls-crate = { package = "native-tls", version = "0.2", optional = true }
 rustls-crate = { package = "rustls", version = "0.19", optional = true, features = [ "dangerous_configuration" ] }
 
