@@ -24,6 +24,7 @@ use std::net::IpAddr;
 use std::result::Result as StdResult;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
+use tor_rtcompat::scheduler::{Scheduler, TaskType};
 
 use crate::err::ErrorDetail;
 use crate::{status, util, TorClientBuilder};
@@ -82,6 +83,9 @@ pub struct TorClient<R: Runtime> {
     /// bootstrapping. If this is `false`, we will just call `wait_for_bootstrap`
     /// instead.
     should_bootstrap: BootstrapBehavior,
+
+    /// scheduler for asynchronous background tasks
+    scheduler: Arc<Scheduler>,
 }
 
 /// Preferences for whether a [`TorClient`] should bootstrap on its own or not.
@@ -337,6 +341,7 @@ impl<R: Runtime> TorClient<R> {
         let statemgr = FsStateMgr::from_path(config.storage.expand_state_dir()?)?;
         let addr_cfg = config.address_filter.clone();
         let timeout_cfg = config.stream_timeouts;
+        let scheduler = Scheduler::new(runtime.clone());
 
         let (status_sender, status_receiver) = postage::watch::channel();
         let status_receiver = status::BootstrapEvents {
@@ -361,12 +366,11 @@ impl<R: Runtime> TorClient<R> {
             ))
             .map_err(|e| ErrorDetail::from_spawn("top-level status reporter", e))?;
 
-        runtime
-            .spawn(continually_expire_channels(
-                runtime.clone(),
-                Arc::downgrade(&chanmgr),
-            ))
-            .map_err(|e| ErrorDetail::from_spawn("channel expiration task", e))?;
+        let chanmgr_d = Arc::downgrade(&chanmgr);
+        scheduler.register_task_now(
+            TaskType::ChannelExpiry,
+            Box::new(move || Box::pin(expire_channels(chanmgr_d.clone()))),
+        );
 
         // Launch a daemon task to inform the circmgr about new
         // network parameters.
@@ -378,29 +382,41 @@ impl<R: Runtime> TorClient<R> {
             ))
             .map_err(|e| ErrorDetail::from_spawn("circmgr parameter updater", e))?;
 
-        runtime
-            .spawn(update_persistent_state(
-                runtime.clone(),
-                Arc::downgrade(&circmgr),
-                statemgr.clone(),
-            ))
-            .map_err(|e| ErrorDetail::from_spawn("persistent state updater", e))?;
+        let circmgr_d = Arc::downgrade(&circmgr);
+        let statemgr_d = statemgr.clone();
+        scheduler.register_task_now(
+            TaskType::PersistentState,
+            Box::new(move || {
+                Box::pin(update_persistent_state(
+                    circmgr_d.clone(),
+                    statemgr_d.clone(),
+                ))
+            }),
+        );
 
-        runtime
-            .spawn(continually_launch_timeout_testing_circuits(
-                runtime.clone(),
-                Arc::downgrade(&circmgr),
-                Arc::downgrade(&dirmgr),
-            ))
-            .map_err(|e| ErrorDetail::from_spawn("timeout-probe circuit launcher", e))?;
+        let circmgr_d = Arc::downgrade(&circmgr);
+        let dirmgr_d = Arc::downgrade(&dirmgr);
+        scheduler.register_task_now(
+            TaskType::TimeoutTesting,
+            Box::new(move || {
+                Box::pin(launch_timeout_testing_circuits(
+                    circmgr_d.clone(),
+                    dirmgr_d.clone(),
+                ))
+            }),
+        );
 
-        runtime
-            .spawn(continually_preemptively_build_circuits(
-                runtime.clone(),
-                Arc::downgrade(&circmgr),
-                Arc::downgrade(&dirmgr),
-            ))
-            .map_err(|e| ErrorDetail::from_spawn("preemptive circuit launcher", e))?;
+        let circmgr_d = Arc::downgrade(&circmgr);
+        let dirmgr_d = Arc::downgrade(&dirmgr);
+        scheduler.register_task_now(
+            TaskType::PreemptiveCircuits,
+            Box::new(move || {
+                Box::pin(preemptively_build_circuits(
+                    circmgr_d.clone(),
+                    dirmgr_d.clone(),
+                ))
+            }),
+        );
 
         let client_isolation = IsolationToken::new();
 
@@ -417,6 +433,7 @@ impl<R: Runtime> TorClient<R> {
             status_receiver,
             bootstrap_in_progress: Arc::new(AsyncMutex::new(())),
             should_bootstrap: autobootstrap,
+            scheduler: Arc::new(scheduler),
         })
     }
 
@@ -918,56 +935,50 @@ async fn keep_circmgr_params_updated<R: Runtime>(
 ///
 /// This is a daemon task: it runs indefinitely in the background.
 async fn update_persistent_state<R: Runtime>(
-    runtime: R,
     circmgr: Weak<tor_circmgr::CircMgr<R>>,
     statemgr: FsStateMgr,
-) {
+) -> Option<Duration> {
     // TODO: Consider moving this function into tor-circmgr after we have more
     // experience with the state system.
+    if let Some(circmgr) = Weak::upgrade(&circmgr) {
+        use tor_persist::LockStatus::*;
 
-    loop {
-        if let Some(circmgr) = Weak::upgrade(&circmgr) {
-            use tor_persist::LockStatus::*;
-
-            match statemgr.try_lock() {
-                Err(e) => {
-                    error!("Problem with state lock file: {}", e);
-                    break;
-                }
-                Ok(NewlyAcquired) => {
-                    info!("We now own the lock on our state files.");
-                    if let Err(e) = circmgr.upgrade_to_owned_persistent_state() {
-                        error!("Unable to upgrade to owned state files: {}", e);
-                        break;
-                    }
-                }
-                Ok(AlreadyHeld) => {
-                    if let Err(e) = circmgr.store_persistent_state() {
-                        error!("Unable to flush circmgr state: {}", e);
-                        break;
-                    }
-                }
-                Ok(NoLock) => {
-                    if let Err(e) = circmgr.reload_persistent_state() {
-                        error!("Unable to reload circmgr state: {}", e);
-                        break;
-                    }
+        match statemgr.try_lock() {
+            Err(e) => {
+                error!("Problem with state lock file: {}", e);
+                return None;
+            }
+            Ok(NewlyAcquired) => {
+                info!("We now own the lock on our state files.");
+                if let Err(e) = circmgr.upgrade_to_owned_persistent_state() {
+                    error!("Unable to upgrade to owned state files: {}", e);
+                    return None;
                 }
             }
-        } else {
-            debug!("Circmgr has disappeared; task exiting.");
-            return;
+            Ok(AlreadyHeld) => {
+                if let Err(e) = circmgr.store_persistent_state() {
+                    error!("Unable to flush circmgr state: {}", e);
+                    return None;
+                }
+            }
+            Ok(NoLock) => {
+                if let Err(e) = circmgr.reload_persistent_state() {
+                    error!("Unable to reload circmgr state: {}", e);
+                    return None;
+                }
+            }
         }
-        // TODO(nickm): This delay is probably too small.
-        //
-        // Also, we probably don't even want a fixed delay here.  Instead,
-        // we should be updating more frequently when the data is volatile
-        // or has important info to save, and not at all when there are no
-        // changes.
-        runtime.sleep(Duration::from_secs(60)).await;
+    } else {
+        debug!("Circmgr has disappeared; task exiting.");
+        return None;
     }
-
-    error!("State update task is exiting prematurely.");
+    // TODO(nickm): This delay is probably too small.
+    //
+    // Also, we probably don't even want a fixed delay here.  Instead,
+    // we should be updating more frequently when the data is volatile
+    // or has important info to save, and not at all when there are no
+    // changes.
+    Some(Duration::from_secs(60))
 }
 
 /// Run indefinitely, launching circuits as needed to get a good
@@ -982,12 +993,11 @@ async fn update_persistent_state<R: Runtime>(
 /// I'd prefer this to be handled entirely within the tor-circmgr crate;
 /// see [`tor_circmgr::CircMgr::launch_timeout_testing_circuit_if_appropriate`]
 /// for more information.
-async fn continually_launch_timeout_testing_circuits<R: Runtime>(
-    rt: R,
+async fn launch_timeout_testing_circuits<R: Runtime>(
     circmgr: Weak<tor_circmgr::CircMgr<R>>,
     dirmgr: Weak<dyn tor_dirmgr::DirProvider + Send + Sync>,
-) {
-    while let (Some(cm), Some(dm)) = (Weak::upgrade(&circmgr), Weak::upgrade(&dirmgr)) {
+) -> Option<Duration> {
+    if let (Some(cm), Some(dm)) = (Weak::upgrade(&circmgr), Weak::upgrade(&dirmgr)) {
         if let Some(netdir) = dm.latest_netdir() {
             if let Err(e) = cm.launch_timeout_testing_circuit_if_appropriate(&netdir) {
                 warn!("Problem launching a timeout testing circuit: {}", e);
@@ -999,12 +1009,14 @@ async fn continually_launch_timeout_testing_circuits<R: Runtime>(
                 .expect("Out-of-bounds value from BoundedInt32");
 
             drop((cm, dm));
-            rt.sleep(delay).await;
+            Some(delay)
         } else {
             // TODO(eta): ideally, this should wait until we successfully bootstrap using
             //            the bootstrap status API
-            rt.sleep(Duration::from_secs(10)).await;
+            Some(Duration::from_secs(10))
         }
+    } else {
+        None
     }
 }
 
@@ -1019,21 +1031,22 @@ async fn continually_launch_timeout_testing_circuits<R: Runtime>(
 ///
 /// This would be better handled entirely within `tor-circmgr`, like
 /// other daemon tasks.
-async fn continually_preemptively_build_circuits<R: Runtime>(
-    rt: R,
+async fn preemptively_build_circuits<R: Runtime>(
     circmgr: Weak<tor_circmgr::CircMgr<R>>,
     dirmgr: Weak<dyn tor_dirmgr::DirProvider + Send + Sync>,
-) {
-    while let (Some(cm), Some(dm)) = (Weak::upgrade(&circmgr), Weak::upgrade(&dirmgr)) {
+) -> Option<Duration> {
+    if let (Some(cm), Some(dm)) = (Weak::upgrade(&circmgr), Weak::upgrade(&dirmgr)) {
         if let Some(netdir) = dm.latest_netdir() {
             cm.launch_circuits_preemptively(DirInfo::Directory(&netdir))
                 .await;
-            rt.sleep(Duration::from_secs(10)).await;
+            Some(Duration::from_secs(10))
         } else {
             // TODO(eta): ideally, this should wait until we successfully bootstrap using
             //            the bootstrap status API
-            rt.sleep(Duration::from_secs(10)).await;
+            Some(Duration::from_secs(10))
         }
+    } else {
+        None
     }
 }
 /// Periodically expire any channels that have been unused beyond
@@ -1042,16 +1055,14 @@ async fn continually_preemptively_build_circuits<R: Runtime>(
 /// Exist when we find that `chanmgr` is dropped
 ///
 /// This is a daemon task that runs indefinitely in the background
-async fn continually_expire_channels<R: Runtime>(rt: R, chanmgr: Weak<tor_chanmgr::ChanMgr<R>>) {
-    loop {
-        let delay = if let Some(cm) = Weak::upgrade(&chanmgr) {
-            cm.expire_channels()
-        } else {
-            // channel manager is closed.
-            return;
-        };
+async fn expire_channels<R: Runtime>(chanmgr: Weak<tor_chanmgr::ChanMgr<R>>) -> Option<Duration> {
+    if let Some(cm) = Weak::upgrade(&chanmgr) {
+        let delay = cm.expire_channels();
         // This will sometimes be an underestimate, but it's no big deal; we just sleep some more.
-        rt.sleep(Duration::from_secs(delay.as_secs())).await;
+        Some(Duration::from_secs(delay.as_secs()))
+    } else {
+        // channel manager is closed.
+        None
     }
 }
 

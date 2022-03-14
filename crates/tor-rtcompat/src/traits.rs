@@ -52,6 +52,7 @@ pub trait Runtime:
     + SleepProvider
     + TcpProvider
     + TlsProvider<Self::TcpStream>
+    + Unpin
     + 'static
 {
 }
@@ -65,6 +66,7 @@ impl<T> Runtime for T where
         + SleepProvider
         + TcpProvider
         + TlsProvider<Self::TcpStream>
+        + Unpin
         + 'static
 {
 }
