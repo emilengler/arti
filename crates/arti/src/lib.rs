@@ -121,6 +121,7 @@ pub mod logging;
 pub mod listen;
 pub mod process;
 pub mod socks;
+pub mod service;
 pub mod watch_cfg;
 
 pub use cfg::{
@@ -129,6 +130,7 @@ pub use cfg::{
 };
 pub use listen::ListenSpec;
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
+pub use service::{ServiceList, ManagedServices};
 
 use arti_client::{TorClient, TorClientConfig};
 use arti_config::default_config_file;
@@ -142,6 +144,12 @@ use std::convert::TryInto;
 
 /// Shorthand for a boxed and pinned Future.
 type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
+
+/// The builtin service kinds supported by `arti`
+pub fn supported_services<R>() -> ServiceList<R> where R: Runtime {
+    vec![
+    ]
+}
 
 /// Run the main loop of the proxy.
 ///
@@ -184,11 +192,22 @@ pub async fn run<R: Runtime>(
         }));
     }
 
+    let mut services = supported_services();
+    let n_services = services.configure(&arti_config)?;
+    if n_services > 0 {
+        // ServiceList started via the ServiceKind interface spawn off by themselves.
+        // TODO: IMO really we need a version of spawn that lets us wait and detect failure and
+        // crash, rather than blundering on half-functional.  But we don't have that.
+        proxy.push(Box::pin(futures::future::pending()));
+    }
+
     if proxy.is_empty() {
         // TODO change this message so it's not only about socks_port
         warn!("No proxy port set; specify -p PORT or use the `socks_port` configuration option.");
         return Ok(());
     }
+
+    services.start(client.clone()).await?;
 
     if arti_config.application().watch_configuration {
         watch_cfg::watch_for_config_changes(config_sources, arti_config, client.clone())?;
