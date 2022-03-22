@@ -244,10 +244,15 @@ impl DirMgrConfig {
     ///
     /// Any fields which aren't allowed to change at runtime are copied from self.
     pub(crate) fn update_from_config(&self, new_config: &DirMgrConfig) -> DirMgrConfig {
+        let fallbacks = new_config
+            .network_config
+            .fallbacks
+            .with_status_from(&self.network_config.fallbacks);
+
         DirMgrConfig {
             cache_path: self.cache_path.clone(),
             network_config: NetworkConfig {
-                fallbacks: new_config.network_config.fallbacks.clone(),
+                fallbacks,
                 authorities: self.network_config.authorities.clone(),
             },
             schedule_config: new_config.schedule_config.clone(),

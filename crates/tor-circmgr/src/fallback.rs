@@ -11,6 +11,7 @@
 //! `tor-dirmgr`: any changes here must be reflected there.
 
 mod set;
+mod status;
 
 use derive_builder::Builder;
 use tor_config::ConfigBuildError;
@@ -29,7 +30,7 @@ pub use set::FallbackSet;
 // Note that we do *not* set serde(deny_unknown_fields) on this
 // structure: we want our fallback directory configuration format to
 // be future-proof against adding new info about each fallback.
-#[derive(Debug, Clone, Deserialize, Builder, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Builder, PartialEq, Eq)]
 #[builder(build_fn(validate = "FallbackDirBuilder::validate", error = "ConfigBuildError"))]
 #[builder(derive(Deserialize))]
 pub struct FallbackDir {

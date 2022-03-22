@@ -60,10 +60,12 @@ impl<R: Runtime> crate::mgr::AbstractCircBuilder for crate::build::CircuitBuilde
         dir: DirInfo<'_>,
     ) -> Result<(Plan, SupportedCircUsage)> {
         let mut rng = rand::thread_rng();
+        let now = self.runtime().now();
         let (path, final_spec, guard_status, guard_usable) = usage.build_path(
             &mut rng,
             dir,
             Some(self.guardmgr()),
+            now,
             self.path_config().as_ref(),
         )?;
 

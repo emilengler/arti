@@ -387,6 +387,11 @@ impl<R: Runtime> CircuitBuilder<R> {
     pub(crate) fn guardmgr(&self) -> &tor_guardmgr::GuardMgr<R> {
         &self.guardmgr
     }
+
+    /// Return a reference to this builder's `Runtime`.
+    pub(crate) fn runtime(&self) -> &R {
+        &self.builder.runtime
+    }
 }
 
 /// Helper function: spawn a future as a background task, and run it with

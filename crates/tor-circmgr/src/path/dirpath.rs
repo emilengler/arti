@@ -1,4 +1,6 @@
 //! Code to construct paths to a directory for non-anonymous downloads
+use std::time::Instant;
+
 use super::TorPath;
 use crate::{DirInfo, Error, Result};
 use tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable};
@@ -29,11 +31,12 @@ impl DirPathBuilder {
         &self,
         rng: &mut R,
         netdir: DirInfo<'a>,
+        now: Instant,
         guards: Option<&GuardMgr<RT>>,
     ) -> Result<(TorPath<'a>, Option<GuardMonitor>, Option<GuardUsable>)> {
         match (netdir, guards) {
             (DirInfo::Fallbacks(f), _) => {
-                let relay = f.choose(rng)?;
+                let relay = f.choose(rng, now)?;
                 return Ok((TorPath::new_fallback_one_hop(relay), None, None));
             }
             (DirInfo::Directory(netdir), None) => {
@@ -83,9 +86,10 @@ mod test {
         let mut rng = rand::thread_rng();
         let dirinfo = (&netdir).into();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
         for _ in 0..1000 {
-            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, guards);
+            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, now, guards);
             let (p, _, _) = p.unwrap();
             assert!(p.exit_relay().is_none());
             assert_eq!(p.len(), 1);
@@ -118,9 +122,10 @@ mod test {
         let dirinfo = (&fb).into();
         let mut rng = rand::thread_rng();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
         for _ in 0..10 {
-            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, guards);
+            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, now, guards);
             let (p, _, _) = p.unwrap();
             assert!(p.exit_relay().is_none());
             assert_eq!(p.len(), 1);
@@ -140,8 +145,9 @@ mod test {
         let dirinfo = DirInfo::Fallbacks(&fb_set);
         let mut rng = rand::thread_rng();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
-        let err = DirPathBuilder::default().pick_path(&mut rng, dirinfo, guards);
+        let err = DirPathBuilder::default().pick_path(&mut rng, dirinfo, now, guards);
         assert!(matches!(err, Err(Error::NoPath(_))));
     }
 
@@ -157,6 +163,7 @@ mod test {
             let statemgr = tor_persist::TestingStateMgr::new();
             let guards = tor_guardmgr::GuardMgr::new(rt.clone(), statemgr).unwrap();
             guards.update_network(&netdir);
+            let now = Instant::now();
 
             let mut distinct_guards = HashSet::new();
 
@@ -164,7 +171,7 @@ mod test {
             // in guard-spec.  We'll just have every path succeed.
             for _ in 0..40 {
                 let (path, mon, usable) = DirPathBuilder::new()
-                    .pick_path(&mut rng, dirinfo, Some(&guards))
+                    .pick_path(&mut rng, dirinfo, now, Some(&guards))
                     .unwrap();
                 if let crate::path::TorPathInner::OneHop(relay) = path.inner {
                     distinct_guards.insert(relay.ed_identity().clone());
