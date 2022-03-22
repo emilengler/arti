@@ -51,7 +51,7 @@
 #![deny(clippy::unwrap_used)]
 
 use tor_chanmgr::ChanMgr;
-use tor_netdir::{fallback::FallbackDir, NetDir};
+use tor_netdir::NetDir;
 use tor_proto::circuit::{CircParameters, ClientCirc, UniqId};
 use tor_rtcompat::Runtime;
 
@@ -63,6 +63,7 @@ use tracing::{debug, error, info, warn};
 pub mod build;
 mod config;
 mod err;
+pub mod fallback;
 mod impls;
 mod mgr;
 pub mod path;
@@ -83,6 +84,7 @@ pub use config::{
 };
 
 use crate::preemptive::PreemptiveCircuitPredictor;
+use fallback::FallbackDir;
 use usage::TargetCircUsage;
 
 pub use tor_guardmgr::{ExternalFailure, GuardId};

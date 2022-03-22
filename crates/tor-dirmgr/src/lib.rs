@@ -98,7 +98,7 @@ pub use docid::DocId;
 pub use err::Error;
 pub use event::{DirBootstrapEvents, DirBootstrapStatus, DirEvent, DirStatus};
 pub use storage::DocumentText;
-pub use tor_netdir::fallback::{FallbackDir, FallbackDirBuilder};
+pub use tor_circmgr::fallback::{FallbackDir, FallbackDirBuilder};
 
 /// A Result as returned by this crate.
 pub type Result<T> = std::result::Result<T, Error>;
