@@ -63,8 +63,8 @@ async fn fetch_single<R: Runtime>(
     let dirinfo = match cur_netdir {
         Some(ref netdir) => netdir.as_ref().into(),
         None => {
-            fbs = config.fallbacks().iter().collect::<Vec<_>>();
-            fbs[..].into()
+            fbs = config.fallbacks();
+            fbs.into()
         }
     };
     let outcome =

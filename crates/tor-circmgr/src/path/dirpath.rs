@@ -5,7 +5,7 @@ use tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable};
 use tor_netdir::{Relay, WeightRole};
 use tor_rtcompat::Runtime;
 
-use rand::{seq::SliceRandom, Rng};
+use rand::Rng;
 
 /// A PathBuilder that can connect to a directory.
 #[non_exhaustive]
@@ -33,10 +33,8 @@ impl DirPathBuilder {
     ) -> Result<(TorPath<'a>, Option<GuardMonitor>, Option<GuardUsable>)> {
         match (netdir, guards) {
             (DirInfo::Fallbacks(f), _) => {
-                let relay = f.choose(rng);
-                if let Some(r) = relay {
-                    return Ok((TorPath::new_fallback_one_hop(r), None, None));
-                }
+                let relay = f.choose(rng)?;
+                return Ok((TorPath::new_fallback_one_hop(relay), None, None));
             }
             (DirInfo::Directory(netdir), None) => {
                 let relay = netdir.pick_relay(rng, WeightRole::BeginDir, Relay::is_dir_cache);
@@ -69,7 +67,7 @@ mod test {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::clone_on_copy)]
     use super::*;
-    use crate::fallback::FallbackDir;
+    use crate::fallback::{FallbackDir, FallbackSet};
     use crate::path::assert_same_path_when_owned;
     use crate::test::OptDummyGuardMgr;
     use std::collections::HashSet;
@@ -116,8 +114,8 @@ mod test {
                 .build()
                 .unwrap(),
         ];
-        let fb: Vec<_> = fb_owned.iter().collect();
-        let dirinfo = (&fb[..]).into();
+        let fb: FallbackSet = fb_owned.clone().into_iter().collect();
+        let dirinfo = (&fb).into();
         let mut rng = rand::thread_rng();
         let guards: OptDummyGuardMgr<'_> = None;
 
@@ -129,7 +127,7 @@ mod test {
             assert_same_path_when_owned(&p);
 
             if let crate::path::TorPathInner::FallbackOneHop(f) = p.inner {
-                assert!(std::ptr::eq(f, fb[0]) || std::ptr::eq(f, fb[1]));
+                assert!(fb_owned.contains(f));
             } else {
                 panic!("Generated the wrong kind of path.");
             }
@@ -138,8 +136,8 @@ mod test {
 
     #[test]
     fn dirpath_no_fallbacks() {
-        let fb = vec![];
-        let dirinfo = DirInfo::Fallbacks(&fb[..]);
+        let fb_set: FallbackSet = vec![].into_iter().collect();
+        let dirinfo = DirInfo::Fallbacks(&fb_set);
         let mut rng = rand::thread_rng();
         let guards: OptDummyGuardMgr<'_> = None;
 

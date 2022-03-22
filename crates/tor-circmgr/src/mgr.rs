@@ -1335,6 +1335,7 @@ mod test {
     use crate::usage::test::{assert_isoleq, IsolationTokenEq};
     use crate::usage::{ExitPolicy, SupportedCircUsage};
     use crate::{Error, StreamIsolation, TargetCircUsage, TargetPort};
+    use once_cell::sync::Lazy;
     use std::collections::BTreeSet;
     use std::sync::atomic::{self, AtomicUsize};
     use tor_error::bad_api_usage;
@@ -1463,10 +1464,11 @@ mod test {
 
     const FAKE_CIRC_DELAY: Duration = Duration::from_millis(30);
 
-    static DI_EMPTY: [&crate::fallback::FallbackDir; 0] = [];
+    static EMPTY_FALLBACK_SET: Lazy<crate::fallback::FallbackSet> =
+        Lazy::new(|| vec![].into_iter().collect());
 
     fn di() -> DirInfo<'static> {
-        DI_EMPTY[..].into()
+        (&*EMPTY_FALLBACK_SET).into()
     }
 
     #[async_trait]
