@@ -11,6 +11,7 @@ use std::{
     sync::{Arc, Mutex},
     time::Instant,
 };
+use tor_error::internal;
 use tor_guardmgr::{ExternalFailure, GuardStatus};
 use tor_llcrypto::pk::ed25519::Ed25519Identity;
 
@@ -142,7 +143,14 @@ impl FallbackSet {
                 .iter()
                 .filter(|entry| status[entry.index].usable_at(now))
                 .choose(rng)
-                .ok_or(Error::AllFallbackDirsDown)?
+                .ok_or_else(
+                    || match status.iter().filter_map(Status::next_retriable).min() {
+                        Some(retry_at) => Error::AllFallbackDirsDown { retry_at },
+                        None => {
+                            internal!("logic error: all fallbacks are down, and none are?").into()
+                        }
+                    },
+                )?
         };
 
         Ok((
@@ -380,7 +388,7 @@ mod test {
 
         assert!(matches!(
             simple.choose(&mut rand::thread_rng(), now),
-            Err(Error::AllFallbackDirsDown)
+            Err(Error::AllFallbackDirsDown { .. })
         ));
     }
 

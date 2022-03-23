@@ -791,6 +791,9 @@ impl<B: AbstractCircBuilder + 'static, R: Runtime> AbstractCircMgr<B, R> {
                             // the next guard is retriable.
                             instant.saturating_duration_since(self.runtime.now()) + small_delay
                         }
+                        Error::AllFallbackDirsDown { retry_at } => {
+                            retry_at.saturating_duration_since(self.runtime.now()) + small_delay
+                        }
                         _ => {
                             // Any other errors are pretty unusual; wait a little while, then try again.
                             small_delay
