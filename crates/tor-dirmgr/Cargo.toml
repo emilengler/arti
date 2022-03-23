@@ -34,6 +34,7 @@ tor-dirclient = { path = "../tor-dirclient", version = "0.1.0"}
 tor-error = { path="../tor-error", version = "0.1.0"}
 tor-netdir = { path = "../tor-netdir", version = "0.1.0"}
 tor-netdoc = { path = "../tor-netdoc", version = "0.1.0"}
+tor-linkspec = { path = "../tor-linkspec", version = "0.1.0"}
 tor-llcrypto = { path = "../tor-llcrypto", version = "0.1.0"}
 tor-rtcompat = { path = "../tor-rtcompat", version = "0.1.0"}
 

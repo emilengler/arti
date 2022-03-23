@@ -2,8 +2,8 @@
 use std::time::Instant;
 
 use super::TorPath;
-use crate::{DirInfo, Error, Result};
-use tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable};
+use crate::{build::FirstHopStatusHandle, DirInfo, Error, Result};
+use tor_guardmgr::{GuardMgr, GuardUsable};
 use tor_netdir::{Relay, WeightRole};
 use tor_rtcompat::Runtime;
 
@@ -33,16 +33,16 @@ impl DirPathBuilder {
         netdir: DirInfo<'a>,
         now: Instant,
         guards: Option<&GuardMgr<RT>>,
-    ) -> Result<(TorPath<'a>, Option<GuardMonitor>, Option<GuardUsable>)> {
+    ) -> Result<(TorPath<'a>, FirstHopStatusHandle, Option<GuardUsable>)> {
         match (netdir, guards) {
             (DirInfo::Fallbacks(f), _) => {
-                let relay = f.choose(rng, now)?;
-                return Ok((TorPath::new_fallback_one_hop(relay), None, None));
+                let (relay, monitor) = f.choose(rng, now)?;
+                return Ok((TorPath::new_fallback_one_hop(relay), monitor.into(), None));
             }
             (DirInfo::Directory(netdir), None) => {
                 let relay = netdir.pick_relay(rng, WeightRole::BeginDir, Relay::is_dir_cache);
                 if let Some(r) = relay {
-                    return Ok((TorPath::new_one_hop(r), None, None));
+                    return Ok((TorPath::new_one_hop(r), None.into(), None));
                 }
             }
             (DirInfo::Directory(netdir), Some(guardmgr)) => {
@@ -55,7 +55,7 @@ impl DirPathBuilder {
                     .expect("Unable to build directory guard usage");
                 let (guard, mon, usable) = guardmgr.select_guard(guard_usage, Some(netdir))?;
                 if let Some(r) = guard.get_relay(netdir) {
-                    return Ok((TorPath::new_one_hop(r), Some(mon), Some(usable)));
+                    return Ok((TorPath::new_one_hop(r), Some(mon).into(), Some(usable)));
                 }
             }
         }
@@ -175,7 +175,7 @@ mod test {
                     .unwrap();
                 if let crate::path::TorPathInner::OneHop(relay) = path.inner {
                     distinct_guards.insert(relay.ed_identity().clone());
-                    mon.unwrap().succeeded();
+                    mon.report(tor_guardmgr::GuardStatus::Success);
                     assert!(usable.unwrap().await.unwrap());
                 } else {
                     panic!("Generated the wrong kind of path.");

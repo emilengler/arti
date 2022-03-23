@@ -21,6 +21,7 @@ use tor_llcrypto::pk::rsa::RsaIdentity;
 use serde::Deserialize;
 use std::net::SocketAddr;
 
+pub(crate) use set::FallbackMonitor;
 pub use set::FallbackSet;
 
 /// A directory whose location ships with Tor (or arti), and which we

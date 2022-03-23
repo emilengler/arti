@@ -11,8 +11,9 @@ use std::time::Instant;
 use tor_error::bad_api_usage;
 use tracing::debug;
 
+use crate::build::FirstHopStatusHandle;
 use crate::path::{dirpath::DirPathBuilder, exitpath::ExitPathBuilder, TorPath};
-use tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable};
+use tor_guardmgr::{GuardMgr, GuardUsable};
 use tor_netdir::Relay;
 use tor_netdoc::types::policy::PortPolicy;
 use tor_rtcompat::Runtime;
@@ -451,7 +452,7 @@ impl TargetCircUsage {
     ) -> Result<(
         TorPath<'a>,
         SupportedCircUsage,
-        Option<GuardMonitor>,
+        FirstHopStatusHandle,
         Option<GuardUsable>,
     )> {
         match self {
@@ -473,7 +474,7 @@ impl TargetCircUsage {
                         policy,
                         isolation: None,
                     },
-                    mon,
+                    mon.into(),
                     usable,
                 ))
             }
@@ -492,7 +493,7 @@ impl TargetCircUsage {
                         policy,
                         isolation: Some(isolation.clone()),
                     },
-                    mon,
+                    mon.into(),
                     usable,
                 ))
             }
@@ -508,7 +509,7 @@ impl TargetCircUsage {
                     _ => SupportedCircUsage::NoUsage,
                 };
 
-                Ok((path, usage, mon, usable))
+                Ok((path, usage, mon.into(), usable))
             }
         }
     }

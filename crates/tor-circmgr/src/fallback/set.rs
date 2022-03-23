@@ -4,7 +4,14 @@ use super::{status::Status, FallbackDir};
 use crate::{Error, Result};
 use rand::{seq::IteratorRandom, Rng};
 use serde::Deserialize;
-use std::{borrow::Borrow, collections::HashSet, iter::FromIterator, sync::Mutex, time::Instant};
+use std::{
+    borrow::Borrow,
+    collections::HashSet,
+    iter::FromIterator,
+    sync::{Arc, Mutex},
+    time::Instant,
+};
+use tor_guardmgr::{ExternalFailure, GuardStatus};
 use tor_llcrypto::pk::ed25519::Ed25519Identity;
 
 /// A set of fallback directory caches.
@@ -22,14 +29,18 @@ pub struct FallbackSet {
     /// Interior mutable list of status, indexed by the values in `fallbacks`.
     ///
     /// Keeping this field separate les us simplify our lifetimes and API hugely.
-    status: Mutex<Vec<Status>>,
+    ///
+    /// We use an `Arc` here so we can make `FallbackMonitor` work.
+    status: Arc<Mutex<Vec<Status>>>,
 }
 
 impl Clone for FallbackSet {
     fn clone(&self) -> Self {
         Self {
             fallbacks: self.fallbacks.clone(),
-            status: Mutex::new(self.status.lock().expect("poisoned lock").clone()),
+            status: Arc::new(Mutex::new(
+                self.status.lock().expect("poisoned lock").clone(),
+            )),
         }
     }
 }
@@ -102,7 +113,7 @@ impl FromIterator<FallbackDir> for FallbackSet {
 
         FallbackSet {
             fallbacks,
-            status: Mutex::new(status),
+            status: Arc::new(Mutex::new(status)),
         }
     }
 }
@@ -115,18 +126,33 @@ impl<T: IntoIterator<Item = FallbackDir>> From<T> for FallbackSet {
 
 impl FallbackSet {
     /// Pick a usable fallback directory at random from this set.
-    pub(crate) fn choose<R: Rng>(&self, rng: &mut R, now: Instant) -> Result<&FallbackDir> {
+    pub(crate) fn choose<R: Rng>(
+        &self,
+        rng: &mut R,
+        now: Instant,
+    ) -> Result<(&FallbackDir, FallbackMonitor)> {
         if self.fallbacks.is_empty() {
             return Err(Error::NoPath("No fallbacks known".into()));
         }
 
-        let status = self.status.lock().expect("Poisoned lock");
+        let entry = {
+            let status = self.status.lock().expect("Poisoned lock");
 
-        self.fallbacks
-            .iter()
-            .filter_map(|entry| status[entry.index].usable_at(now).then(|| &entry.fallback))
-            .choose(rng)
-            .ok_or(Error::AllFallbackDirsDown)
+            self.fallbacks
+                .iter()
+                .filter(|entry| status[entry.index].usable_at(now))
+                .choose(rng)
+                .ok_or(Error::AllFallbackDirsDown)?
+        };
+
+        Ok((
+            &entry.fallback,
+            FallbackMonitor {
+                status: Arc::clone(&self.status),
+                index: entry.index,
+                failure_pending: false,
+            },
+        ))
     }
 
     /// Return the number of members in this set.
@@ -145,9 +171,8 @@ impl FallbackSet {
     }
 
     /// Apply a function to the Status entry for the fallback in this map with a given [`Ed25519Identity`].
-    #[allow(dead_code)]
     pub(crate) fn with_status_by_ed_id<F, T>(
-        &mut self,
+        &self,
         ed_identity: &Ed25519Identity,
         func: F,
     ) -> Option<T>
@@ -158,6 +183,25 @@ impl FallbackSet {
         self.fallbacks
             .get(ed_identity)
             .map(|entry| func(&mut status[entry.index]))
+    }
+
+    /// Record that a failure of type `external_failure` happened for `id` outside of the circmgr.
+    pub fn note_external_failure(
+        &self,
+        id: &Ed25519Identity,
+        now: Instant,
+        external_failure: ExternalFailure,
+    ) {
+        let _ = external_failure; // ignored for now, but will eventually be useful.
+        self.with_status_by_ed_id(id, |status| status.note_failure(now));
+    }
+
+    /// Record that a success happened for `id`.
+    ///
+    /// Note that we will _never_ record a fallback as having been "successful"
+    /// from inside the circmgr: only when we successfully download something from it.
+    pub fn note_success(&self, id: &Ed25519Identity) {
+        self.with_status_by_ed_id(id, |status| status.note_success());
     }
 
     /// Return the index for the status entry for this _exact_ fallback entry, if there is one.
@@ -196,6 +240,54 @@ impl FallbackSet {
         let index = status.len();
         status.push(Status::default());
         self.fallbacks.insert(Entry { fallback, index });
+    }
+}
+
+/// Monitor object for reporting the status of a fallback when used in a circuit.
+#[derive(Clone)]
+pub(crate) struct FallbackMonitor {
+    /// Reference to the array of Status objects for this fallback.
+    status: Arc<Mutex<Vec<Status>>>,
+    /// Index within that array.
+    index: usize,
+    /// Pending failure status (to be written on drop or commit)
+    failure_pending: bool,
+}
+
+impl FallbackMonitor {
+    /// Helper: record that a failure occurred in the owning object.
+    fn note_failure(&mut self) {
+        // TODO: we'd like to have an Instant from the runtime instead.
+        let now = Instant::now();
+        self.status.lock().expect("poisoned lock")[self.index].note_failure(now);
+        self.failure_pending = false; // prevent duplicate calls.
+    }
+
+    /// Commit the current status.  (We only note failures in this crate.)
+    pub(crate) fn commit(mut self) {
+        if self.failure_pending {
+            self.note_failure();
+        }
+    }
+
+    /// Change the pending status.  This status will be reported
+    /// when `commit` is called, or when this object is dropped.
+    pub(crate) fn pending_status(&mut self, status: GuardStatus) {
+        self.failure_pending = matches!(status, GuardStatus::Failure);
+    }
+
+    /// Helper: change the current status and report it.
+    pub(crate) fn report(mut self, status: GuardStatus) {
+        self.pending_status(status);
+        self.commit();
+    }
+}
+
+impl Drop for FallbackMonitor {
+    fn drop(&mut self) {
+        if self.failure_pending {
+            self.note_failure();
+        }
     }
 }
 
@@ -254,12 +346,12 @@ mod test {
             Err(Error::NoPath(_))
         ));
 
-        let mut simple = example_fallback_set();
+        let simple = example_fallback_set();
 
         let mut counts = [0_usize; 3];
         for _ in 0..30 {
             let fb = simple.choose(&mut rand::thread_rng(), now);
-            let idx = fb.unwrap().ed_identity.as_bytes()[0] as usize;
+            let idx = fb.unwrap().0.ed_identity.as_bytes()[0] as usize;
             counts[idx] += 1;
         }
         assert!(counts[0] > 0);
@@ -274,7 +366,7 @@ mod test {
         let mut counts = [0_usize; 3];
         for _ in 0..30 {
             let fb = simple.choose(&mut rand::thread_rng(), now);
-            let idx = fb.unwrap().ed_identity.as_bytes()[0] as usize;
+            let idx = fb.unwrap().0.ed_identity.as_bytes()[0] as usize;
             counts[idx] += 1;
         }
 
@@ -355,8 +447,7 @@ mod test {
 
         // Now compose a new FallbackSet containing the members of simple1 and
         // the status from simple2.
-        let mut set3 = simple1.with_status_from(&simple2);
-        dbg!(&set3);
+        let set3 = simple1.with_status_from(&simple2);
 
         assert!(set3
             .with_status_by_ed_id(&[0x10; 32].into(), |_| ())
