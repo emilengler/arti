@@ -305,32 +305,25 @@ pub fn main_main() -> Result<()> {
 
     let cfg = cfg_sources.load()?;
 
-    let config: ArtiConfig = cfg.try_into().context("read configuration")?;
+    let mut config: ArtiConfig = cfg.try_into().context("read configuration")?;
 
     let _log_guards = logging::setup_logging(config.logging(), matches.value_of("loglevel"))?;
 
     if let Some(proxy_matches) = matches.subcommand_matches("proxy") {
-        let socks_port = match (
-            proxy_matches.value_of("socks-port"),
-            config.proxy().socks_port,
-        ) {
-            (Some(p), _) => p.parse().expect("Invalid port specified"),
-            (None, Some(s)) => s,
-            (None, None) => 0,
-        };
+        if let Some(p) = proxy_matches.value_of("socks-port") {
+            config.proxy.socks_port = Some(p.parse().expect("Invalid port specified"));
+        }
 
-        let dns_port = match (proxy_matches.value_of("dns-port"), config.proxy().dns_port) {
-            (Some(p), _) => p.parse().expect("Invalid port specified"),
-            (None, Some(s)) => s,
-            (None, None) => 0,
-        };
+        if let Some(p) = proxy_matches.value_of("dns-port") {
+            config.proxy.dns_port = Some(p.parse().expect("Invalid port specified"));
+        }
 
         let client_config = config.tor_client_config()?;
 
         info!(
-            "Starting Arti {} in SOCKS proxy mode on port {}...",
+            "Starting Arti {} in SOCKS proxy mode on port {:?}...",
             env!("CARGO_PKG_VERSION"),
-            socks_port
+            config.proxy().socks_port
         );
 
         process::use_max_file_limit(&config);
@@ -352,8 +345,8 @@ pub fn main_main() -> Result<()> {
         let rt_copy = runtime.clone();
         rt_copy.block_on(run(
             runtime,
-            socks_port,
-            dns_port,
+            config.proxy().socks_port.unwrap_or_default(),
+            config.proxy().dns_port.unwrap_or_default(),
             cfg_sources,
             config,
             client_config,

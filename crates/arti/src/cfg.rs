@@ -120,7 +120,7 @@ pub struct ArtiConfig {
     application: ApplicationConfig,
 
     /// Configuration for proxy listeners
-    proxy: ProxyConfig,
+    pub(crate) proxy: ProxyConfig,
 
     /// Logging configuration
     logging: LoggingConfig,
