@@ -272,7 +272,7 @@ impl FallbackMonitor {
     }
 
     /// Commit the current status.  (We only note failures in this crate.)
-    pub(crate) fn commit(mut self) {
+    pub(crate) fn commit(self) {
         // `drop` will do the work
     }
 
