@@ -84,6 +84,7 @@ dependencies = [
  "clap",
  "config",
  "derive_builder",
+ "derive_more",
  "educe",
  "futures",
  "itertools",

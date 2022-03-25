@@ -3,7 +3,9 @@
 //! A proxy is launched with [`run_socks_proxy()`], which listens for new
 //! connections and then runs
 
+use async_trait::async_trait;
 use derive_builder::Builder;
+use derive_more::Display;
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as IoError};
 use futures::stream::StreamExt;
@@ -18,6 +20,7 @@ use arti_client::{ErrorKind, HasKind, StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener};
 use tor_socksproto::{SocksAddr, SocksAuth, SocksCmd, SocksRequest};
 use crate::{ArtiConfig, ListenSpec};
+use crate::service::{self, ReconfigureCommandStream};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -378,6 +381,12 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
     }
 }
 
+#[derive(Copy, Clone, Default, Display)]
+#[display(fmt = "SOCKS")]
+/// SOCKS service kind
+#[non_exhaustive]
+pub struct SocksServiceKind;
+
 /// Configuration for an instance of the SOCKS proxy
 ///
 /// Currently, there are no configuration options (other than the listening port(s))
@@ -401,23 +410,58 @@ pub fn wanted_instances(acfg: &ArtiConfig) -> Result<Vec<(ListenSpec, InstanceCo
     )
 }
 
-/// Launch a SOCKS proxy to listen on a given localhost port, and run
-/// indefinitely.
-///
-/// Requires a `runtime` to use for launching tasks and handling
-/// timeouts, and a `tor_client` to use in connecting over the Tor
-/// network.
-pub async fn run_socks_proxy<R: Runtime>(
-    runtime: R,
+/// SOCKS proxy instance
+#[must_use = "a socks::Proxy must be run() to do anything useful"]
+pub struct Proxy<R> where R: Runtime {
+    ///
     tor_client: TorClient<R>,
-    socks_ports: ListenSpec,
+    ///
+    listeners: Vec<R::TcpListener>,
+    ///
     config: InstanceConfig,
+}
+
+impl<R> Proxy<R> where R: Runtime {
+    /// Create the proxy (acquiring listening ports etc.)
+    ///
+    /// After creation, the proxy must be [`run`](Proxy::run).
+    pub async fn create(
+        runtime: R,
+        tor_client: TorClient<R>,
+        socks_ports: ListenSpec,
+        config: InstanceConfig,
+    ) -> Result<Proxy<R>> {
+        let listeners = socks_ports.bind(&format!("SOCKS ({})", &socks_ports), |addr| {
+            let runtime = runtime.clone();
+            async move { Ok(runtime.listen(&addr).await?) }
+        }).await?;
+
+        Ok(Proxy {
+            tor_client,
+            listeners,
+            config,
+        })
+    }
+
+    /// Run the proxy
+    ///
+    /// Returns Ok if the proxy is shut down (via a ReconfigureCommand),
+    /// or Err if it suffers a fatal error.
+    ///
+    /// Normally you would run this in a task.
+    pub async fn run(self, reconfigure: ReconfigureCommandStream<InstanceConfig>) -> Result<()> {
+        run_socks_proxy(self, reconfigure).await
+    }
+}
+
+/// Implementation of `Proxy::run`, separated out to avoid rightward drift
+async fn run_socks_proxy<R: Runtime>(
+    proxy: Proxy<R>,
+    _reconfigure: ReconfigureCommandStream<InstanceConfig>
 ) -> Result<()> {
+    let Proxy { tor_client, listeners, config } = proxy;
     let InstanceConfig { } = config; // ensures adding unimplemented option causes compile failure
-    let listeners = socks_ports.bind(&format!("SOCKS ({})", &socks_ports), |addr| {
-        let runtime = runtime.clone();
-        async move { Ok(runtime.listen(&addr).await?) }
-    }).await?;
+    let runtime = tor_client.runtime();
 
     // Create a stream of (incoming socket, listener_id) pairs, selected
     // across all the listeners.
@@ -457,4 +501,25 @@ pub async fn run_socks_proxy<R: Runtime>(
     }
 
     Ok(())
+}
+
+#[async_trait]
+impl<R:Runtime> service::ServiceKind<R> for SocksServiceKind {
+    type Identity = ListenSpec;
+    type InstanceConfig = InstanceConfig;
+    type Instance = Proxy<R>;
+
+    fn configure(&self, acfg: &ArtiConfig) -> Result<Vec<(Self::Identity, Self::InstanceConfig)>> {
+        wanted_instances(acfg)
+    }
+
+    async fn create(&self, tor_client: TorClient<R>, addrs: Self::Identity,
+                    config: Self::InstanceConfig) -> Result<Proxy<R>> {
+        Proxy::create(tor_client.runtime().clone(), tor_client, addrs.clone(), config).await
+    }
+
+    async fn run(proxy: Proxy<R>, reconfigure: ReconfigureCommandStream<Self::InstanceConfig>)
+                   -> Result<()> {
+        proxy.run(reconfigure).await
+    }
 }

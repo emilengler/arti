@@ -130,7 +130,8 @@ pub use cfg::{
 };
 pub use listen::ListenSpec;
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
-pub use service::{ServiceList, ManagedServices};
+pub use service::{ServiceList, ServiceKind, ManagedServices};
+pub use socks::SocksServiceKind;
 
 use arti_client::{TorClient, TorClientConfig};
 use arti_config::default_config_file;
@@ -148,6 +149,7 @@ type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 /// The builtin service kinds supported by `arti`
 pub fn supported_services<R>() -> ServiceList<R> where R: Runtime {
     vec![
+        SocksServiceKind.manage(),
     ]
 }
 
@@ -173,15 +175,6 @@ pub async fn run<R: Runtime>(
         .create_unbootstrapped()?;
 
     let mut proxy: Vec<PinnedFuture<(Result<()>, &str)>> = Vec::new();
-
-    for (socks_listener, socks_config) in socks::wanted_instances(&arti_config)? {
-        let runtime = runtime.clone();
-        let client = client.isolated_client();
-        proxy.push(Box::pin(async move {
-            let res = socks::run_socks_proxy(runtime, client, socks_listener, socks_config).await;
-            (res, "SOCKS")
-        }));
-    }
 
     if dns_port != 0 {
         let runtime = runtime.clone();
