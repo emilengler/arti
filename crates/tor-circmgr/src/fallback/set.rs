@@ -29,7 +29,7 @@ pub struct FallbackSet {
     fallbacks: HashSet<Entry>,
     /// Interior mutable list of status, indexed by the values in `fallbacks`.
     ///
-    /// Keeping this field separate les us simplify our lifetimes and API hugely.
+    /// Keeping this field separate lets us simplify our lifetimes and API hugely.
     ///
     /// We use an `Arc` here so we can make `FallbackMonitor` work.
     status: Arc<Mutex<Vec<Status>>>,
@@ -273,9 +273,7 @@ impl FallbackMonitor {
 
     /// Commit the current status.  (We only note failures in this crate.)
     pub(crate) fn commit(mut self) {
-        if self.failure_pending {
-            self.note_failure();
-        }
+        // `drop` will do the work
     }
 
     /// Change the pending status.  This status will be reported
