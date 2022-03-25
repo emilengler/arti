@@ -1,6 +1,6 @@
 //! Declare an error type for tor-circmgr
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use futures::task::SpawnError;
 use retry_error::RetryError;
@@ -105,6 +105,13 @@ pub enum Error {
     #[error("Problem loading or storing state: {0}")]
     State(#[from] tor_persist::Error),
 
+    /// All fallback directories are waiting to be retried.
+    #[error("All fallback directories have failed too recently to retry")]
+    AllFallbackDirsDown {
+        /// What's the first time at which any `FallbackDir` will be ready?
+        retry_at: Instant,
+    },
+
     /// An error caused by a programming issue . or a failure in another
     /// library that we can't work around.
     #[error("Programming issue: {0}")]
@@ -137,6 +144,7 @@ impl HasKind for Error {
         use Error as E;
         use ErrorKind as EK;
         match self {
+            E::AllFallbackDirsDown { .. } => EK::TorAccessFailed,
             E::Channel { cause, .. } => cause.kind(),
             E::Bug(e) => e.kind(),
             E::NoPath(_) => EK::NoPath,
@@ -189,6 +197,7 @@ impl Error {
             E::Channel { .. } => 40,
             E::Protocol { .. } => 45,
             E::ExpiredConsensus => 50,
+            E::AllFallbackDirsDown { .. } => 55,
             E::Spawn { .. } => 90,
             E::State(_) => 90,
             E::Bug(_) => 100,

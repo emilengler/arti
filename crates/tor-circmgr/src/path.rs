@@ -8,10 +8,11 @@ pub mod exitpath;
 
 use tor_error::bad_api_usage;
 use tor_linkspec::{OwnedChanTarget, OwnedCircTarget};
-use tor_netdir::{fallback::FallbackDir, Relay};
+use tor_netdir::Relay;
 
 use std::convert::TryFrom;
 
+use crate::fallback::FallbackDir;
 use crate::usage::ExitPolicy;
 use crate::Result;
 

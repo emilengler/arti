@@ -51,7 +51,7 @@
 #![deny(clippy::unwrap_used)]
 
 use tor_chanmgr::ChanMgr;
-use tor_netdir::{fallback::FallbackDir, NetDir};
+use tor_netdir::NetDir;
 use tor_proto::circuit::{CircParameters, ClientCirc, UniqId};
 use tor_rtcompat::Runtime;
 
@@ -63,6 +63,7 @@ use tracing::{debug, error, info, warn};
 pub mod build;
 mod config;
 mod err;
+pub mod fallback;
 mod impls;
 mod mgr;
 pub mod path;
@@ -83,6 +84,7 @@ pub use config::{
 };
 
 use crate::preemptive::PreemptiveCircuitPredictor;
+use fallback::FallbackSet;
 use usage::TargetCircUsage;
 
 pub use tor_guardmgr::{ExternalFailure, GuardId};
@@ -107,13 +109,13 @@ const PARETO_TIMEOUT_DATA_KEY: &str = "circuit_timeouts";
 #[non_exhaustive]
 pub enum DirInfo<'a> {
     /// A list of fallbacks, for use when we don't know a network directory.
-    Fallbacks(&'a [&'a FallbackDir]),
+    Fallbacks(&'a FallbackSet),
     /// A complete network directory
     Directory(&'a NetDir),
 }
 
-impl<'a> From<&'a [&'a FallbackDir]> for DirInfo<'a> {
-    fn from(v: &'a [&'a FallbackDir]) -> DirInfo<'a> {
+impl<'a> From<&'a FallbackSet> for DirInfo<'a> {
+    fn from(v: &'a FallbackSet) -> DirInfo<'a> {
         DirInfo::Fallbacks(v)
     }
 }
@@ -466,8 +468,9 @@ mod test {
     fn get_params() {
         use tor_netdir::{MdReceiver, PartialNetDir};
         use tor_netdoc::doc::netstatus::NetParams;
+        let fs: FallbackSet = vec![].into_iter().collect();
         // If it's just fallbackdir, we get the default parameters.
-        let di: DirInfo<'_> = (&[][..]).into();
+        let di: DirInfo<'_> = (&fs).into();
 
         let p1 = di.circ_params();
         assert!(!p1.extend_by_ed25519_id());

@@ -98,7 +98,7 @@ pub use docid::DocId;
 pub use err::Error;
 pub use event::{DirBootstrapEvents, DirBootstrapStatus, DirEvent, DirStatus};
 pub use storage::DocumentText;
-pub use tor_netdir::fallback::{FallbackDir, FallbackDirBuilder};
+pub use tor_circmgr::fallback::{FallbackDir, FallbackDirBuilder};
 
 /// A Result as returned by this crate.
 pub type Result<T> = std::result::Result<T, Error>;
@@ -978,6 +978,7 @@ impl<R: Runtime> DirMgr<R> {
     /// Record that a problem has occurred because of a failure in an answer from `source`.
     fn note_cache_error(&self, source: &tor_dirclient::SourceInfo, problem: &Error) {
         use tor_circmgr::{ExternalFailure, GuardId};
+        use tor_linkspec::ChanTarget;
 
         if !problem.indicates_cache_failure() {
             return;
@@ -989,6 +990,28 @@ impl<R: Runtime> DirMgr<R> {
             circmgr.note_external_failure(&guard_id, ExternalFailure::DirCache);
             circmgr.retire_circ(source.unique_circ_id());
         }
+
+        self.config
+            .get()
+            .network_config
+            .fallbacks
+            .note_external_failure(
+                source.cache_id().ed_identity(),
+                self.runtime.now(),
+                ExternalFailure::DirCache,
+            );
+    }
+
+    /// Record that we have successfully downloading information from some
+    /// source, with no problems observed.
+    fn note_cache_success(&self, source: &tor_dirclient::SourceInfo) {
+        use tor_linkspec::ChanTarget;
+
+        self.config
+            .get()
+            .network_config
+            .fallbacks
+            .note_success(source.cache_id().ed_identity());
     }
 }
 

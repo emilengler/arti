@@ -69,6 +69,11 @@ tor-circmgr:
 
   api-break: isolation completely revised
 
+  new-api: Moved fallbackdir from tor-netdir
+
+tor-netdir:
+  api-break: Moved fallbackdir to tor-circmgr
+
 tor-netdoc:
 
   new-api (experimental only): Can modify the set of relays in an unverified

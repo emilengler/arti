@@ -10,6 +10,9 @@
 //! The types in this module are re-exported from `arti-client` and
 //! `tor-dirmgr`: any changes here must be reflected there.
 
+mod set;
+mod status;
+
 use derive_builder::Builder;
 use tor_config::ConfigBuildError;
 use tor_llcrypto::pk::ed25519::Ed25519Identity;
@@ -18,6 +21,9 @@ use tor_llcrypto::pk::rsa::RsaIdentity;
 use serde::Deserialize;
 use std::net::SocketAddr;
 
+pub(crate) use set::FallbackMonitor;
+pub use set::FallbackSet;
+
 /// A directory whose location ships with Tor (or arti), and which we
 /// can use for bootstrapping when we don't know anything else about
 /// the network.
@@ -25,7 +31,7 @@ use std::net::SocketAddr;
 // Note that we do *not* set serde(deny_unknown_fields) on this
 // structure: we want our fallback directory configuration format to
 // be future-proof against adding new info about each fallback.
-#[derive(Debug, Clone, Deserialize, Builder, Eq, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Builder, PartialEq, Eq)]
 #[builder(build_fn(validate = "FallbackDirBuilder::validate", error = "ConfigBuildError"))]
 #[builder(derive(Deserialize))]
 pub struct FallbackDir {

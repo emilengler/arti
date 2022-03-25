@@ -1,5 +1,6 @@
 //! Implement traits from [`crate::mgr`] for the circuit types we use.
 
+use crate::build::FirstHopStatusHandle;
 use crate::mgr::{self, MockablePlan};
 use crate::path::OwnedPath;
 use crate::usage::{SupportedCircUsage, TargetCircUsage};
@@ -36,9 +37,10 @@ pub(crate) struct Plan {
     path: OwnedPath,
     /// The protocol parameters to use when constructing the circuit.
     params: CircParameters,
-    /// If this path is using a guard, we'll use this object to report
+    /// If this path is using a guard or a fallback, we'll use this object to report
     /// whether the circuit succeeded or failed.
-    guard_status: Option<tor_guardmgr::GuardMonitor>,
+    #[educe(Debug(method = "skip_fmt"))]
+    guard_status: FirstHopStatusHandle,
     /// If this path is using a guard, we'll use this object to learn
     /// whether we're allowed to use the circuit or whether we have to
     /// wait a while.
@@ -60,10 +62,12 @@ impl<R: Runtime> crate::mgr::AbstractCircBuilder for crate::build::CircuitBuilde
         dir: DirInfo<'_>,
     ) -> Result<(Plan, SupportedCircUsage)> {
         let mut rng = rand::thread_rng();
+        let now = self.runtime().now();
         let (path, final_spec, guard_status, guard_usable) = usage.build_path(
             &mut rng,
             dir,
             Some(self.guardmgr()),
+            now,
             self.path_config().as_ref(),
         )?;
 
@@ -79,7 +83,7 @@ impl<R: Runtime> crate::mgr::AbstractCircBuilder for crate::build::CircuitBuilde
     }
 
     async fn build_circuit(&self, plan: Plan) -> Result<(SupportedCircUsage, ClientCirc)> {
-        use crate::build::GuardStatusHandle;
+        use crate::build::FirstHopStatusHandle;
         use tor_guardmgr::GuardStatus;
         let Plan {
             final_spec,
@@ -90,7 +94,7 @@ impl<R: Runtime> crate::mgr::AbstractCircBuilder for crate::build::CircuitBuilde
         } = plan;
 
         let guard_usable: OptionFuture<_> = guard_usable.into();
-        let guard_status: Arc<GuardStatusHandle> = Arc::new(guard_status.into());
+        let guard_status: Arc<FirstHopStatusHandle> = Arc::new(guard_status);
 
         guard_status.pending(GuardStatus::AttemptAbandoned);
 

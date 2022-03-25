@@ -21,7 +21,7 @@ use tor_rtcompat::{Runtime, SleepProviderExt};
 
 mod guardstatus;
 
-pub(crate) use guardstatus::GuardStatusHandle;
+pub(crate) use guardstatus::FirstHopStatusHandle;
 
 /// Represents an objects that can be constructed in a circuit-like way.
 ///
@@ -185,7 +185,7 @@ impl<R: Runtime, C: Buildable + Sync + Send + 'static> Builder<R, C> {
         params: CircParameters,
         start_time: Instant,
         n_hops_built: Arc<AtomicU32>,
-        guard_status: Arc<GuardStatusHandle>,
+        guard_status: Arc<FirstHopStatusHandle>,
     ) -> Result<C> {
         match path {
             OwnedPath::ChannelOnly(target) => {
@@ -231,7 +231,7 @@ impl<R: Runtime, C: Buildable + Sync + Send + 'static> Builder<R, C> {
         self: &Arc<Self>,
         path: OwnedPath,
         params: &CircParameters,
-        guard_status: Arc<GuardStatusHandle>,
+        guard_status: Arc<FirstHopStatusHandle>,
     ) -> Result<C> {
         let action = Action::BuildCircuit { length: path.len() };
         let (timeout, abandon_timeout) = self.timeouts.timeouts(&action);
@@ -362,7 +362,7 @@ impl<R: Runtime> CircuitBuilder<R> {
         &self,
         path: OwnedPath,
         params: &CircParameters,
-        guard_status: Arc<GuardStatusHandle>,
+        guard_status: Arc<FirstHopStatusHandle>,
     ) -> Result<ClientCirc> {
         self.builder.build_owned(path, params, guard_status).await
     }
@@ -386,6 +386,11 @@ impl<R: Runtime> CircuitBuilder<R> {
     /// Return a reference to this builder's `GuardMgr`.
     pub(crate) fn guardmgr(&self) -> &tor_guardmgr::GuardMgr<R> {
         &self.guardmgr
+    }
+
+    /// Return a reference to this builder's `Runtime`.
+    pub(crate) fn runtime(&self) -> &R {
+        &self.builder.runtime
     }
 }
 
@@ -448,7 +453,7 @@ mod test {
     use tracing::trace;
 
     /// Make a new nonfunctional `Arc<GuardStatusHandle>`
-    fn gs() -> Arc<GuardStatusHandle> {
+    fn gs() -> Arc<FirstHopStatusHandle> {
         Arc::new(None.into())
     }
 

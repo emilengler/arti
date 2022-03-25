@@ -1,11 +1,13 @@
 //! Code to construct paths to a directory for non-anonymous downloads
+use std::time::Instant;
+
 use super::TorPath;
-use crate::{DirInfo, Error, Result};
-use tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable};
+use crate::{build::FirstHopStatusHandle, DirInfo, Error, Result};
+use tor_guardmgr::{GuardMgr, GuardUsable};
 use tor_netdir::{Relay, WeightRole};
 use tor_rtcompat::Runtime;
 
-use rand::{seq::SliceRandom, Rng};
+use rand::Rng;
 
 /// A PathBuilder that can connect to a directory.
 #[non_exhaustive]
@@ -29,19 +31,18 @@ impl DirPathBuilder {
         &self,
         rng: &mut R,
         netdir: DirInfo<'a>,
+        now: Instant,
         guards: Option<&GuardMgr<RT>>,
-    ) -> Result<(TorPath<'a>, Option<GuardMonitor>, Option<GuardUsable>)> {
+    ) -> Result<(TorPath<'a>, FirstHopStatusHandle, Option<GuardUsable>)> {
         match (netdir, guards) {
             (DirInfo::Fallbacks(f), _) => {
-                let relay = f.choose(rng);
-                if let Some(r) = relay {
-                    return Ok((TorPath::new_fallback_one_hop(r), None, None));
-                }
+                let (relay, monitor) = f.choose(rng, now)?;
+                return Ok((TorPath::new_fallback_one_hop(relay), monitor.into(), None));
             }
             (DirInfo::Directory(netdir), None) => {
                 let relay = netdir.pick_relay(rng, WeightRole::BeginDir, Relay::is_dir_cache);
                 if let Some(r) = relay {
-                    return Ok((TorPath::new_one_hop(r), None, None));
+                    return Ok((TorPath::new_one_hop(r), None.into(), None));
                 }
             }
             (DirInfo::Directory(netdir), Some(guardmgr)) => {
@@ -54,7 +55,7 @@ impl DirPathBuilder {
                     .expect("Unable to build directory guard usage");
                 let (guard, mon, usable) = guardmgr.select_guard(guard_usage, Some(netdir))?;
                 if let Some(r) = guard.get_relay(netdir) {
-                    return Ok((TorPath::new_one_hop(r), Some(mon), Some(usable)));
+                    return Ok((TorPath::new_one_hop(r), Some(mon).into(), Some(usable)));
                 }
             }
         }
@@ -69,11 +70,11 @@ mod test {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::clone_on_copy)]
     use super::*;
+    use crate::fallback::{FallbackDir, FallbackSet};
     use crate::path::assert_same_path_when_owned;
     use crate::test::OptDummyGuardMgr;
     use std::collections::HashSet;
     use tor_linkspec::ChanTarget;
-    use tor_netdir::fallback::FallbackDir;
     use tor_netdir::testnet;
 
     #[test]
@@ -85,9 +86,10 @@ mod test {
         let mut rng = rand::thread_rng();
         let dirinfo = (&netdir).into();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
         for _ in 0..1000 {
-            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, guards);
+            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, now, guards);
             let (p, _, _) = p.unwrap();
             assert!(p.exit_relay().is_none());
             assert_eq!(p.len(), 1);
@@ -116,20 +118,21 @@ mod test {
                 .build()
                 .unwrap(),
         ];
-        let fb: Vec<_> = fb_owned.iter().collect();
-        let dirinfo = (&fb[..]).into();
+        let fb: FallbackSet = fb_owned.clone().into_iter().collect();
+        let dirinfo = (&fb).into();
         let mut rng = rand::thread_rng();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
         for _ in 0..10 {
-            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, guards);
+            let p = DirPathBuilder::default().pick_path(&mut rng, dirinfo, now, guards);
             let (p, _, _) = p.unwrap();
             assert!(p.exit_relay().is_none());
             assert_eq!(p.len(), 1);
             assert_same_path_when_owned(&p);
 
             if let crate::path::TorPathInner::FallbackOneHop(f) = p.inner {
-                assert!(std::ptr::eq(f, fb[0]) || std::ptr::eq(f, fb[1]));
+                assert!(fb_owned.contains(f));
             } else {
                 panic!("Generated the wrong kind of path.");
             }
@@ -138,12 +141,13 @@ mod test {
 
     #[test]
     fn dirpath_no_fallbacks() {
-        let fb = vec![];
-        let dirinfo = DirInfo::Fallbacks(&fb[..]);
+        let fb_set: FallbackSet = vec![].into_iter().collect();
+        let dirinfo = DirInfo::Fallbacks(&fb_set);
         let mut rng = rand::thread_rng();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
-        let err = DirPathBuilder::default().pick_path(&mut rng, dirinfo, guards);
+        let err = DirPathBuilder::default().pick_path(&mut rng, dirinfo, now, guards);
         assert!(matches!(err, Err(Error::NoPath(_))));
     }
 
@@ -159,6 +163,7 @@ mod test {
             let statemgr = tor_persist::TestingStateMgr::new();
             let guards = tor_guardmgr::GuardMgr::new(rt.clone(), statemgr).unwrap();
             guards.update_network(&netdir);
+            let now = Instant::now();
 
             let mut distinct_guards = HashSet::new();
 
@@ -166,11 +171,11 @@ mod test {
             // in guard-spec.  We'll just have every path succeed.
             for _ in 0..40 {
                 let (path, mon, usable) = DirPathBuilder::new()
-                    .pick_path(&mut rng, dirinfo, Some(&guards))
+                    .pick_path(&mut rng, dirinfo, now, Some(&guards))
                     .unwrap();
                 if let crate::path::TorPathInner::OneHop(relay) = path.inner {
                     distinct_guards.insert(relay.ed_identity().clone());
-                    mon.unwrap().succeeded();
+                    mon.report(tor_guardmgr::GuardStatus::Success);
                     assert!(usable.unwrap().await.unwrap());
                 } else {
                     panic!("Generated the wrong kind of path.");

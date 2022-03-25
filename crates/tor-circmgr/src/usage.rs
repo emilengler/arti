@@ -7,11 +7,13 @@ use serde::{Deserialize, Serialize};
 use std::fmt::{self, Display};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::Instant;
 use tor_error::bad_api_usage;
 use tracing::debug;
 
+use crate::build::FirstHopStatusHandle;
 use crate::path::{dirpath::DirPathBuilder, exitpath::ExitPathBuilder, TorPath};
-use tor_guardmgr::{GuardMgr, GuardMonitor, GuardUsable};
+use tor_guardmgr::{GuardMgr, GuardUsable};
 use tor_netdir::Relay;
 use tor_netdoc::types::policy::PortPolicy;
 use tor_rtcompat::Runtime;
@@ -445,16 +447,18 @@ impl TargetCircUsage {
         rng: &mut R,
         netdir: crate::DirInfo<'a>,
         guards: Option<&GuardMgr<RT>>,
+        now: Instant,
         config: &crate::PathConfig,
     ) -> Result<(
         TorPath<'a>,
         SupportedCircUsage,
-        Option<GuardMonitor>,
+        FirstHopStatusHandle,
         Option<GuardUsable>,
     )> {
         match self {
             TargetCircUsage::Dir => {
-                let (path, mon, usable) = DirPathBuilder::new().pick_path(rng, netdir, guards)?;
+                let (path, mon, usable) =
+                    DirPathBuilder::new().pick_path(rng, netdir, now, guards)?;
                 Ok((path, SupportedCircUsage::Dir, mon, usable))
             }
             TargetCircUsage::Preemptive { port, .. } => {
@@ -470,7 +474,7 @@ impl TargetCircUsage {
                         policy,
                         isolation: None,
                     },
-                    mon,
+                    mon.into(),
                     usable,
                 ))
             }
@@ -489,7 +493,7 @@ impl TargetCircUsage {
                         policy,
                         isolation: Some(isolation.clone()),
                     },
-                    mon,
+                    mon.into(),
                     usable,
                 ))
             }
@@ -505,7 +509,7 @@ impl TargetCircUsage {
                     _ => SupportedCircUsage::NoUsage,
                 };
 
-                Ok((path, usage, mon, usable))
+                Ok((path, usage, mon.into(), usable))
             }
         }
     }
@@ -982,6 +986,7 @@ pub(crate) mod test {
         let di = (&netdir).into();
         let config = crate::PathConfig::default();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
         // Only doing basic tests for now.  We'll test the path
         // building code a lot more closely in the tests for TorPath
@@ -989,7 +994,7 @@ pub(crate) mod test {
 
         // First, a one-hop directory circuit
         let (p_dir, u_dir, _, _) = TargetCircUsage::Dir
-            .build_path(&mut rng, di, guards, &config)
+            .build_path(&mut rng, di, guards, now, &config)
             .unwrap();
         assert!(matches!(u_dir, SupportedCircUsage::Dir));
         assert_eq!(p_dir.len(), 1);
@@ -1006,7 +1011,7 @@ pub(crate) mod test {
             isolation: isolation.clone(),
         };
         let (p_exit, u_exit, _, _) = exit_usage
-            .build_path(&mut rng, di, guards, &config)
+            .build_path(&mut rng, di, guards, now, &config)
             .unwrap();
         assert!(matches!(
             u_exit,
@@ -1020,7 +1025,7 @@ pub(crate) mod test {
 
         // Now try testing circuits.
         let (path, usage, _, _) = TargetCircUsage::TimeoutTesting
-            .build_path(&mut rng, di, guards, &config)
+            .build_path(&mut rng, di, guards, now, &config)
             .unwrap();
         let path = match OwnedPath::try_from(&path).unwrap() {
             OwnedPath::ChannelOnly(_) => panic!("Impossible path type."),
@@ -1058,9 +1063,10 @@ pub(crate) mod test {
         let di = (&netdir).into();
         let config = crate::PathConfig::default();
         let guards: OptDummyGuardMgr<'_> = None;
+        let now = Instant::now();
 
         let (path, usage, _, _) = TargetCircUsage::TimeoutTesting
-            .build_path(&mut rng, di, guards, &config)
+            .build_path(&mut rng, di, guards, now, &config)
             .unwrap();
         assert_eq!(path.len(), 3);
         assert_isoleq!(usage, SupportedCircUsage::NoUsage);

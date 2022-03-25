@@ -11,8 +11,8 @@
 use crate::retry::DownloadSchedule;
 use crate::storage::DynStore;
 use crate::{Authority, Result};
+use tor_circmgr::fallback::FallbackSet;
 use tor_config::ConfigBuildError;
-use tor_netdir::fallback::FallbackDir;
 use tor_netdoc::doc::netstatus;
 
 use derive_builder::Builder;
@@ -42,8 +42,8 @@ pub struct NetworkConfig {
     #[builder(default = "fallbacks::default_fallbacks()")]
     #[serde(rename = "fallback_caches")]
     #[builder_field_attr(serde(rename = "fallback_caches"))]
-    #[builder(setter(name = "fallback_caches"))]
-    pub(crate) fallbacks: Vec<FallbackDir>,
+    #[builder(setter(into, name = "fallback_caches"))]
+    pub(crate) fallbacks: FallbackSet,
 
     /// List of directory authorities which we expect to sign consensus
     /// documents.
@@ -224,7 +224,7 @@ impl DirMgrConfig {
     }
 
     /// Return the configured set of fallback directories
-    pub fn fallbacks(&self) -> &[FallbackDir] {
+    pub fn fallbacks(&self) -> &FallbackSet {
         &self.network_config.fallbacks
     }
 
@@ -244,10 +244,15 @@ impl DirMgrConfig {
     ///
     /// Any fields which aren't allowed to change at runtime are copied from self.
     pub(crate) fn update_from_config(&self, new_config: &DirMgrConfig) -> DirMgrConfig {
+        let fallbacks = new_config
+            .network_config
+            .fallbacks
+            .with_status_from(&self.network_config.fallbacks);
+
         DirMgrConfig {
             cache_path: self.cache_path.clone(),
             network_config: NetworkConfig {
-                fallbacks: new_config.network_config.fallbacks.clone(),
+                fallbacks,
                 authorities: self.network_config.authorities.clone(),
             },
             schedule_config: new_config.schedule_config.clone(),
@@ -290,11 +295,11 @@ impl DownloadScheduleConfig {
 
 /// Helpers for initializing the fallback list.
 mod fallbacks {
+    use tor_circmgr::fallback::{FallbackDir, FallbackSet};
     use tor_llcrypto::pk::{ed25519::Ed25519Identity, rsa::RsaIdentity};
-    use tor_netdir::fallback::FallbackDir;
     /// Return a list of the default fallback directories shipped with
     /// arti.
-    pub(crate) fn default_fallbacks() -> Vec<super::FallbackDir> {
+    pub(crate) fn default_fallbacks() -> FallbackSet {
         /// Build a fallback directory; panic if input is bad.
         fn fallback(rsa: &str, ed: &str, ports: &[&str]) -> FallbackDir {
             let rsa = RsaIdentity::from_hex(rsa).expect("Bad hex in built-in fallback list");
@@ -315,7 +320,7 @@ mod fallbacks {
             bld.build()
                 .expect("Unable to build default fallback directory!?")
         }
-        include!("fallback_dirs.inc")
+        include!("fallback_dirs.inc").into()
     }
 }
 
@@ -325,6 +330,7 @@ mod test {
     #![allow(clippy::unnecessary_wraps)]
     use super::*;
     use tempfile::tempdir;
+    use tor_circmgr::fallback::FallbackDir;
 
     #[test]
     fn simplest_config() -> Result<()> {
