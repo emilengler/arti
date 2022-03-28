@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel as std_channel;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use arti_client::config::Reconfigure;
 use arti_client::TorClient;
 use futures::{StreamExt as _};
@@ -15,7 +15,8 @@ use notify::Watcher;
 use tor_rtcompat::Runtime;
 use tracing::{debug, error, info, warn};
 
-use crate::ArtiConfig;
+use crate::{ArtiConfig, ServiceList};
+use crate::service::ManagedServices;
 
 /// How long (worst case) should we take to learn about configuration changes?
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -28,6 +29,7 @@ pub fn watch_for_config_changes<R: Runtime>(
     sources: arti_config::ConfigurationSources,
     original: ArtiConfig,
     client: TorClient<R>,
+    mut reconfigurables: ServiceList<R, ArtiConfig>,
 ) -> Result<()> {
     let (tx, rx) = std_channel();
     let mut watcher = FileWatcher::new(tx, POLL_INTERVAL)?;
@@ -83,7 +85,7 @@ pub fn watch_for_config_changes<R: Runtime>(
         debug!("Task processing FS events");
         while let Some(event) = sync2async_rx.next().await {
             debug!("FS event {:?}: reloading configuration.", event);
-            match reconfigure(&sources, &original, &client).await {
+            match reconfigure(&sources, &original, &client, &mut reconfigurables).await {
                 Ok(exit) => {
                     info!("Successfully reloaded configuration.");
                     if exit {
@@ -107,17 +109,45 @@ async fn reconfigure<R: Runtime>(
     sources: &arti_config::ConfigurationSources,
     original: &ArtiConfig,
     client: &TorClient<R>,
+    reconfigurables: &mut ServiceList<R, ArtiConfig>,
 ) -> Result<bool> {
     let config = sources.load()?;
     let config: ArtiConfig = config.try_into()?;
+
     if config.proxy() != original.proxy() {
-        warn!("Can't (yet) reconfigure proxy settings while arti is running.");
+        warn!("Can't (yet) reliably reconfigure proxy settings while arti is running.");
     }
     if config.logging() != original.logging() {
         warn!("Can't (yet) reconfigure logging settings while arti is running.");
     }
+
+    let mut any_errs = false;
+    let mut process_outcome = |outcome: Result<()>| {
+        match outcome {
+            Ok(()) => {}
+            Err(e) => {
+                any_errs = true;
+                error!("Reconfiguration failed: {}", tor_error::Report(&e));
+            }
+        }
+    };
+
+    process_outcome(async {
+        reconfigurables.configure(&config)?;
+        reconfigurables.reconfigure(client.clone()).await?;
+        Ok(())
+    }.await);
+
     let client_config = config.tor_client_config()?;
-    client.reconfigure(&client_config, Reconfigure::WarnOnFailures)?;
+    process_outcome(
+        client.reconfigure(&client_config, Reconfigure::WarnOnFailures)
+            .context("Tor client")
+    );
+
+    if any_errs {
+        return Err(anyhow!("Reconfiguration not successful."))
+    }
+
 
     if !config.application().watch_configuration {
         // Stop watching for configuration changes.

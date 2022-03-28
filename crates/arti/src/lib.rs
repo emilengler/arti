@@ -206,7 +206,8 @@ pub async fn run<R: Runtime>(
     services.start(client.clone()).await?;
 
     if arti_config.application().watch_configuration {
-        watch_cfg::watch_for_config_changes(config_sources, arti_config, client.clone())?;
+        watch_cfg::watch_for_config_changes(config_sources, arti_config.clone(), client.clone(),
+                                            services)?;
     }
 
     let proxy = futures::future::select_all(proxy).map(|(finished, _index, _others)| finished);

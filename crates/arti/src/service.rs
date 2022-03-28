@@ -293,6 +293,9 @@ pub trait ManagedServices<R, GC>: Send + Sync where R: Runtime {
                  -> ImplementationResultStream;
 
     /// Construct an error describing the failure to reconfigure
+    ///
+    /// Used by the provided implementations of `start` and `reconfigure`.
+    /// Callers of `implement` may want to call this.
     fn report_reconfigure_failure(&self, error_count: NonZeroUsize) -> Error;
 }
 
@@ -477,6 +480,21 @@ impl<R,GC> ManagedServices<R,GC> for ServiceList<R,GC> where R: Runtime {
         anyhow!("reconfigure failed")
     }
 }
+
+/*
+#[async_trait]
+impl<MS,R,GC> watch_cfg::Reconfigurable<R,GC> for MS
+where R: Runtime,
+      MS: ManagedServices<R,GC>,
+      GC: Sync,
+{
+    async fn reconfigure_reconfigurable(&mut self, tor_client: TorClient<R>, _original: &GC, new: &GC) -> Result<()> {
+        self.configure(new)?;
+        self.reconfigure(tor_client).await?;
+        Ok(())
+    }
+}
+*/
 
 #[cfg(test)]
 mod test {
