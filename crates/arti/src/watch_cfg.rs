@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel as std_channel;
 use std::time::Duration;
 
+use anyhow::Result;
 use arti_client::config::Reconfigure;
 use arti_client::TorClient;
 use notify::Watcher;
@@ -25,7 +26,7 @@ pub fn watch_for_config_changes<R: Runtime>(
     sources: arti_config::ConfigurationSources,
     original: ArtiConfig,
     client: TorClient<R>,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let (tx, rx) = std_channel();
     let mut watcher = FileWatcher::new(tx, POLL_INTERVAL)?;
 
@@ -83,7 +84,7 @@ fn reconfigure<R: Runtime>(
     sources: &arti_config::ConfigurationSources,
     original: &ArtiConfig,
     client: &TorClient<R>,
-) -> anyhow::Result<bool> {
+) -> Result<bool> {
     let config = sources.load()?;
     let config: ArtiConfig = config.try_into()?;
     if config.proxy() != original.proxy() {
@@ -135,7 +136,7 @@ impl FileWatcher {
     fn new(
         tx: std::sync::mpsc::Sender<notify::DebouncedEvent>,
         interval: Duration,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let watcher = notify::watcher(tx, interval)?;
         Ok(Self {
             watcher,
@@ -145,7 +146,7 @@ impl FileWatcher {
     }
 
     /// Watch a single file (not a directory).  Does nothing if we're already watching that file.
-    fn watch_file<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
+    fn watch_file<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         // Make the path absolute (without necessarily making it canonical).
         //
         // We do this because `notify` reports all of its events in terms of
