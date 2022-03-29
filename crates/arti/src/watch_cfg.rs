@@ -6,12 +6,14 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel as std_channel;
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use arti_client::config::Reconfigure;
 use arti_client::TorClient;
+use futures::{StreamExt as _};
+use futures::task::{SpawnExt as _};
 use notify::Watcher;
 use tor_rtcompat::Runtime;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::ArtiConfig;
 
@@ -34,6 +36,9 @@ pub fn watch_for_config_changes<R: Runtime>(
         watcher.watch_file(file)?;
     }
 
+    let (mut sync2async_tx, mut sync2async_rx) = futures::channel::mpsc::channel(
+        1 /* 0 ought to suffice according to the docs */);
+
     std::thread::spawn(move || {
         // TODO: If someday we make this facility available outside of the
         // `arti` application, we probably don't want to have this thread own
@@ -55,8 +60,30 @@ pub fn watch_for_config_changes<R: Runtime>(
                 // events: if we're disconnected, we'll notice it when we next
                 // call recv() in the outer loop.
             }
+            match sync2async_tx.try_send(event) {
+                Ok(()) => {},
+                Err(e) if e.is_full() => {}, // reconfigure task is backlogged, it will catch up
+                Err(e) => {
+                    if ! e.is_disconnected() {
+                        error!("unexpected error from futures::channel::mpsc::Sender::try_send: {}", e);
+                        break;
+                    }
+                }
+            }
+        }
+        debug!("Thread exiting");
+    });
+    // Dropping the thread handle here means that we don't get any special
+    // notification about a panic.  TODO: We should change that at some point in
+    // the future.
+    //
+    // This applies to many many tasks we spawn throughout the arti codeabse.
+    
+    client.runtime().clone().spawn(async move {
+        debug!("Task processing FS events");
+        while let Some(event) = sync2async_rx.next().await {
             debug!("FS event {:?}: reloading configuration.", event);
-            match reconfigure(&sources, &original, &client) {
+            match reconfigure(&sources, &original, &client).await {
                 Ok(exit) => {
                     info!("Successfully reloaded configuration.");
                     if exit {
@@ -66,12 +93,8 @@ pub fn watch_for_config_changes<R: Runtime>(
                 Err(e) => warn!("Couldn't reload configuration: {}", e),
             }
         }
-        debug!("Thread exiting");
-    });
-
-    // Dropping the thread handle here means that we don't get any special
-    // notification about a panic.  TODO: We should change that at some point in
-    // the future.
+        debug!("Task exiting");
+    }).context("failed to spawn watch task")?;
 
     Ok(())
 }
@@ -80,7 +103,7 @@ pub fn watch_for_config_changes<R: Runtime>(
 /// reconfigure the client as much as we can.
 ///
 /// Return true if we should stop watching for configuration changes.
-fn reconfigure<R: Runtime>(
+async fn reconfigure<R: Runtime>(
     sources: &arti_config::ConfigurationSources,
     original: &ArtiConfig,
     client: &TorClient<R>,
