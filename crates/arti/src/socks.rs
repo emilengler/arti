@@ -414,6 +414,10 @@ pub fn wanted_instances(acfg: &ArtiConfig) -> Result<Vec<(ListenSpec, InstanceCo
 /// SOCKS proxy instance
 #[must_use = "a socks::Proxy must be run() to do anything useful"]
 pub struct Proxy<R> where R: Runtime {
+    /// Service identity for reporting
+    kind: SocksServiceKind,
+    /// Service identity for reporting
+    id: ListenSpec,
     ///
     tor_client: TorClient<R>,
     ///
@@ -440,6 +444,8 @@ impl<R> Proxy<R> where R: Runtime {
             }).await?;
 
         Ok(Proxy {
+            kind: SocksServiceKind,
+            id: socks_ports,
             tor_client,
             listeners,
             config,
@@ -460,9 +466,12 @@ impl<R> Proxy<R> where R: Runtime {
 /// Implementation of `Proxy::run`, separated out to avoid rightward drift
 async fn run_socks_proxy<R: Runtime>(
     proxy: Proxy<R>,
-    _reconfigure: ReconfigureCommandStream<InstanceConfig>
+    mut reconfigure: ReconfigureCommandStream<InstanceConfig>
 ) -> Result<()> {
-    let Proxy { tor_client, listeners, config } = proxy;
+    let Proxy {
+        kind: service_kind, id: service_id,
+        tor_client, listeners, config,
+    } = proxy;
     let InstanceConfig { } = config; // ensures adding unimplemented option causes compile failure
     let runtime = tor_client.runtime();
 
@@ -482,6 +491,27 @@ async fn run_socks_proxy<R: Runtime>(
     // handle_socks_conn() in a new task.
     loop {
         select_biased!{
+            // TODO refactor this to be shared with other listeners
+            reconfigure = reconfigure.next() => {
+                let reconfigure = if let Some(y) = reconfigure { y } else { break; };
+                match reconfigure.config {
+                    None => {
+                        drop(incoming); // hopefully this is synchronous close
+                        let _ = reconfigure.respond.send(Ok(()));
+                        break;
+                    }
+                    Some(new_config) => {
+                        // We don't actually have any configuration, but compare anyway,
+                        // since (a) we might grow some and then this to still be right
+                        // (b) someone might c&p this.
+                        if new_config != config {
+                            warn!("{}: reconfiguration not supported, config changes ignored.",
+                                  service::inst_display(&service_kind, &service_id));
+                        }
+                        let _ = reconfigure.respond.send(Ok(()));
+                    }
+                }
+            }
 
             accepted = incoming.next() => {
                 let (stream, sock_id) = accepted.ok_or_else(
