@@ -147,7 +147,10 @@ use std::convert::TryInto;
 type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 
 /// The builtin service kinds supported by `arti`
-pub fn supported_services<R>() -> ServiceList<R> where R: Runtime {
+pub fn supported_services<R,C>() -> ServiceList<R,C>
+where R: Runtime,
+      C: AsRef<ArtiConfig>,
+{
     vec![
         SocksServiceKind.manage(),
     ]

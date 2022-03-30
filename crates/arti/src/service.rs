@@ -23,10 +23,8 @@ use tor_error::internal;
 use tor_rtcompat::Runtime;
 use arti_client::TorClient;
 
-use crate::ArtiConfig;
-
 /// List of services
-pub type ServiceList<R> = Vec<Box<dyn ManagedServices<R>>>;
+pub type ServiceList<R,GC> = Vec<Box<dyn ManagedServices<R,GC>>>;
 
 /// (Proxy) service kind
 ///
@@ -43,6 +41,9 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     /// The Display impl should not recapitulate the kind
     type Identity: Eq + Hash + Ord + Debug + Display + Clone + Send + Sync + 'static;
 
+    /// Global configuration settings, which specify which instance(s) we want
+    type GlobalConfig;
+
     /// Configuration for one instance of this kind
     type Instance: Send + Sync + 'static;
 
@@ -55,7 +56,7 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     /// Note that a single instance may listen on multiple TCP ports, for example.
     //
     // All currently implemented services return either vec![] or vec![one_service]
-    fn configure(&self, gcfg: &ArtiConfig) -> Result<Vec<(Self::Identity, Self::InstanceConfig)>>;
+    fn configure(&self, gcfg: &Self::GlobalConfig) -> Result<Vec<(Self::Identity, Self::InstanceConfig)>>;
 
     /// Create a service instance.
     ///
@@ -82,7 +83,10 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     /// Instantiates a manager for this kind of service
     ///
     /// Called once for each kind, during application startup
-    fn manage(self) -> Box<dyn ManagedServices<R>> where Self: Sized {
+    fn manage<GC>(self) -> Box<dyn ManagedServices<R,GC>>
+    where GC: AsRef<Self::GlobalConfig>,
+          Self: Sized,
+    {
         Box::new(Manager {
             kind: self,
             instances: Default::default(),
@@ -130,11 +134,11 @@ pub struct ReconfigureCommand<IC> {
 
 #[derive(Debug)]
 /// Manager for a concrete service kind
-struct Manager<R, SK> where R: Runtime, SK: ServiceKind<R> {
+struct Manager<R,SK> where R: Runtime, SK: ServiceKind<R> {
     /// Kind
     kind: SK,
     /// Instances
-    instances: BTreeMap<SK::Identity, InstanceState<R, SK>>,
+    instances: BTreeMap<SK::Identity, InstanceState<R,SK>>,
 }
 
 /// Instance exists
@@ -248,11 +252,11 @@ impl<R,SK> InstanceState<R,SK> where R: Runtime, SK: ServiceKind<R> {
 ///
 /// Interface for the rest of the program to use to manage a service kind.
 #[async_trait]
-pub trait ManagedServices<R>: Send + Sync where R: Runtime {
+pub trait ManagedServices<R, GC>: Send + Sync where R: Runtime {
     /// Processes configuration for all the instances of this kind
     ///
     /// Does not start, stop or reconfigure any services.
-    fn configure(&mut self, gcfg: &ArtiConfig) -> Result<usize>;
+    fn configure(&mut self, gcfg: &GC) -> Result<usize>;
 
     /// Start services as needed
     ///
@@ -265,7 +269,7 @@ pub trait ManagedServices<R>: Send + Sync where R: Runtime {
     /// Successful starts are logged with `info!`;
     /// if anything fails, the first failure is (*not* logged and) returned.
     async fn start(&mut self, tor_client: TorClient<R>) -> Result<()> {
-        implement_phases::<StartupErrorHandling,_,_>(self, tor_client).await
+        implement_phases::<StartupErrorHandling,_,_,_>(self, tor_client).await
     }
 
     /// Reconfigure (and start and stop) services as needed
@@ -279,7 +283,7 @@ pub trait ManagedServices<R>: Send + Sync where R: Runtime {
     /// This is a wrapper around `implement`.
     /// `reconfigure`  handles logging and error handling suitably for runtime reconfiguration.
     async fn reconfigure(&mut self, tor_client: TorClient<R>) -> Result<()> {
-        implement_phases::<ReconfigureErrorHandling,_,_>(self, tor_client).await
+        implement_phases::<ReconfigureErrorHandling,_,_,_>(self, tor_client).await
     }
 
     /// Stop/reconfigure/Start any services that as configure determined was needed
@@ -298,10 +302,10 @@ pub trait ManagedServices<R>: Send + Sync where R: Runtime {
 /// and `MangedServiceKind::reconfigure`.
 ///
 /// Separate helper function so this and ErrorHandling don't have to be public
-async fn implement_phases<EH, R, MSK>(self_: &mut MSK, tor_client: TorClient<R>) -> Result<()>
+async fn implement_phases<EH, R, MSK, GGC>(self_: &mut MSK, tor_client: TorClient<R>) -> Result<()>
 where EH: ErrorHandling,
       R: Runtime,
-      MSK: ManagedServices<R> + ?Sized,
+      MSK: ManagedServices<R, GGC> + ?Sized,
 {
     let mut eh = EH::default();
     use ImplementationPhase::*;
@@ -331,7 +335,7 @@ trait ErrorHandling: Default + Send + Sync {
     fn handle(&mut self, error: Error) -> Result<()>;
 
     /// Check to see if we had an error we continued past earlier
-    fn finish<R:Runtime, MSK: ManagedServices<R> + ?Sized>(self, kind: &MSK) -> Result<()>;
+    fn finish<R:Runtime, GC, MSK: ManagedServices<R,GC> + ?Sized>(self, kind: &MSK) -> Result<()>;
 }
 
 #[derive(Default)]
@@ -345,7 +349,7 @@ impl ErrorHandling for StartupErrorHandling {
     fn handle(&mut self, error: Error) -> Result<()> {
         Err(error)
     }
-    fn finish<R:Runtime, MSK: ManagedServices<R> + ?Sized>(self, _: &MSK) -> Result<()> {
+    fn finish<R:Runtime, GC, MSK: ManagedServices<R,GC> + ?Sized>(self, _: &MSK) -> Result<()> {
         Ok(())
     }
 }
@@ -366,7 +370,7 @@ impl ErrorHandling for ReconfigureErrorHandling {
         self.error_count += 1;
         Ok(())
     }
-    fn finish<R:Runtime, MSK: ManagedServices<R> + ?Sized>(self, kind: &MSK) -> Result<()> {
+    fn finish<R:Runtime, GC, MSK: ManagedServices<R,GC> + ?Sized>(self, kind: &MSK) -> Result<()> {
         if let Ok(error_count) = self.error_count.try_into() {
             Err(kind.report_reconfigure_failure(error_count))
         } else {
@@ -379,11 +383,15 @@ impl ErrorHandling for ReconfigureErrorHandling {
 pub type ImplementationResultStream<'s> = Box<dyn FusedStream<Item=Result<()>> + Unpin + Send + 's>;
 
 #[async_trait]
-impl<R,SK> ManagedServices<R> for Manager<R,SK> where R: Runtime, SK: ServiceKind<R>  {
+impl<R,SK,GGC> ManagedServices<R,GGC> for Manager<R,SK>
+where R: Runtime, SK: ServiceKind<R>,
+      GGC: AsRef<SK::GlobalConfig>,
+{
     /// Process configuration
     ///
     /// Does not start or stop any services.  `implement`.
-    fn configure(&mut self, gcfg: &ArtiConfig) -> Result<usize> {
+    fn configure(&mut self, gcfg: &GGC) -> Result<usize> {
+        let gcfg = gcfg.as_ref();
         let new_configs = self.kind.configure(gcfg)
             .with_context(|| format!("configure {}", &self.kind))?;
         let new_configs = {
@@ -450,8 +458,8 @@ impl<R,SK> ManagedServices<R> for Manager<R,SK> where R: Runtime, SK: ServiceKin
     }
 }
 
-impl<R> ManagedServices<R> for ServiceList<R> where R: Runtime {
-    fn configure(&mut self, gcfg: &ArtiConfig) -> Result<usize> {
+impl<R,GC> ManagedServices<R,GC> for ServiceList<R,GC> where R: Runtime {
+    fn configure(&mut self, gcfg: &GC) -> Result<usize> {
         let mut n_services = 0;
         for svc in self {
             n_services += svc.configure(gcfg)?;
@@ -467,5 +475,31 @@ impl<R> ManagedServices<R> for ServiceList<R> where R: Runtime {
 
     fn report_reconfigure_failure(&self, _error_count: NonZeroUsize) -> Error {
         anyhow!("reconfigure failed")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn generic_service() {
+        use crate::{supported_services, ArtiConfig, ArtiConfigBuilder};
+        use derive_more::AsRef;
+
+        #[derive(AsRef)]
+        struct WrapperConfig {
+            #[as_ref] arti_config: ArtiConfig,
+        }
+
+        let config = WrapperConfig {
+            arti_config: ArtiConfigBuilder::default().build().expect("build default arti config"),
+        };
+
+        // Need to specify type R explicitly just because we're not calling services.start()
+        type R = tor_rtcompat::PreferredRuntime;
+        let mut services = supported_services::<R,_>();
+        services.configure(&config).expect("configure services");
+        // Don't actually start them, this test case is mostly a compile test.
     }
 }

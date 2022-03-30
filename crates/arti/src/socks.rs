@@ -507,6 +507,7 @@ async fn run_socks_proxy<R: Runtime>(
 
 #[async_trait]
 impl<R:Runtime> service::ServiceKind<R> for SocksServiceKind {
+    type GlobalConfig = ArtiConfig;
     type Identity = ListenSpec;
     type InstanceConfig = InstanceConfig;
     type Instance = Proxy<R>;

@@ -132,6 +132,10 @@ pub struct ArtiConfig {
     tor: TorClientConfig,
 }
 
+impl AsRef<ArtiConfig> for ArtiConfig {
+    fn as_ref(&self) -> &ArtiConfig { self }
+}
+
 impl TryFrom<config::Config> for ArtiConfig {
     type Error = config::ConfigError;
     fn try_from(cfg: config::Config) -> Result<ArtiConfig, Self::Error> {
