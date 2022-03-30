@@ -88,6 +88,28 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
             instances: Default::default(),
         })
     }
+
+    /// Formats a string identifying this service instance
+    ///
+    /// The return value is `KIND (IDENTITY)` where `KIND` and `IDENTITY` are the
+    /// strings from the respective `Display` impls.
+    ///
+    /// This method is provided to centralise formatting of the display of service descriptions
+    /// in log and error messages.  Do not override it.
+    fn inst_display(&self, id: &Self::Identity) -> String {
+        inst_display(self,id)
+    }
+}
+
+/// Formats a string identifying a service instance
+///
+/// This is a free function version of [`ServiceKind::inst_display`],
+/// provided to help when type inference would otherwise not be able to find
+/// an appropriate [`ServiceKind`] implementation - in particular, since service kinds
+/// are usually unit structs, `SomeServiceKind.inst_display(...)` will usually fail
+/// to infer the runtime type `R`.
+pub fn inst_display<K,I>(kind: K, id: I) -> String where K: Display, I: Display {
+    format!("{} ({})", kind, id)
 }
 
 /// Stream of instructions to reconfigure.
@@ -173,11 +195,12 @@ impl<R,SK> InstanceState<R,SK> where R: Runtime, SK: ServiceKind<R> {
                        tor_client: TorClient<R>, kind: &SK, id: &SK::Identity)
                        -> Result<()> {
         use ImplementationPhase::*;
+        let kind_id = kind.inst_display(id);
         let (report, new_state) = match (phase, mem::replace(self, Failed)) {
             (Stop, NeedsStop(mut inst)) => {
                 (inst.reconfigure(None).await
-                 .map(|()| Some(format!("{}:{} stopped", kind, id)))
-                 .with_context(|| format!("{}:{} failed to stop cleanly", kind, id)),
+                 .map(|()| Some(format!("{} stopped", kind_id)))
+                 .with_context(|| format!("{} failed to stop cleanly", kind_id)),
                  Stopped)
             }
             (Stop, same) => {
@@ -191,22 +214,24 @@ impl<R,SK> InstanceState<R,SK> where R: Runtime, SK: ServiceKind<R> {
             }
             (StartReconfigure, NeedsStart(scfg)) => {
                 let inst = kind.create(tor_client.clone(), id.clone(), scfg).await
-                    .with_context(|| format!("{}:{}: failed to start", kind, id))?;
+                    .with_context(|| format!("{}: failed to start", kind_id))?;
                 let (send, recv) = mpsc::channel(0);
-                let kind_id = format!("{}:{}", kind, id);
-                tor_client.runtime().clone().spawn(async move {
-                    match SK::run(inst, recv).await {
-                        Ok(()) => {},
-                        Err(e) => error!("{}: service failed: {}", kind_id, tor_error::Report(e)),
+                tor_client.runtime().clone().spawn({
+                    let kind_id = kind_id.clone();
+                    async move {
+                        match SK::run(inst, recv).await {
+                            Ok(()) => {},
+                            Err(e) => error!("{}: service failed: {}", kind_id, tor_error::Report(e)),
+                        }
                     }
-                }).with_context(|| format!("failed to spawn for {}:{}", kind, id))?;
-                (Ok(Some(format!("{}:{} started", kind, id))),
+                }).with_context(|| format!("failed to spawn for {}", kind_id))?;
+                (Ok(Some(format!("{} started", kind_id))),
                  Started(InstanceExists { reconfigure: send }))
             }
             (StartReconfigure, NeedsReconfigure(mut inst, config)) => {
                 (inst.reconfigure(Some(config)).await
-                 .map(|()| Some(format!("{}:{} reconfigured", kind, id)))
-                 .with_context(|| format!("{}:{} failed to reconfigure", kind, id)),
+                 .map(|()| Some(format!("{} reconfigured", kind_id)))
+                 .with_context(|| format!("{} failed to reconfigure", kind_id)),
                  Started(inst))
             }
             // No default pattern to make sure we covered them all, here or in (Stop,...)

@@ -431,10 +431,12 @@ impl<R> Proxy<R> where R: Runtime {
         socks_ports: ListenSpec,
         config: InstanceConfig,
     ) -> Result<Proxy<R>> {
-        let listeners = socks_ports.bind(&format!("SOCKS ({})", &socks_ports), |addr| {
-            let runtime = runtime.clone();
-            async move { Ok(runtime.listen(&addr).await?) }
-        }).await?;
+        let listeners = socks_ports.bind(
+            &service::inst_display(&SocksServiceKind, &socks_ports),
+            |addr| {
+                let runtime = runtime.clone();
+                async move { Ok(runtime.listen(&addr).await?) }
+            }).await?;
 
         Ok(Proxy {
             tor_client,
