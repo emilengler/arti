@@ -167,8 +167,9 @@ pub async fn run<R: Runtime>(
     if socks_port != 0 {
         let runtime = runtime.clone();
         let client = client.isolated_client();
+        let config = socks::InstanceConfigBuilder::default().build().expect("could build default config");
         proxy.push(Box::pin(async move {
-            let res = socks::run_socks_proxy(runtime, client, socks_port).await;
+            let res = socks::run_socks_proxy(runtime, client, socks_port, config).await;
             (res, "SOCKS")
         }));
     }

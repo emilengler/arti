@@ -3,10 +3,12 @@
 //! A proxy is launched with [`run_socks_proxy()`], which listens for new
 //! connections and then runs
 
+use derive_builder::Builder;
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as IoError};
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
+use serde::Deserialize;
 use std::convert::TryInto;
 use std::io::Result as IoResult;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -375,6 +377,16 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
     }
 }
 
+/// Configuration for an instance of the SOCKS proxy
+///
+/// Currently, there are no configuration options (other than the listening port(s))
+#[derive(Builder, Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+#[builder(derive(Deserialize))]
+#[builder_struct_attr(non_exhaustive)]
+pub struct InstanceConfig {
+}
+
 /// Launch a SOCKS proxy to listen on a given localhost port, and run
 /// indefinitely.
 ///
@@ -385,7 +397,9 @@ pub async fn run_socks_proxy<R: Runtime>(
     runtime: R,
     tor_client: TorClient<R>,
     socks_port: u16,
+    config: InstanceConfig,
 ) -> Result<()> {
+    let InstanceConfig { } = config; // ensures adding unimplemented option causes compile failure
     let mut listeners = Vec::new();
 
     // We actually listen on two ports: one for ipv4 and one for ipv6.
