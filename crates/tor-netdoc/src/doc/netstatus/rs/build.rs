@@ -1,6 +1,6 @@
 //! Provide builder functionality for routerstatuses.
 
-use super::{GenericRouterStatus, MdConsensusRouterStatus};
+use super::{GenericRouterStatus, MdConsensusRouterStatus, Version};
 use crate::doc;
 use crate::doc::microdesc::MdDigest;
 use crate::doc::netstatus::{ConsensusBuilder, RelayFlags, RelayWeight};
@@ -30,7 +30,7 @@ pub struct RouterStatusBuilder<D> {
     /// See [`GenericRouterStatus::flags`].
     flags: RelayFlags,
     /// See [`GenericRouterStatus::version`].
-    version: Option<String>,
+    version: Option<Version>,
     /// See [`GenericRouterStatus::protos`].
     protos: Option<Protocols>,
     /// See [`GenericRouterStatus::weight`].
@@ -38,6 +38,21 @@ pub struct RouterStatusBuilder<D> {
 }
 
 impl<D: Clone> RouterStatusBuilder<D> {
+    /// Construct a new RouterStatusBuilder, seeded with the value of a given
+    /// routerstatus.
+    fn from_generic_routerstatus(rs: &GenericRouterStatus<D>) -> Self {
+        RouterStatusBuilder {
+            nickname: Some(rs.nickname.clone()),
+            identity: Some(rs.identity),
+            addrs: rs.addrs.clone(),
+            doc_digest: Some(rs.doc_digest.clone()),
+            flags: rs.flags,
+            version: rs.version.clone(),
+            protos: Some(rs.protos.as_ref().clone()),
+            weight: Some(rs.weight),
+        }
+    }
+
     /// Construct a new RouterStatusBuilder.
     pub(crate) fn new() -> Self {
         RouterStatusBuilder {
@@ -97,7 +112,7 @@ impl<D: Clone> RouterStatusBuilder<D> {
     /// Set the version of the relay described in this routerstatus.
     ///
     /// This value is optional.
-    pub fn version(&mut self, version: String) -> &mut Self {
+    pub fn version(&mut self, version: Version) -> &mut Self {
         self.version = Some(version);
         self
     }
@@ -136,14 +151,13 @@ impl<D: Clone> RouterStatusBuilder<D> {
             .ok_or(Error::CannotBuild("Missing protocols"))?
             .clone();
         let weight = self.weight.unwrap_or(RelayWeight::Unmeasured(0));
-        let version = self.version.as_deref().map(str::parse).transpose()?;
 
         Ok(GenericRouterStatus {
             nickname,
             identity,
             addrs: self.addrs.clone(),
             doc_digest,
-            version,
+            version: self.version.clone(),
             protos: doc::PROTOVERS_CACHE.intern(protos),
             flags: self.flags,
             weight,
@@ -153,6 +167,11 @@ impl<D: Clone> RouterStatusBuilder<D> {
 
 #[cfg(feature = "ns_consensus")]
 impl RouterStatusBuilder<RdDigest> {
+    /// Construct a new builder, seeded with the value of `rs`.
+    pub fn from_routerstatus(rs: &NsConsensusRouterStatus) -> Self {
+        Self::from_generic_routerstatus(&rs.rs)
+    }
+
     /// Try to finish this builder and add its RouterStatus to a
     /// provided ConsensusBuilder.
     pub fn build_into(
@@ -169,8 +188,13 @@ impl RouterStatusBuilder<RdDigest> {
 }
 
 impl RouterStatusBuilder<MdDigest> {
+    /// Construct a new builder, seeded with the value of `rs`.
+    pub fn from_routerstatus(rs: &MdConsensusRouterStatus) -> Self {
+        Self::from_generic_routerstatus(&rs.rs)
+    }
+
     /// Try to finish this builder and add its RouterStatus to a
-    /// provided ConsensusBuilder.x
+    /// provided ConsensusBuilder.
     pub fn build_into(
         &self,
         builder: &mut ConsensusBuilder<MdConsensusRouterStatus>,

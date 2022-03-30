@@ -170,13 +170,18 @@ impl<RS> ConsensusBuilder<RS> {
         self.weights = weights;
         self
     }
+    /// Return a mutable view of the routerstatus entries already constructed
+    /// for this consensus.
+    pub fn relays_mut(&mut self) -> &mut Vec<RS> {
+        &mut self.relays
+    }
+
     /// Create a VoterInfoBuilder to add a voter to this builder.
     ///
     /// In theory these are required, but nothing asks for them.
     pub fn voter(&self) -> VoterInfoBuilder {
         VoterInfoBuilder::new()
     }
-
     /// Insert a single routerstatus into this builder.
     pub(crate) fn add_rs(&mut self, rs: RS) -> &mut Self {
         self.relays.push(rs);
@@ -185,6 +190,26 @@ impl<RS> ConsensusBuilder<RS> {
 }
 
 impl<RS: RouterStatus + Clone> ConsensusBuilder<RS> {
+    /// Construct a new builder seeded with the values from `consensus`.
+    pub fn from_consensus(consensus: Consensus<RS>) -> Self {
+        Self {
+            flavor: consensus.header.hdr.flavor,
+            lifetime: Some(consensus.header.hdr.lifetime),
+            client_versions: consensus.header.hdr.client_versions,
+            relay_versions: consensus.header.hdr.relay_versions,
+            client_protos: consensus.header.hdr.client_protos,
+            relay_protos: consensus.header.hdr.relay_protos,
+            params: consensus.header.hdr.params,
+            voting_delay: consensus.header.hdr.voting_delay,
+            consensus_method: Some(consensus.header.consensus_method),
+            shared_rand_prev: consensus.header.shared_rand_prev,
+            shared_rand_cur: consensus.header.shared_rand_cur,
+            voters: consensus.voters,
+            relays: consensus.relays,
+            weights: consensus.footer.weights,
+        }
+    }
+
     /// Create a RouterStatusBuilder to add a RouterStatus to this builder.
     ///
     /// You can make a consensus with no RouterStatus entries, but it
@@ -263,6 +288,9 @@ pub struct VoterInfoBuilder {
 }
 
 impl VoterInfoBuilder {
+    // TODO: Add a from_voter_info() type here if we ever start actually using
+    // the data from VoterInfo.
+
     /// Construct a new VoterInfoBuilder.
     pub(crate) fn new() -> Self {
         VoterInfoBuilder {
@@ -419,7 +447,7 @@ mod test {
             .doc_digest([99; 32])
             .set_flags(RelayFlags::FAST)
             .add_flags(RelayFlags::STABLE | RelayFlags::V2DIR)
-            .version("Arti 0.0.0".into())
+            .version("Arti 0.0.0".parse().unwrap())
             .protos("DirCache=7".parse().unwrap())
             .build_into(&mut builder)
             .unwrap();

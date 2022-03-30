@@ -1476,6 +1476,12 @@ impl<RS> UnvalidatedConsensus<RS> {
     {
         func(&mut self.consensus.relays);
     }
+
+    /// Return a reference to the inner, unvalidated consensus inside
+    #[cfg(feature = "experimental-api")]
+    pub fn dangerously_peek(&self) -> &Consensus<RS> {
+        &self.consensus
+    }
 }
 
 impl<RS> ExternallySigned<Consensus<RS>> for UnvalidatedConsensus<RS> {

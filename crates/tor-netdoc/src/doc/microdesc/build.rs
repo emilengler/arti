@@ -20,6 +20,8 @@ use rand::Rng;
 /// the `build_docs` feature.
 #[derive(Debug, Clone)]
 pub struct MicrodescBuilder {
+    /// The digest of this microdescriptor (or the digest we'll claim it has.)
+    sha256: Option<[u8; 32]>,
     /// The ntor onion key we'll be using.
     ///
     /// See [`Microdesc::ntor_onion_key`].
@@ -37,15 +39,40 @@ pub struct MicrodescBuilder {
 }
 
 impl MicrodescBuilder {
+    /// Return a new [`MicrodescBuilder`], seeded with the contents of `md`.
+    pub fn from_microdesc(md: &Microdesc) -> Self {
+        MicrodescBuilder {
+            sha256: Some(md.sha256),
+            ntor_onion_key: Some(md.ntor_onion_key),
+            family: md.family.as_ref().clone(),
+            ipv4_policy: md.ipv4_policy.as_ref().clone(),
+            ipv6_policy: md.ipv6_policy.as_ref().clone(),
+            ed25519_id: Some(md.ed25519_id),
+        }
+    }
+
     /// Create a new MicrodescBuilder.
     pub(crate) fn new() -> Self {
         MicrodescBuilder {
+            sha256: None,
             ntor_onion_key: None,
             family: RelayFamily::new(),
             ipv4_policy: PortPolicy::new_reject_all(),
             ipv6_policy: PortPolicy::new_reject_all(),
             ed25519_id: None,
         }
+    }
+
+    /// Set the sha256 digest.
+    ///
+    /// If absent, this field will be constructed at random.
+    ///
+    /// TODO: In later code, when we're building microdescriptors for real
+    /// (to implement directory authorities), we should compute this field
+    /// by actually encoding the text.
+    pub fn digest(&mut self, d: [u8; 32]) -> &mut Self {
+        self.sha256 = Some(d);
+        self
     }
 
     /// Set the ntor onion key.
@@ -131,7 +158,7 @@ impl MicrodescBuilder {
 
         // We generate a random sha256 value here, since this is only
         // for testing.
-        let sha256 = rand::thread_rng().gen();
+        let sha256 = self.sha256.unwrap_or_else(|| rand::thread_rng().gen());
 
         Ok(Microdesc {
             sha256,
@@ -190,6 +217,10 @@ mod test {
         assert!(!md.ipv6_policy().allows_port(443));
         assert!(md.ipv6_policy().allows_port(80));
         assert!(md.ipv6_policy().allows_port(55));
+
+        let md2 = MicrodescBuilder::from_microdesc(&md).testing_md().unwrap();
+        // using Debug to workaround lack of Eq.
+        assert_eq!(format!("{:?}", md), format!("{:?}", md2));
 
         Ok(())
     }
