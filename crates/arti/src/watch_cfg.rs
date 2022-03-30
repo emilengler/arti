@@ -9,14 +9,14 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use arti_client::config::Reconfigure;
 use arti_client::TorClient;
-use futures::{StreamExt as _};
-use futures::task::{SpawnExt as _};
+use futures::task::SpawnExt as _;
+use futures::StreamExt as _;
 use notify::Watcher;
 use tor_rtcompat::Runtime;
 use tracing::{debug, error, info, warn};
 
-use crate::{ArtiConfig, ServiceList};
 use crate::service::ManagedServices;
+use crate::{ArtiConfig, ServiceList};
 
 /// How long (worst case) should we take to learn about configuration changes?
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -38,8 +38,8 @@ pub fn watch_for_config_changes<R: Runtime>(
         watcher.watch_file(file)?;
     }
 
-    let (mut sync2async_tx, mut sync2async_rx) = futures::channel::mpsc::channel(
-        1 /* 0 ought to suffice according to the docs */);
+    let (mut sync2async_tx, mut sync2async_rx) =
+        futures::channel::mpsc::channel(1 /* 0 ought to suffice according to the docs */);
 
     std::thread::spawn(move || {
         // TODO: If someday we make this facility available outside of the
@@ -63,11 +63,14 @@ pub fn watch_for_config_changes<R: Runtime>(
                 // call recv() in the outer loop.
             }
             match sync2async_tx.try_send(event) {
-                Ok(()) => {},
-                Err(e) if e.is_full() => {}, // reconfigure task is backlogged, it will catch up
+                Ok(()) => {}
+                Err(e) if e.is_full() => {} // reconfigure task is backlogged, it will catch up
                 Err(e) => {
-                    if ! e.is_disconnected() {
-                        error!("unexpected error from futures::channel::mpsc::Sender::try_send: {}", e);
+                    if !e.is_disconnected() {
+                        error!(
+                            "unexpected error from futures::channel::mpsc::Sender::try_send: {}",
+                            e
+                        );
                         break;
                     }
                 }
@@ -80,23 +83,27 @@ pub fn watch_for_config_changes<R: Runtime>(
     // the future.
     //
     // This applies to many many tasks we spawn throughout the arti codeabse.
-    
-    client.runtime().clone().spawn(async move {
-        debug!("Task processing FS events");
-        while let Some(event) = sync2async_rx.next().await {
-            debug!("FS event {:?}: reloading configuration.", event);
-            match reconfigure(&sources, &original, &client, &mut reconfigurables).await {
-                Ok(exit) => {
-                    info!("Successfully reloaded configuration.");
-                    if exit {
-                        break;
+
+    client
+        .runtime()
+        .clone()
+        .spawn(async move {
+            debug!("Task processing FS events");
+            while let Some(event) = sync2async_rx.next().await {
+                debug!("FS event {:?}: reloading configuration.", event);
+                match reconfigure(&sources, &original, &client, &mut reconfigurables).await {
+                    Ok(exit) => {
+                        info!("Successfully reloaded configuration.");
+                        if exit {
+                            break;
+                        }
                     }
+                    Err(e) => warn!("Couldn't reload configuration: {}", e),
                 }
-                Err(e) => warn!("Couldn't reload configuration: {}", e),
             }
-        }
-        debug!("Task exiting");
-    }).context("failed to spawn watch task")?;
+            debug!("Task exiting");
+        })
+        .context("failed to spawn watch task")?;
 
     Ok(())
 }
@@ -122,32 +129,33 @@ async fn reconfigure<R: Runtime>(
     }
 
     let mut any_errs = false;
-    let mut process_outcome = |outcome: Result<()>| {
-        match outcome {
-            Ok(()) => {}
-            Err(e) => {
-                any_errs = true;
-                error!("Reconfiguration failed: {}", tor_error::Report(&e));
-            }
+    let mut process_outcome = |outcome: Result<()>| match outcome {
+        Ok(()) => {}
+        Err(e) => {
+            any_errs = true;
+            error!("Reconfiguration failed: {}", tor_error::Report(&e));
         }
     };
 
-    process_outcome(async {
-        reconfigurables.configure(&config)?;
-        reconfigurables.reconfigure(client.clone()).await?;
-        Ok(())
-    }.await);
+    process_outcome(
+        async {
+            reconfigurables.configure(&config)?;
+            reconfigurables.reconfigure(client.clone()).await?;
+            Ok(())
+        }
+        .await,
+    );
 
     let client_config = config.tor_client_config()?;
     process_outcome(
-        client.reconfigure(&client_config, Reconfigure::WarnOnFailures)
-            .context("Tor client")
+        client
+            .reconfigure(&client_config, Reconfigure::WarnOnFailures)
+            .context("Tor client"),
     );
 
     if any_errs {
-        return Err(anyhow!("Reconfiguration not successful."))
+        return Err(anyhow!("Reconfiguration not successful."));
     }
-
 
     if !config.application().watch_configuration {
         // Stop watching for configuration changes.

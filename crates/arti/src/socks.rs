@@ -17,11 +17,11 @@ use std::io::Result as IoResult;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use tracing::{info, warn};
 
+use crate::service::{self, ReconfigureCommandStream};
+use crate::{ArtiConfig, ListenSpec};
 use arti_client::{ErrorKind, HasKind, StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener};
 use tor_socksproto::{SocksAddr, SocksAuth, SocksCmd, SocksRequest};
-use crate::{ArtiConfig, ListenSpec};
-use crate::service::{self, ReconfigureCommandStream};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -395,25 +395,29 @@ pub struct SocksServiceKind;
 #[non_exhaustive]
 #[builder(derive(Deserialize))]
 #[builder_struct_attr(non_exhaustive)]
-pub struct InstanceConfig {
-}
+pub struct InstanceConfig {}
 
 /// Determine from config what SOCKS proxies are wanted
 pub fn wanted_instances(acfg: &ArtiConfig) -> Result<Vec<(ListenSpec, InstanceConfig)>> {
-    Ok(
-        acfg.proxy().socks_port
-            .into_iter()
-            .filter_map(|port| Some((
+    Ok(acfg
+        .proxy()
+        .socks_port
+        .into_iter()
+        .filter_map(|port| {
+            Some((
                 ListenSpec::from_localhost_port(port.try_into().ok()?),
-                InstanceConfig { }
-            )))
-            .collect()
-    )
+                InstanceConfig {},
+            ))
+        })
+        .collect())
 }
 
 /// SOCKS proxy instance
 #[must_use = "a socks::Proxy must be run() to do anything useful"]
-pub struct Proxy<R> where R: Runtime {
+pub struct Proxy<R>
+where
+    R: Runtime,
+{
     /// Service identity for reporting
     kind: SocksServiceKind,
     /// Service identity for reporting
@@ -426,7 +430,10 @@ pub struct Proxy<R> where R: Runtime {
     config: InstanceConfig,
 }
 
-impl<R> Proxy<R> where R: Runtime {
+impl<R> Proxy<R>
+where
+    R: Runtime,
+{
     /// Create the proxy (acquiring listening ports etc.)
     ///
     /// After creation, the proxy must be [`run`](Proxy::run).
@@ -436,12 +443,15 @@ impl<R> Proxy<R> where R: Runtime {
         socks_ports: ListenSpec,
         config: InstanceConfig,
     ) -> Result<Proxy<R>> {
-        let listeners = socks_ports.bind(
-            &service::inst_display(&SocksServiceKind, &socks_ports),
-            |addr| {
-                let runtime = runtime.clone();
-                async move { Ok(runtime.listen(&addr).await?) }
-            }).await?;
+        let listeners = socks_ports
+            .bind(
+                &service::inst_display(&SocksServiceKind, &socks_ports),
+                |addr| {
+                    let runtime = runtime.clone();
+                    async move { Ok(runtime.listen(&addr).await?) }
+                },
+            )
+            .await?;
 
         Ok(Proxy {
             kind: SocksServiceKind,
@@ -466,13 +476,16 @@ impl<R> Proxy<R> where R: Runtime {
 /// Implementation of `Proxy::run`, separated out to avoid rightward drift
 async fn run_socks_proxy<R: Runtime>(
     proxy: Proxy<R>,
-    mut reconfigure: ReconfigureCommandStream<InstanceConfig>
+    mut reconfigure: ReconfigureCommandStream<InstanceConfig>,
 ) -> Result<()> {
     let Proxy {
-        kind: service_kind, id: service_id,
-        tor_client, listeners, config,
+        kind: service_kind,
+        id: service_id,
+        tor_client,
+        listeners,
+        config,
     } = proxy;
-    let InstanceConfig { } = config; // ensures adding unimplemented option causes compile failure
+    let InstanceConfig {} = config; // ensures adding unimplemented option causes compile failure
     let runtime = tor_client.runtime();
 
     // Create a stream of (incoming socket, listener_id) pairs, selected
@@ -490,7 +503,7 @@ async fn run_socks_proxy<R: Runtime>(
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
     loop {
-        select_biased!{
+        select_biased! {
             // TODO refactor this to be shared with other listeners
             reconfigure = reconfigure.next() => {
                 let reconfigure = if let Some(y) = reconfigure { y } else { break; };
@@ -547,7 +560,7 @@ async fn run_socks_proxy<R: Runtime>(
 }
 
 #[async_trait]
-impl<R:Runtime> service::ServiceKind<R> for SocksServiceKind {
+impl<R: Runtime> service::ServiceKind<R> for SocksServiceKind {
     type GlobalConfig = ArtiConfig;
     type Identity = ListenSpec;
     type InstanceConfig = InstanceConfig;
@@ -557,13 +570,25 @@ impl<R:Runtime> service::ServiceKind<R> for SocksServiceKind {
         wanted_instances(acfg)
     }
 
-    async fn create(&self, tor_client: TorClient<R>, addrs: Self::Identity,
-                    config: Self::InstanceConfig) -> Result<Proxy<R>> {
-        Proxy::create(tor_client.runtime().clone(), tor_client, addrs.clone(), config).await
+    async fn create(
+        &self,
+        tor_client: TorClient<R>,
+        addrs: Self::Identity,
+        config: Self::InstanceConfig,
+    ) -> Result<Proxy<R>> {
+        Proxy::create(
+            tor_client.runtime().clone(),
+            tor_client,
+            addrs.clone(),
+            config,
+        )
+        .await
     }
 
-    async fn run(proxy: Proxy<R>, reconfigure: ReconfigureCommandStream<Self::InstanceConfig>)
-                   -> Result<()> {
+    async fn run(
+        proxy: Proxy<R>,
+        reconfigure: ReconfigureCommandStream<Self::InstanceConfig>,
+    ) -> Result<()> {
         proxy.run(reconfigure).await
     }
 }

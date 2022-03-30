@@ -43,22 +43,22 @@ impl ListenSpec {
     }
 
     /// Return the socket addresses to (try to) bind
-    pub fn as_socket_addrs(&self) -> impl Iterator<Item=SocketAddr> {
+    pub fn as_socket_addrs(&self) -> impl Iterator<Item = SocketAddr> {
         #[allow(clippy::match_single_binding)] // there is going to be an enum here
         match *self {
             ListenSpec { port } => {
-                let localhosts: [IpAddr; 2] = [
-                    Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()
-                ];
+                let localhosts: [IpAddr; 2] =
+                    [Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()];
                 IntoIterator::into_iter(localhosts).map(move |localhost| (localhost, port).into())
             }
         }
     }
 
     /// Try to bind
-    pub async fn bind<T,F,FUT>(&self, service: &(dyn Display + Sync), mut f: F) -> Result<Vec<T>>
-    where F: FnMut(SocketAddr) -> FUT,
-          FUT: Future<Output=Result<T>>,
+    pub async fn bind<T, F, FUT>(&self, service: &(dyn Display + Sync), mut f: F) -> Result<Vec<T>>
+    where
+        F: FnMut(SocketAddr) -> FUT,
+        FUT: Future<Output = Result<T>>,
     {
         let mut listeners = vec![];
         for addr in self.as_socket_addrs() {

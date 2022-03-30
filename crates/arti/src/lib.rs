@@ -117,11 +117,11 @@
 pub mod cfg;
 pub mod dns;
 pub mod exit;
-pub mod logging;
 pub mod listen;
+pub mod logging;
 pub mod process;
-pub mod socks;
 pub mod service;
+pub mod socks;
 pub mod watch_cfg;
 
 pub use cfg::{
@@ -130,7 +130,7 @@ pub use cfg::{
 };
 pub use listen::ListenSpec;
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
-pub use service::{ServiceList, ServiceKind, ManagedServices};
+pub use service::{ManagedServices, ServiceKind, ServiceList};
 pub use socks::SocksServiceKind;
 
 use arti_client::{TorClient, TorClientConfig};
@@ -147,13 +147,12 @@ use std::convert::TryInto;
 type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 
 /// The builtin service kinds supported by `arti`
-pub fn supported_services<R,C>() -> ServiceList<R,C>
-where R: Runtime,
-      C: AsRef<ArtiConfig>,
+pub fn supported_services<R, C>() -> ServiceList<R, C>
+where
+    R: Runtime,
+    C: AsRef<ArtiConfig>,
 {
-    vec![
-        SocksServiceKind.manage(),
-    ]
+    vec![SocksServiceKind.manage()]
 }
 
 /// Run the main loop of the proxy.
@@ -206,8 +205,12 @@ pub async fn run<R: Runtime>(
     services.start(client.clone()).await?;
 
     if arti_config.application().watch_configuration {
-        watch_cfg::watch_for_config_changes(config_sources, arti_config.clone(), client.clone(),
-                                            services)?;
+        watch_cfg::watch_for_config_changes(
+            config_sources,
+            arti_config.clone(),
+            client.clone(),
+            services,
+        )?;
     }
 
     let proxy = futures::future::select_all(proxy).map(|(finished, _index, _others)| finished);

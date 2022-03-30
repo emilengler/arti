@@ -12,19 +12,19 @@ use anyhow::{anyhow, Context, Error, Result};
 use async_trait::async_trait;
 use educe::Educe;
 //use extend::ext;
-use futures::channel::{oneshot, mpsc};
+use futures::channel::{mpsc, oneshot};
 use futures::stream::{FusedStream, FuturesUnordered};
 use futures::task::SpawnExt;
 use futures::{SinkExt, StreamExt};
 use itertools::Itertools;
-use tracing::{info, error};
+use tracing::{error, info};
 
+use arti_client::TorClient;
 use tor_error::internal;
 use tor_rtcompat::Runtime;
-use arti_client::TorClient;
 
 /// List of services
-pub type ServiceList<R,GC> = Vec<Box<dyn ManagedServices<R,GC>>>;
+pub type ServiceList<R, GC> = Vec<Box<dyn ManagedServices<R, GC>>>;
 
 /// (Proxy) service kind
 ///
@@ -35,7 +35,10 @@ pub type ServiceList<R,GC> = Vec<Box<dyn ManagedServices<R,GC>>>;
 /// Errors from `ServiceKind` methods do not need to contain information about the services's identity -
 /// the code that handles the error will add that information to messages.
 #[async_trait]
-pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
+pub trait ServiceKind<R>: Display + Send + Sync + 'static
+where
+    R: Runtime,
+{
     /// "Identity" of an instance, used to relate configuration on reload, and for messages
     ///
     /// The Display impl should not recapitulate the kind
@@ -56,7 +59,10 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     /// Note that a single instance may listen on multiple TCP ports, for example.
     //
     // All currently implemented services return either vec![] or vec![one_service]
-    fn configure(&self, gcfg: &Self::GlobalConfig) -> Result<Vec<(Self::Identity, Self::InstanceConfig)>>;
+    fn configure(
+        &self,
+        gcfg: &Self::GlobalConfig,
+    ) -> Result<Vec<(Self::Identity, Self::InstanceConfig)>>;
 
     /// Create a service instance.
     ///
@@ -66,9 +72,12 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     /// Normally all relevant instances will be created and started in parallel.
     /// If a kind needs global (per-kind) state, rather than merely
     /// per-isntance state, it must use interior mutability.
-    async fn create(&self, tor_client: TorClient<R>,
-                    identity: Self::Identity, scfg: Self::InstanceConfig)
-                    -> Result<Self::Instance>;
+    async fn create(
+        &self,
+        tor_client: TorClient<R>,
+        identity: Self::Identity,
+        scfg: Self::InstanceConfig,
+    ) -> Result<Self::Instance>;
 
     /// Run the service instance.
     ///
@@ -77,15 +86,18 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     ///
     /// It should return `Ok` if and when it is shut down via a `ReconfigureCommand`,
     /// and `Err` if it suffers a fatal error.
-    async fn run(instance: Self::Instance, reconfigure: ReconfigureCommandStream<Self::InstanceConfig>)
-                 -> Result<()>;
+    async fn run(
+        instance: Self::Instance,
+        reconfigure: ReconfigureCommandStream<Self::InstanceConfig>,
+    ) -> Result<()>;
 
     /// Instantiates a manager for this kind of service
     ///
     /// Called once for each kind, during application startup
-    fn manage<GC>(self) -> Box<dyn ManagedServices<R,GC>>
-    where GC: AsRef<Self::GlobalConfig>,
-          Self: Sized,
+    fn manage<GC>(self) -> Box<dyn ManagedServices<R, GC>>
+    where
+        GC: AsRef<Self::GlobalConfig>,
+        Self: Sized,
     {
         Box::new(Manager {
             kind: self,
@@ -101,7 +113,7 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
     /// This method is provided to centralise formatting of the display of service descriptions
     /// in log and error messages.  Do not override it.
     fn inst_display(&self, id: &Self::Identity) -> String {
-        inst_display(self,id)
+        inst_display(self, id)
     }
 }
 
@@ -112,7 +124,11 @@ pub trait ServiceKind<R>: Display + Send + Sync + 'static where R: Runtime {
 /// an appropriate [`ServiceKind`] implementation - in particular, since service kinds
 /// are usually unit structs, `SomeServiceKind.inst_display(...)` will usually fail
 /// to infer the runtime type `R`.
-pub fn inst_display<K,I>(kind: K, id: I) -> String where K: Display, I: Display {
+pub fn inst_display<K, I>(kind: K, id: I) -> String
+where
+    K: Display,
+    I: Display,
+{
     format!("{} ({})", kind, id)
 }
 
@@ -134,45 +150,72 @@ pub struct ReconfigureCommand<IC> {
 
 #[derive(Debug)]
 /// Manager for a concrete service kind
-struct Manager<R,SK> where R: Runtime, SK: ServiceKind<R> {
+struct Manager<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+{
     /// Kind
     kind: SK,
     /// Instances
-    instances: BTreeMap<SK::Identity, InstanceState<R,SK>>,
+    instances: BTreeMap<SK::Identity, InstanceState<R, SK>>,
 }
 
 /// Instance exists
-struct InstanceExists<R,SK> where R: Runtime, SK: ServiceKind<R> {
+struct InstanceExists<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+{
     /// How to communicate with it
     reconfigure: mpsc::Sender<ReconfigureCommand<SK::InstanceConfig>>,
 }
-impl<R,SK> Debug for InstanceExists<R,SK> where R: Runtime, SK: ServiceKind<R> {
-    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result { Ok(()) }
+impl<R, SK> Debug for InstanceExists<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+{
+    fn fmt(&self, _: &mut fmt::Formatter) -> fmt::Result {
+        Ok(())
+    }
 }
 
 #[derive(Educe)]
 #[educe(Debug)]
 /// State of one managed service - implementation
-enum InstanceState<R,SK> where R: Runtime, SK: ServiceKind<R> {
+enum InstanceState<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+{
     /// [`ManagedInstanceKind::configure`] called, and implies we need this
     NeedsStart(#[educe(Debug(ignore))] SK::InstanceConfig),
     /// [`ManagedInstanceKind::start`] called, and start succeeded
-    Started(InstanceExists<R,SK>),
+    Started(InstanceExists<R, SK>),
     /// [`ManagedServices::configure`] called, and im
-    NeedsReconfigure(InstanceExists<R,SK>, #[educe(Debug(ignore))] SK::InstanceConfig),
+    NeedsReconfigure(
+        InstanceExists<R, SK>,
+        #[educe(Debug(ignore))] SK::InstanceConfig,
+    ),
     /// [`ManagedServices::configure`] called, and implies we should stop this
-    NeedsStop(InstanceExists<R,SK>),
+    NeedsStop(InstanceExists<R, SK>),
     /// [`ManagedServices::start`] called, and start failed
     Failed,
     /// Garbage, will be collected later
     Stopped,
 }
 
-impl<R,SK> InstanceExists<R,SK> where R: Runtime, SK: ServiceKind<R> {
+impl<R, SK> InstanceExists<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+{
     /// Tell this instance to reconfigure and report whether that worked
     async fn reconfigure(&mut self, config: Option<SK::InstanceConfig>) -> Result<()> {
         let (respond, rrecv) = oneshot::channel();
-        self.reconfigure.send(ReconfigureCommand { config, respond }).await
+        self.reconfigure
+            .send(ReconfigureCommand { config, respond })
+            .await
             .context("service failed")?;
         rrecv.await.context("service failed")?
     }
@@ -182,7 +225,7 @@ impl<R,SK> InstanceExists<R,SK> where R: Runtime, SK: ServiceKind<R> {
 ///
 /// We stop all services first, then we start new ones.  That way newly starting services can use
 /// resources from stopped ones.  So, a port could be reployed from one kind of service to another.
-#[derive(Copy,Clone,Debug,Ord,PartialOrd,Eq,PartialEq)]
+#[derive(Copy, Clone, Debug, Ord, PartialOrd, Eq, PartialEq)]
 #[allow(clippy::exhaustive_enums)] // Adding to this is a breaking change
 pub enum ImplementationPhase {
     /// Stop
@@ -193,11 +236,19 @@ pub enum ImplementationPhase {
 
 use InstanceState::*;
 
-impl<R,SK> InstanceState<R,SK> where R: Runtime, SK: ServiceKind<R> {
+impl<R, SK> InstanceState<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+{
     /// Implement whatever change is needed, according to the current InstanceState
-    async fn implement(&mut self, phase: ImplementationPhase,
-                       tor_client: TorClient<R>, kind: &SK, id: &SK::Identity)
-                       -> Result<()> {
+    async fn implement(
+        &mut self,
+        phase: ImplementationPhase,
+        tor_client: TorClient<R>,
+        kind: &SK,
+        id: &SK::Identity,
+    ) -> Result<()> {
         use ImplementationPhase::*;
         let kind_id = kind.inst_display(id);
         let (report, new_state) = match (phase, mem::replace(self, Failed)) {
@@ -252,7 +303,10 @@ impl<R,SK> InstanceState<R,SK> where R: Runtime, SK: ServiceKind<R> {
 ///
 /// Interface for the rest of the program to use to manage a service kind.
 #[async_trait]
-pub trait ManagedServices<R, GC>: Send + Sync where R: Runtime {
+pub trait ManagedServices<R, GC>: Send + Sync
+where
+    R: Runtime,
+{
     /// Processes configuration for all the instances of this kind
     ///
     /// Does not start, stop or reconfigure any services.
@@ -269,7 +323,7 @@ pub trait ManagedServices<R, GC>: Send + Sync where R: Runtime {
     /// Successful starts are logged with `info!`;
     /// if anything fails, the first failure is (*not* logged and) returned.
     async fn start(&mut self, tor_client: TorClient<R>) -> Result<()> {
-        implement_phases::<StartupErrorHandling,_,_,_>(self, tor_client).await
+        implement_phases::<StartupErrorHandling, _, _, _>(self, tor_client).await
     }
 
     /// Reconfigure (and start and stop) services as needed
@@ -283,14 +337,17 @@ pub trait ManagedServices<R, GC>: Send + Sync where R: Runtime {
     /// This is a wrapper around `implement`.
     /// `reconfigure`  handles logging and error handling suitably for runtime reconfiguration.
     async fn reconfigure(&mut self, tor_client: TorClient<R>) -> Result<()> {
-        implement_phases::<ReconfigureErrorHandling,_,_,_>(self, tor_client).await
+        implement_phases::<ReconfigureErrorHandling, _, _, _>(self, tor_client).await
     }
 
     /// Stop/reconfigure/Start any services that as configure determined was needed
     ///
     /// Lower-level function that returns a stream of success/error reports.
-    fn implement(&mut self, phase: ImplementationPhase, tor_client: TorClient<R>)
-                 -> ImplementationResultStream;
+    fn implement(
+        &mut self,
+        phase: ImplementationPhase,
+        tor_client: TorClient<R>,
+    ) -> ImplementationResultStream;
 
     /// Construct an error describing the failure to reconfigure
     ///
@@ -306,9 +363,10 @@ pub trait ManagedServices<R, GC>: Send + Sync where R: Runtime {
 ///
 /// Separate helper function so this and ErrorHandling don't have to be public
 async fn implement_phases<EH, R, MSK, GGC>(self_: &mut MSK, tor_client: TorClient<R>) -> Result<()>
-where EH: ErrorHandling,
-      R: Runtime,
-      MSK: ManagedServices<R, GGC> + ?Sized,
+where
+    EH: ErrorHandling,
+    R: Runtime,
+    MSK: ManagedServices<R, GGC> + ?Sized,
 {
     let mut eh = EH::default();
     use ImplementationPhase::*;
@@ -338,13 +396,13 @@ trait ErrorHandling: Default + Send + Sync {
     fn handle(&mut self, error: Error) -> Result<()>;
 
     /// Check to see if we had an error we continued past earlier
-    fn finish<R:Runtime, GC, MSK: ManagedServices<R,GC> + ?Sized>(self, kind: &MSK) -> Result<()>;
+    fn finish<R: Runtime, GC, MSK: ManagedServices<R, GC> + ?Sized>(self, kind: &MSK)
+        -> Result<()>;
 }
 
 #[derive(Default)]
 /// ErrorHandling for ManagedServices::start
-struct StartupErrorHandling {
-}
+struct StartupErrorHandling {}
 impl ErrorHandling for StartupErrorHandling {
     fn error_context(&self, kind_id: &str) -> String {
         format!("failed to start {}", kind_id)
@@ -352,7 +410,7 @@ impl ErrorHandling for StartupErrorHandling {
     fn handle(&mut self, error: Error) -> Result<()> {
         Err(error)
     }
-    fn finish<R:Runtime, GC, MSK: ManagedServices<R,GC> + ?Sized>(self, _: &MSK) -> Result<()> {
+    fn finish<R: Runtime, GC, MSK: ManagedServices<R, GC> + ?Sized>(self, _: &MSK) -> Result<()> {
         Ok(())
     }
 }
@@ -361,7 +419,7 @@ impl ErrorHandling for StartupErrorHandling {
 #[derive(Default)]
 struct ReconfigureErrorHandling {
     /// We continue past errors
-    error_count: usize
+    error_count: usize,
 }
 
 impl ErrorHandling for ReconfigureErrorHandling {
@@ -373,7 +431,10 @@ impl ErrorHandling for ReconfigureErrorHandling {
         self.error_count += 1;
         Ok(())
     }
-    fn finish<R:Runtime, GC, MSK: ManagedServices<R,GC> + ?Sized>(self, kind: &MSK) -> Result<()> {
+    fn finish<R: Runtime, GC, MSK: ManagedServices<R, GC> + ?Sized>(
+        self,
+        kind: &MSK,
+    ) -> Result<()> {
         if let Ok(error_count) = self.error_count.try_into() {
             Err(kind.report_reconfigure_failure(error_count))
         } else {
@@ -383,85 +444,98 @@ impl ErrorHandling for ReconfigureErrorHandling {
 }
 
 /// Stream of results from lower-level `implement()` functions
-pub type ImplementationResultStream<'s> = Box<dyn FusedStream<Item=Result<()>> + Unpin + Send + 's>;
+pub type ImplementationResultStream<'s> =
+    Box<dyn FusedStream<Item = Result<()>> + Unpin + Send + 's>;
 
 #[async_trait]
-impl<R,SK,GGC> ManagedServices<R,GGC> for Manager<R,SK>
-where R: Runtime, SK: ServiceKind<R>,
-      GGC: AsRef<SK::GlobalConfig>,
+impl<R, SK, GGC> ManagedServices<R, GGC> for Manager<R, SK>
+where
+    R: Runtime,
+    SK: ServiceKind<R>,
+    GGC: AsRef<SK::GlobalConfig>,
 {
     /// Process configuration
     ///
     /// Does not start or stop any services.  `implement`.
     fn configure(&mut self, gcfg: &GGC) -> Result<usize> {
         let gcfg = gcfg.as_ref();
-        let new_configs = self.kind.configure(gcfg)
+        let new_configs = self
+            .kind
+            .configure(gcfg)
             .with_context(|| format!("configure {}", &self.kind))?;
         let new_configs = {
             let mut collect = BTreeMap::new();
             for (id, scfg) in new_configs {
                 let was = collect.insert(id.clone(), scfg);
                 if was.is_some() {
-                    return Err(internal!("multiple configs with kind {} id {}",
-                                         &self.kind, &id).into());
+                    return Err(
+                        internal!("multiple configs with kind {} id {}", &self.kind, &id).into(),
+                    );
                 }
             }
             collect
         };
 
-        self.instances = mem::take(&mut self.instances).into_iter().merge_join_by(
-            new_configs,
-            |l,r| Ord::cmp(&l.0, &r.0)
-        ).filter_map(|joined| {
-            use itertools::EitherOrBoth::*;
-            let (id, old, wanted) = match joined {
-                Left((id, old)) => (id, Some(old), None),
-                Right((id, new)) => (id, None, Some(new)),
-                Both((id1, old), (id2, new)) => {
-                    assert_eq!(id1, id2);
-                    (id1, Some(old), Some(new))
-                },
-            };
-            let old = match old {
-                None |
-                Some(NeedsStart(_)) |
-                Some(Failed) |
-                Some(Stopped) => None,
+        self.instances = mem::take(&mut self.instances)
+            .into_iter()
+            .merge_join_by(new_configs, |l, r| Ord::cmp(&l.0, &r.0))
+            .filter_map(|joined| {
+                use itertools::EitherOrBoth::*;
+                let (id, old, wanted) = match joined {
+                    Left((id, old)) => (id, Some(old), None),
+                    Right((id, new)) => (id, None, Some(new)),
+                    Both((id1, old), (id2, new)) => {
+                        assert_eq!(id1, id2);
+                        (id1, Some(old), Some(new))
+                    }
+                };
+                let old = match old {
+                    None | Some(NeedsStart(_)) | Some(Failed) | Some(Stopped) => None,
 
-                Some(Started(inst)) |
-                Some(NeedsStop(inst)) |
-                Some(NeedsReconfigure(inst, _)) => Some(inst),
-            };
-            match (old, wanted) {
-                (None, None) => None,
-                (None, Some(cfg))  => Some(NeedsStart(cfg)),
-                (Some(inst), None) => Some(NeedsStop(inst)),
-                (Some(inst), Some(cfg)) => Some(NeedsReconfigure(inst, cfg)),
-            }.map(|new| {
-                (id, new)
+                    Some(Started(inst))
+                    | Some(NeedsStop(inst))
+                    | Some(NeedsReconfigure(inst, _)) => Some(inst),
+                };
+                match (old, wanted) {
+                    (None, None) => None,
+                    (None, Some(cfg)) => Some(NeedsStart(cfg)),
+                    (Some(inst), None) => Some(NeedsStop(inst)),
+                    (Some(inst), Some(cfg)) => Some(NeedsReconfigure(inst, cfg)),
+                }
+                .map(|new| (id, new))
             })
-        }).collect();
-                
+            .collect();
+
         Ok(self.instances.len())
     }
 
-    fn implement(&mut self, phase: ImplementationPhase, tor_client: TorClient<R>)
-                 -> ImplementationResultStream {
+    fn implement(
+        &mut self,
+        phase: ImplementationPhase,
+        tor_client: TorClient<R>,
+    ) -> ImplementationResultStream {
         let kind = &self.kind;
-        Box::new(FuturesUnordered::from_iter(
-            self.instances.iter_mut().map(|(id, entry)|{
+        Box::new(FuturesUnordered::from_iter(self.instances.iter_mut().map(
+            |(id, entry)| {
                 let tor_client = tor_client.clone();
                 entry.implement(phase, tor_client, kind, id)
-            })
-        ))
+            },
+        )))
     }
 
     fn report_reconfigure_failure(&self, error_count: NonZeroUsize) -> Error {
-        anyhow!("{}: {} service(s) failed to reconfigure", &self.kind, error_count)
+        anyhow!(
+            "{}: {} service(s) failed to reconfigure",
+            &self.kind,
+            error_count
+        )
     }
 }
 
-impl<R,GC> ManagedServices<R,GC> for ServiceList<R,GC> where R: Runtime {
+impl<R, GC> ManagedServices<R, GC> for ServiceList<R, GC>
+where
+    R: Runtime,
+{
     fn configure(&mut self, gcfg: &GC) -> Result<usize> {
         let mut n_services = 0;
         for svc in self {
@@ -470,9 +544,14 @@ impl<R,GC> ManagedServices<R,GC> for ServiceList<R,GC> where R: Runtime {
         Ok(n_services)
     }
 
-    fn implement(&mut self, phase: ImplementationPhase, tor_client: TorClient<R>) -> ImplementationResultStream {
+    fn implement(
+        &mut self,
+        phase: ImplementationPhase,
+        tor_client: TorClient<R>,
+    ) -> ImplementationResultStream {
         Box::new(futures::stream::SelectAll::from_iter(
-            self.iter_mut().map(|svc| svc.implement(phase, tor_client.clone()))
+            self.iter_mut()
+                .map(|svc| svc.implement(phase, tor_client.clone())),
         ))
     }
 
@@ -507,16 +586,19 @@ mod test {
 
         #[derive(AsRef)]
         struct WrapperConfig {
-            #[as_ref] arti_config: ArtiConfig,
+            #[as_ref]
+            arti_config: ArtiConfig,
         }
 
         let config = WrapperConfig {
-            arti_config: ArtiConfigBuilder::default().build().expect("build default arti config"),
+            arti_config: ArtiConfigBuilder::default()
+                .build()
+                .expect("build default arti config"),
         };
 
         // Need to specify type R explicitly just because we're not calling services.start()
         type R = tor_rtcompat::PreferredRuntime;
-        let mut services = supported_services::<R,_>();
+        let mut services = supported_services::<R, _>();
         services.configure(&config).expect("configure services");
         // Don't actually start them, this test case is mostly a compile test.
     }
