@@ -118,6 +118,7 @@ pub mod cfg;
 pub mod dns;
 pub mod exit;
 pub mod logging;
+pub mod listen;
 pub mod process;
 pub mod socks;
 pub mod watch_cfg;
@@ -126,6 +127,7 @@ pub use cfg::{
     ApplicationConfig, ApplicationConfigBuilder, ArtiConfig, ArtiConfigBuilder, ProxyConfig,
     ProxyConfigBuilder, SystemConfig, SystemConfigBuilder,
 };
+pub use listen::ListenSpec;
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
 
 use arti_client::{TorClient, TorClientConfig};
@@ -148,7 +150,6 @@ type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 /// Currently, might panic if things go badly enough wrong
 pub async fn run<R: Runtime>(
     runtime: R,
-    socks_port: u16,
     dns_port: u16,
     config_sources: arti_config::ConfigurationSources,
     arti_config: ArtiConfig,
@@ -164,12 +165,12 @@ pub async fn run<R: Runtime>(
         .create_unbootstrapped()?;
 
     let mut proxy: Vec<PinnedFuture<(Result<()>, &str)>> = Vec::new();
-    if socks_port != 0 {
+
+    for (socks_listener, socks_config) in socks::wanted_instances(&arti_config)? {
         let runtime = runtime.clone();
         let client = client.isolated_client();
-        let config = socks::InstanceConfigBuilder::default().build().expect("could build default config");
         proxy.push(Box::pin(async move {
-            let res = socks::run_socks_proxy(runtime, client, socks_port, config).await;
+            let res = socks::run_socks_proxy(runtime, client, socks_listener, socks_config).await;
             (res, "SOCKS")
         }));
     }
@@ -347,7 +348,6 @@ pub fn main_main() -> Result<()> {
         let rt_copy = runtime.clone();
         rt_copy.block_on(run(
             runtime,
-            config.proxy().socks_port.unwrap_or_default(),
             config.proxy().dns_port.unwrap_or_default(),
             cfg_sources,
             config,

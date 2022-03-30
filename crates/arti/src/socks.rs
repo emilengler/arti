@@ -11,12 +11,13 @@ use futures::task::SpawnExt;
 use serde::Deserialize;
 use std::convert::TryInto;
 use std::io::Result as IoResult;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use tracing::{error, info, warn};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use tracing::{info, warn};
 
 use arti_client::{ErrorKind, HasKind, StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener};
 use tor_socksproto::{SocksAddr, SocksAuth, SocksCmd, SocksRequest};
+use crate::{ArtiConfig, ListenSpec};
 
 use anyhow::{anyhow, Context, Result};
 
@@ -387,6 +388,19 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
 pub struct InstanceConfig {
 }
 
+/// Determine from config what SOCKS proxies are wanted
+pub fn wanted_instances(acfg: &ArtiConfig) -> Result<Vec<(ListenSpec, InstanceConfig)>> {
+    Ok(
+        acfg.proxy().socks_port
+            .into_iter()
+            .filter_map(|port| Some((
+                ListenSpec::from_localhost_port(port.try_into().ok()?),
+                InstanceConfig { }
+            )))
+            .collect()
+    )
+}
+
 /// Launch a SOCKS proxy to listen on a given localhost port, and run
 /// indefinitely.
 ///
@@ -396,31 +410,14 @@ pub struct InstanceConfig {
 pub async fn run_socks_proxy<R: Runtime>(
     runtime: R,
     tor_client: TorClient<R>,
-    socks_port: u16,
+    socks_ports: ListenSpec,
     config: InstanceConfig,
 ) -> Result<()> {
     let InstanceConfig { } = config; // ensures adding unimplemented option causes compile failure
-    let mut listeners = Vec::new();
-
-    // We actually listen on two ports: one for ipv4 and one for ipv6.
-    let localhosts: [IpAddr; 2] = [Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()];
-
-    // Try to bind to the SOCKS ports.
-    for localhost in &localhosts {
-        let addr: SocketAddr = (*localhost, socks_port).into();
-        match runtime.listen(&addr).await {
-            Ok(listener) => {
-                info!("Listening on {:?}.", addr);
-                listeners.push(listener);
-            }
-            Err(e) => warn!("Can't listen on {:?}: {}", addr, e),
-        }
-    }
-    // We weren't able to bind any ports: There's nothing to do.
-    if listeners.is_empty() {
-        error!("Couldn't open any SOCKS listeners.");
-        return Err(anyhow!("Couldn't open SOCKS listeners"));
-    }
+    let listeners = socks_ports.bind(&format!("SOCKS ({})", &socks_ports), |addr| {
+        let runtime = runtime.clone();
+        async move { Ok(runtime.listen(&addr).await?) }
+    }).await?;
 
     // Create a stream of (incoming socket, listener_id) pairs, selected
     // across all the listeners.
