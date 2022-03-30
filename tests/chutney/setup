@@ -87,6 +87,14 @@ else
 fi
 
 (
+	tests/toml-update-override "${CHUTNEY_PATH}/net/nodes/arti.toml" '
+# Settings to override in our arti.toml, in TOML format.
+
+# To test this config reloating, we need to enable it,
+# since it is disabled by default (for good reasons).
+application.watch_configuration=true
+'
+
 	set +e
 	"$cmd" proxy -c "${CHUTNEY_PATH}/net/nodes/arti.toml" -d 35353 &
 	pid=$!
