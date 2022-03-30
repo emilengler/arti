@@ -8,6 +8,7 @@ use derive_builder::Builder;
 use derive_more::Display;
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as IoError};
+use futures::select_biased;
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
 use serde::Deserialize;
@@ -479,27 +480,37 @@ async fn run_socks_proxy<R: Runtime>(
 
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
-    while let Some((stream, sock_id)) = incoming.next().await {
-        let (stream, addr) = match stream {
-            Ok((s, a)) => (s, a),
-            Err(err) => {
-                if accept_err_is_fatal(&err) {
-                    return Err(err).context("Failed to receive incoming stream on SOCKS port");
-                } else {
-                    warn!("Incoming stream failed: {}", err);
-                    continue;
-                }
-            }
-        };
-        let client_ref = tor_client.clone();
-        let runtime_copy = runtime.clone();
-        runtime.spawn(async move {
-            let res =
-                handle_socks_conn(runtime_copy, client_ref, stream, (sock_id, addr.ip())).await;
-            if let Err(e) = res {
-                warn!("connection exited with error: {}", e);
-            }
-        })?;
+    loop {
+        select_biased!{
+
+            accepted = incoming.next() => {
+                let (stream, sock_id) = accepted.ok_or_else(
+                    || anyhow!("stream of incoming connectiones dried up!")
+                )?;
+                let (stream, addr) = match stream {
+                    Ok((s, a)) => (s, a),
+                    Err(err) => {
+                        if accept_err_is_fatal(&err) {
+                            return Err(err).context("Failed to receive incoming stream on SOCKS port");
+                        } else {
+                            warn!("Incoming stream failed: {}", err);
+                            continue;
+                        }
+                    }
+                };
+                let client_ref = tor_client.clone();
+                let runtime_copy = runtime.clone();
+                runtime.spawn(async move {
+                    let res =
+                        handle_socks_conn(runtime_copy, client_ref, stream, (sock_id, addr.ip())).await;
+                    if let Err(e) = res {
+                        warn!("connection exited with error: {}", e);
+                    }
+                })?;
+            },
+
+            complete => break,
+        }
     }
 
     Ok(())
