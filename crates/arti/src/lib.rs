@@ -162,9 +162,6 @@ pub async fn run<R: Runtime>(
         .config(client_config)
         .bootstrap_behavior(OnDemand)
         .create_unbootstrapped()?;
-    if arti_config.application().watch_configuration {
-        watch_cfg::watch_for_config_changes(config_sources, arti_config, client.clone())?;
-    }
 
     let mut proxy: Vec<PinnedFuture<(Result<()>, &str)>> = Vec::new();
     if socks_port != 0 {
@@ -189,6 +186,10 @@ pub async fn run<R: Runtime>(
         // TODO change this message so it's not only about socks_port
         warn!("No proxy port set; specify -p PORT or use the `socks_port` configuration option.");
         return Ok(());
+    }
+
+    if arti_config.application().watch_configuration {
+        watch_cfg::watch_for_config_changes(config_sources, arti_config, client.clone())?;
     }
 
     let proxy = futures::future::select_all(proxy).map(|(finished, _index, _others)| finished);
