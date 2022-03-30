@@ -1,4 +1,7 @@
 //! Support for listening on ports (eg, localhost)
+//
+// Unfortunately, there is no support here for fancy other kinds of listening ports
+// eg AF_UNIX sockets.  We would need more generic support in tor_rtcompat for that.
 
 use std::fmt::{self, Display};
 use std::future::Future;
