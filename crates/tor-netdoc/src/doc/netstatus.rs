@@ -1115,6 +1115,30 @@ enum SigCheckResult {
 }
 
 impl Signature {
+    /// Construct a new Signature from its constituent parts.
+    pub fn new(digestname: String, key_ids: AuthCertKeyIds, signature: Vec<u8>) -> Self {
+        Self {
+            digestname,
+            key_ids,
+            signature,
+        }
+    }
+
+    /// Return the name for the digest (supposedly) used by this signature.
+    pub fn digestname(&self) -> &str {
+        self.digestname.as_str()
+    }
+
+    /// Return the identifiers for the certificate that (supposedly) generated this signature.
+    pub fn key_ids(&self) -> &AuthCertKeyIds {
+        &self.key_ids
+    }
+
+    /// Return the binary representation of this signature.
+    pub fn signature(&self) -> &[u8] {
+        &self.signature[..]
+    }
+
     /// Parse a Signature from a directory-signature section
     fn from_item(item: &Item<'_, NetstatusKwd>) -> Result<Signature> {
         if item.kwd() != NetstatusKwd::DIRECTORY_SIGNATURE {
@@ -1144,11 +1168,7 @@ impl Signature {
         };
         let signature = item.obj("SIGNATURE")?;
 
-        Ok(Signature {
-            digestname,
-            key_ids,
-            signature,
-        })
+        Ok(Self::new(digestname, key_ids, signature))
     }
 
     /// Return true if this signature has the identity key and signing key
@@ -1416,6 +1436,34 @@ pub struct UnvalidatedConsensus<RS> {
 }
 
 impl<RS> UnvalidatedConsensus<RS> {
+    /// Construct a new `UnvalidatedConsensus` from an inner `Consensus` object, and
+    /// the signatures that authenticate it.
+    ///
+    /// This function is only available when the `experimental-api` feature is
+    /// enable. It is not stable; there is no stability guarantee.
+    #[cfg(feature = "experimental-api")]
+    pub fn new(consensus: Consensus<RS>, siggroup: SignatureGroup) -> Self {
+        Self {
+            consensus,
+            siggroup,
+            n_authorities: None,
+        }
+    }
+
+    /// Deconstruct this `UnvalidatedConsensus`, returning the (unvalidated) `Consensus` object
+    /// and the signatures that supposedly authenticate it.
+    ///
+    /// This function is "dangerous" because it returns a view of the consensus
+    /// without actually checking the signatures; it is intended for testing
+    /// only.
+    ///
+    /// This function is only available when the `experimental-api` feature is
+    /// enable. It is not stable; there is no stability guarantee.
+    #[cfg(feature = "experimental-api")]
+    pub fn dangerously_split(self) -> (Consensus<RS>, SignatureGroup) {
+        (self.consensus, self.siggroup)
+    }
+
     /// Tell the unvalidated consensus how many authorities we believe in.
     ///
     /// Without knowing this number, we can't validate the signature.
@@ -1516,6 +1564,47 @@ impl<RS> ExternallySigned<Consensus<RS>> for UnvalidatedConsensus<RS> {
 }
 
 impl SignatureGroup {
+    /// Create a given signature group from a provided set of signatures and digests.
+    ///
+    /// This function is only available when the `experimental-api` feature is
+    /// enable. It is not stable; there is no stability guarantee.
+    #[cfg(feature = "experimental-api")]
+    pub fn new(
+        sha1: Option<[u8; 20]>,
+        sha256: Option<[u8; 32]>,
+        signatures: Vec<Signature>,
+    ) -> Self {
+        Self {
+            sha1,
+            sha256,
+            signatures,
+        }
+    }
+
+    /// Return the sha256 digest of the document itself, if we know one.
+    ///
+    /// This function is only available when the `experimental-api` feature is
+    /// enable. It is not stable; there is no stability guarantee.
+    #[cfg(feature = "experimental-api")]
+    pub fn sha256_digest(&self) -> Option<&[u8; 32]> {
+        self.sha256.as_ref()
+    }
+    /// Return the sha1 digest of the document itself, if we know one.
+    ///
+    /// This function is only available when the `experimental-api` feature is
+    /// enable. It is not stable; there is no stability guarantee.
+    #[cfg(feature = "experimental-api")]
+    pub fn sha1_digest(&self) -> Option<&[u8; 20]> {
+        self.sha1.as_ref()
+    }
+    /// Return the signatures listed on this document.
+    ///
+    /// This function is only available when the `experimental-api` feature is
+    /// enable. It is not stable; there is no stability guarantee.
+    pub fn signatures(&self) -> &[Signature] {
+        &self.signatures[..]
+    }
+
     // TODO: these functions are pretty similar and could probably stand to be
     // refactored a lot.
 
