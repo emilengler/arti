@@ -28,7 +28,7 @@ use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use crate::err::ErrorDetail;
-use crate::{status, util, TorClientBuilder};
+use crate::{status, util, Error, TorClientBuilder};
 use tor_rtcompat::scheduler::{TaskHandle, TaskSchedule};
 use tracing::{debug, error, info, warn};
 
@@ -763,7 +763,13 @@ impl<R: Runtime> TorClient<R> {
 
     /// On success, return a list of IP addresses.
     pub async fn resolve(&self, hostname: &str) -> crate::Result<Vec<IpAddr>> {
-        self.resolve_with_prefs(hostname, &self.connect_prefs).await
+        for _ in 0..10 {
+            if let Ok(addr) = self.resolve_with_prefs(hostname, &self.connect_prefs).await {
+                return Ok(addr);
+            }
+        }
+
+        Err(Error::from(ErrorDetail::ExitTimeout))
     }
 
     /// On success, return a list of IP addresses, but use prefs.
@@ -792,7 +798,13 @@ impl<R: Runtime> TorClient<R> {
     ///
     /// On success, return a list of hostnames.
     pub async fn resolve_ptr(&self, addr: IpAddr) -> crate::Result<Vec<String>> {
-        self.resolve_ptr_with_prefs(addr, &self.connect_prefs).await
+        for _ in 0..10 {
+            if let Ok(addr) = self.resolve_ptr_with_prefs(addr, &self.connect_prefs).await {
+                return Ok(addr);
+            }
+        }
+
+        Err(Error::from(ErrorDetail::ExitTimeout))
     }
 
     /// Perform a remote DNS reverse lookup with the provided IP address.
