@@ -140,6 +140,7 @@ integration:
     - apt install -y tor git python3 curl dnsutils libtoml-tiny-perl libhash-merge-perl
     - ./tests/chutney/setup proxy
     - ./tests/chutney/test
+    - ./tests/chutney/reconfigure-arti
     - ./tests/chutney/stop-arti
     - RUST_LOG=debug target/x86_64-unknown-linux-gnu/release/arti-bench -c ./chutney/net/nodes/arti.toml --socks5 127.0.0.1:9008 -o benchmark_results.json
     - ./tests/chutney/teardown

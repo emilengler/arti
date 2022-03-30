@@ -1,0 +1,19 @@
+#!/bin/bash
+set -xeo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+# Tell shellcheck that yes, we know that we're sourcing a file.
+# shellcheck disable=SC1091
+source tests/chutney/common.sh
+
+tests/toml-update-override "${CHUTNEY_PATH}/net/nodes/arti.toml" \
+	'proxy.socks_port=9152'
+
+# Shouldn't take longer than this; if it does, call it an error.
+# Ideally there should be a way to talk to arti to ask it about the config reload.
+# We could tail the logfile maybe ?
+sleep 2
+
+: >&/dev/null </dev/tcp/127.0.0.1/9152
+echo 'Port 9152 now open'
