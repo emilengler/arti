@@ -137,7 +137,7 @@ integration:
   image: debian:stable-slim
   script:
     - apt update
-    - apt install -y tor git python3 curl dnsutils
+    - apt install -y tor git python3 curl dnsutils libtoml-tiny-perl libhash-merge-perl
     - ./tests/chutney/setup proxy
     - ./tests/chutney/test
     - ./tests/chutney/stop-arti

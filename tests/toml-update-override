@@ -1,0 +1,41 @@
+#!/usr/bin/perl -w
+
+our $usage = <<'END';
+usage:
+    tests/toml-update-override FILE [SECTION.SETTING=VALUE ... | TOML...]
+where VALUE is in TOML syntax.
+If VALUE is to be a string, you will need two sets of quotes,
+one for your shell and one for toml-update-override
+
+Arguments can in fact be any TOML syntax, possibly containing multiple
+values.  Return value is the input file with the command line settings
+applied, with later entries overriding or appending to earlier data.
+(The combination rules are from  Hash::Merge(3pm) with RIGHT_PRECEDENT)
+END
+
+use strict;
+use TOML::Tiny qw(from_toml to_toml);
+use Hash::Merge;
+use Data::Dumper;
+$/ = 0777;
+
+sub badusage { die "bad usage: @_\n$usage\n"; }
+
+my $merger = Hash::Merge->new('RIGHT_PRECEDENT');
+
+our $file = shift @ARGV // badusage('need file argument');
+open F, '<', "$file" or die "$file: $!\n";
+my $text = <F>;
+die "$file: $!\n" if F->error;
+
+my $data = from_toml($text);
+
+foreach (@ARGV) {
+  my $update_data = from_toml($_);
+  $data = $merger->merge($data, $update_data);
+}
+
+open F, ">", "$file.tmp" or die "$file.tmp: $!\n";
+print F to_toml($data) or die "$file.tmp: $!\n";
+close F or die "$file.tmp: $!\n";
+rename  "$file.tmp",  "$file" or die "install $file from .tmp: $!";
