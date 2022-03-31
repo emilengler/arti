@@ -26,7 +26,7 @@ pub struct NsConsensusRouterStatus {
     ///
     /// This is private because we don't want to leak that these two
     /// types have the same implementation "under the hood".
-    rs: GenericRouterStatus<RdDigest>,
+    pub(super) rs: GenericRouterStatus<RdDigest>,
 }
 
 impl From<GenericRouterStatus<RdDigest>> for NsConsensusRouterStatus {

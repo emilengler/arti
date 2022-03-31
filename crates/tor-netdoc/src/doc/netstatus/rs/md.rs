@@ -23,7 +23,7 @@ pub struct MdConsensusRouterStatus {
     ///
     /// This is private because we don't want to leak that these two
     /// types have the same implementation "under the hood".
-    rs: GenericRouterStatus<MdDigest>,
+    pub(super) rs: GenericRouterStatus<MdDigest>,
 }
 
 impl From<GenericRouterStatus<MdDigest>> for MdConsensusRouterStatus {
