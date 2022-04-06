@@ -147,6 +147,7 @@ use tor_persist::{DynStorageHandle, StateMgr};
 use tor_rtcompat::Runtime;
 
 mod daemon;
+mod dirstatus;
 mod err;
 pub mod fallback;
 mod filter;
@@ -557,20 +558,12 @@ impl<R: Runtime> GuardMgr<R> {
     ) {
         let mut inner = self.inner.lock().expect("Poisoned lock");
 
-        for id in inner.lookup_ids(ed_identity, rsa_identity) {
-            match &id.0 {
-                FirstHopIdInner::Guard(_) => {
-                    // TODO: Nothing to do in this case yet; there is not yet a
-                    // separate "directory succeeding" status for guards.  But there
-                    // should be, eventually.  This is part of #329.
-                }
-                FirstHopIdInner::Fallback(id) => {
-                    if external_activity == ExternalActivity::DirCache {
-                        inner.fallbacks.note_success(id);
-                    }
-                }
-            }
-        }
+        inner.record_external_success(
+            ed_identity,
+            rsa_identity,
+            external_activity,
+            self.runtime.wallclock(),
+        );
     }
 
     /// Ensure that the message queue is flushed before proceeding to
@@ -617,8 +610,8 @@ impl GuardSets {
 
     /// Update all non-persistent state for the guards in this object with the
     /// state in `other`.
-    fn copy_status_from(&mut self, other: &GuardSets) {
-        self.default.copy_status_from(&other.default);
+    fn copy_status_from(&mut self, other: GuardSets) {
+        self.default.copy_status_from(other.default);
     }
 }
 
@@ -676,8 +669,8 @@ impl GuardMgrInner {
     /// Replace the active guard state with `new_state`, preserving
     /// non-persistent state for any guards that are retained.
     fn replace_guards_with(&mut self, mut new_guards: GuardSets, now: SystemTime) {
-        new_guards.copy_status_from(&self.guards);
-        self.guards = new_guards;
+        std::mem::swap(&mut self.guards, &mut new_guards);
+        self.guards.copy_status_from(new_guards);
         self.update(now, None);
     }
 
@@ -740,6 +733,7 @@ impl GuardMgrInner {
                     self.guards.active_guards_mut().record_success(
                         id,
                         &self.params,
+                        None,
                         runtime.wallclock(),
                     );
                     // Either tell the request whether the guard is
@@ -789,6 +783,36 @@ impl GuardMgrInner {
         // not); we need to give them the information they're waiting
         // for.
         self.expire_and_answer_pending_requests(runtime.now());
+    }
+
+    /// Helper to implement `GuardMgr::note_external_success()`.
+    ///
+    /// (This has to be a separate function so that we can borrow params while
+    /// we have `mut self` borrowed.)
+    fn record_external_success(
+        &mut self,
+        ed_identity: &pk::ed25519::Ed25519Identity,
+        rsa_identity: &pk::rsa::RsaIdentity,
+        external_activity: ExternalActivity,
+        now: SystemTime,
+    ) {
+        for id in self.lookup_ids(ed_identity, rsa_identity) {
+            match &id.0 {
+                FirstHopIdInner::Guard(id) => {
+                    self.guards.active_guards_mut().record_success(
+                        id,
+                        &self.params,
+                        Some(external_activity),
+                        now,
+                    );
+                }
+                FirstHopIdInner::Fallback(id) => {
+                    if external_activity == ExternalActivity::DirCache {
+                        self.fallbacks.note_success(id);
+                    }
+                }
+            }
+        }
     }
 
     /// If the circuit built because of a given [`PendingRequest`] may
@@ -905,7 +929,7 @@ impl GuardMgrInner {
         wallclock: SystemTime,
     ) -> Result<(sample::ListKind, FirstHop), PickGuardError> {
         // Try to find a guard.
-        let first_error = match self.select_guard_once(usage) {
+        let first_error = match self.select_guard_once(usage, now) {
             Ok(res1) => return Ok(res1),
             Err(e) => {
                 trace!("Couldn't select guard on first attempt: {}", e);
@@ -925,7 +949,7 @@ impl GuardMgrInner {
                 self.guards
                     .active_guards_mut()
                     .select_primary_guards(&self.params);
-                match self.select_guard_once(usage) {
+                match self.select_guard_once(usage, now) {
                     Ok(res) => return Ok(res),
                     Err(e) => {
                         trace!("Couldn't select guard after expanding sample: {}", e);
@@ -948,11 +972,12 @@ impl GuardMgrInner {
     fn select_guard_once(
         &self,
         usage: &GuardUsage,
+        now: Instant,
     ) -> Result<(sample::ListKind, FirstHop), PickGuardError> {
         let (source, id) = self
             .guards
             .active_guards()
-            .pick_guard(usage, &self.params)?;
+            .pick_guard(usage, &self.params, now)?;
         let guard = self
             .guards
             .active_guards()
@@ -1289,6 +1314,63 @@ mod test {
             let (guard, _mon, _usable) = guardmgr.select_guard(u, Some(&netdir)).unwrap();
             // Make sure that the filter worked.
             assert_eq!(guard.id().as_ref().rsa.as_bytes()[0] % 4, 0);
+        });
+    }
+
+    #[test]
+    fn external_status() {
+        use tor_linkspec::ChanTarget;
+        test_with_all_runtimes!(|rt| async move {
+            let (guardmgr, _statemgr, netdir) = init(rt);
+            let data_usage = GuardUsage::default();
+            let dir_usage = GuardUsageBuilder::new()
+                .kind(GuardUsageKind::OneHopDirectory)
+                .build()
+                .unwrap();
+            guardmgr.update_network(&netdir);
+            {
+                // Override this parameter, so that we can get deterministic results below.
+                let mut inner = guardmgr.inner.lock().unwrap();
+                inner.params.dir_parallelism = 1;
+            }
+
+            let (guard, mon, _usable) = guardmgr
+                .select_guard(data_usage.clone(), Some(&netdir))
+                .unwrap();
+            mon.succeeded();
+
+            // Record that this guard gave us a bad directory object.
+            guardmgr.note_external_failure(
+                guard.ed_identity(),
+                guard.rsa_identity(),
+                ExternalActivity::DirCache,
+            );
+
+            // We ask for another guard, for data usage.  We should get the same
+            // one as last time, since the director failure doesn't mean this
+            // guard is useless as a primary guard.
+            let (g2, mon, _usable) = guardmgr.select_guard(data_usage, Some(&netdir)).unwrap();
+            assert_eq!(g2.ed_identity(), guard.ed_identity());
+            mon.succeeded();
+
+            // But if we ask for a guard for directory usage, we should get a
+            // different one, since the last guard we gave out failed.
+            let (g3, mon, _usable) = guardmgr
+                .select_guard(dir_usage.clone(), Some(&netdir))
+                .unwrap();
+            assert_ne!(g3.ed_identity(), guard.ed_identity());
+            mon.succeeded();
+
+            // Now record a success for for directory usage.
+            guardmgr.note_external_success(
+                guard.ed_identity(),
+                guard.rsa_identity(),
+                ExternalActivity::DirCache,
+            );
+
+            // Now that the guard is working as a cache, asking for it should get us the same guard.
+            let (g4, _mon, _usable) = guardmgr.select_guard(dir_usage, Some(&netdir)).unwrap();
+            assert_eq!(g4.ed_identity(), guard.ed_identity());
         });
     }
 }

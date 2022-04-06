@@ -12,9 +12,10 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant, SystemTime};
 use tracing::{trace, warn};
 
+use crate::dirstatus::DirStatus;
 use crate::util::randomize_time;
-use crate::FirstHopId;
 use crate::{ids::GuardId, GuardParams, GuardRestriction, GuardUsage};
+use crate::{ExternalActivity, FirstHopId, GuardUsageKind};
 use tor_persist::{Futureproof, JsonValue};
 
 /// Tri-state to represent whether a guard is believed to be reachable or not.
@@ -148,6 +149,15 @@ pub(crate) struct Guard {
     #[serde(skip)]
     is_dir_cache: bool,
 
+    /// Status for this guard, when used as a directory cache.
+    ///
+    /// (This is separate from `Reachable` and `retry_schedule`, since being
+    /// usable for circuit construction does not necessarily mean that the guard
+    /// will have good, timely cache information.  If it were not separate, then
+    /// circuit success would clear directory failures.)
+    #[serde(skip, default = "guard_dirstatus")]
+    dir_status: DirStatus,
+
     /// If true, we have given this guard out for an exploratory circuit,
     /// and that exploratory circuit is still pending.
     ///
@@ -171,6 +181,15 @@ pub(crate) struct Guard {
     /// this version of Arti doesn't understand.
     #[serde(flatten)]
     unknown_fields: HashMap<String, JsonValue>,
+}
+
+/// Lower bound for delay after get a failure using a guard as a directory
+/// cache.
+const GUARD_DIR_RETRY_FLOOR: Duration = Duration::from_secs(60);
+
+/// Return a DirStatus entry for a guard.
+fn guard_dirstatus() -> DirStatus {
+    DirStatus::new(GUARD_DIR_RETRY_FLOOR)
 }
 
 /// Wrapper to declare whether a given successful use of a guard is the
@@ -216,6 +235,7 @@ impl Guard {
             last_tried_to_connect_at: None,
             reachable: Reachable::Unknown,
             retry_at: None,
+            dir_status: guard_dirstatus(),
             retry_schedule: None,
             is_dir_cache: true,
             exploratory_circ_pending: false,
@@ -235,11 +255,19 @@ impl Guard {
         self.reachable
     }
 
-    /// Return the next time at which this guard will be retriable.
+    /// Return the next time at which this guard will be retriable for a given
+    /// usage.
     ///
     /// (Return None if we think this guard might be reachable right now.)
-    pub(crate) fn next_retry(&self) -> Option<Instant> {
-        self.retry_at
+    pub(crate) fn next_retry(&self, usage: &GuardUsage) -> Option<Instant> {
+        match &usage.kind {
+            GuardUsageKind::Data => self.retry_at,
+            GuardUsageKind::OneHopDirectory => [self.retry_at, self.dir_status.next_retriable()]
+                .iter()
+                .flatten()
+                .max()
+                .copied(),
+        }
     }
 
     /// Return true if this guard is listed in the latest NetDir, and hasn't
@@ -248,18 +276,54 @@ impl Guard {
         self.unlisted_since.is_none() && self.disabled.is_none()
     }
 
+    /// Return true if this guard is ready (with respect to any timeouts) for
+    /// the given `usage` at `now`.
+    pub(crate) fn ready_for_usage(&self, usage: &GuardUsage, now: Instant) -> bool {
+        if let Some(retry_at) = self.retry_at {
+            if retry_at > now {
+                return false;
+            }
+        }
+
+        match usage.kind {
+            GuardUsageKind::Data => true,
+            GuardUsageKind::OneHopDirectory => self.dir_status.usable_at(now),
+        }
+    }
+
     /// Copy all _non-persistent_ status from `other` to self.
     ///
     /// Requires that the two `Guard`s have the same ID.
-    pub(crate) fn copy_status_from(&mut self, other: &Guard) {
+    pub(crate) fn copy_status_from(self, other: Guard) -> Guard {
         debug_assert_eq!(self.id, other.id);
 
-        self.last_tried_to_connect_at = other.last_tried_to_connect_at;
-        self.retry_at = other.retry_at;
-        self.retry_schedule = other.retry_schedule.clone();
-        self.reachable = other.reachable;
-        self.is_dir_cache = other.is_dir_cache;
-        self.exploratory_circ_pending = other.exploratory_circ_pending;
+        Guard {
+            // All persistent fields are taken from `self`.
+            id: self.id,
+            orports: self.orports,
+            added_at: self.added_at,
+            added_by: self.added_by,
+            disabled: self.disabled,
+            confirmed_at: self.confirmed_at,
+            unlisted_since: self.unlisted_since,
+            unknown_fields: self.unknown_fields,
+
+            // All non-persistent fields get taken from `other`.
+            last_tried_to_connect_at: other.last_tried_to_connect_at,
+            retry_at: other.retry_at,
+            retry_schedule: other.retry_schedule,
+            reachable: other.reachable,
+            is_dir_cache: other.is_dir_cache,
+            exploratory_circ_pending: other.exploratory_circ_pending,
+            microdescriptor_missing: other.microdescriptor_missing,
+            circ_history: other.circ_history,
+            suspicious_behavior_warned: other.suspicious_behavior_warned,
+            dir_status: other.dir_status,
+            // Note that we _could_ remove either of the above blocks and add
+            // `..self` or `..other`, but that would be risky: it would increase
+            // the odds that we would forget to add some persistent or
+            // non-persistent field to the right group in the future.
+        }
     }
 
     /// Change the reachability status for this guard.
@@ -329,7 +393,6 @@ impl Guard {
 
     /// Return true if this guard is suitable to use for the provided `usage`.
     pub(crate) fn conforms_to_usage(&self, usage: &GuardUsage) -> bool {
-        use crate::GuardUsageKind;
         match usage.kind {
             GuardUsageKind::OneHopDirectory => {
                 if !self.is_dir_cache {
@@ -534,6 +597,24 @@ impl Guard {
         }
     }
 
+    /// Record that an external operation has succeeded on this guard.
+    pub(crate) fn record_external_success(&mut self, how: ExternalActivity) {
+        match how {
+            ExternalActivity::DirCache => {
+                self.dir_status.note_success();
+            }
+        }
+    }
+
+    /// Record that an external operation has failed on this guard.
+    pub(crate) fn record_external_failure(&mut self, how: ExternalActivity, now: Instant) {
+        match how {
+            ExternalActivity::DirCache => {
+                self.dir_status.note_failure(now);
+            }
+        }
+    }
+
     /// Note that a circuit through this guard died in a way that we couldn't
     /// necessarily attribute to the guard.
     pub(crate) fn record_indeterminate_result(&mut self) {
@@ -578,6 +659,12 @@ impl Guard {
             id: self.id.clone().into(),
             orports: self.orports.clone(),
         }
+    }
+
+    /// Testing only: Return true if this guard was ever contacted successfully.
+    #[cfg(test)]
+    pub(crate) fn confirmed(&self) -> bool {
+        self.confirmed_at.is_some()
     }
 }
 
@@ -1085,5 +1172,63 @@ mod test {
             g.mark_retriable();
             assert_eq!(g.reachable(), *post);
         }
+    }
+
+    #[test]
+    fn dir_status() {
+        // We're going to see how directory failures interact with circuit
+        // failures.
+
+        use crate::GuardUsageBuilder;
+        let mut g = basic_guard();
+        let inst = Instant::now();
+        let st = SystemTime::now();
+        let sec = Duration::from_secs(1);
+        let params = GuardParams::default();
+        let dir_usage = GuardUsageBuilder::new()
+            .kind(GuardUsageKind::OneHopDirectory)
+            .build()
+            .unwrap();
+        let data_usage = GuardUsage::default();
+
+        // Record a circuit success.
+        let _ = g.record_success(st, &params);
+        assert_eq!(g.next_retry(&dir_usage), None);
+        assert!(g.ready_for_usage(&dir_usage, inst));
+        assert_eq!(g.next_retry(&data_usage), None);
+        assert!(g.ready_for_usage(&data_usage, inst));
+
+        // Record a dircache failure.  This does not influence data usage.
+        g.record_external_failure(ExternalActivity::DirCache, inst);
+        assert_eq!(g.next_retry(&data_usage), None);
+        assert!(g.ready_for_usage(&data_usage, inst));
+        let next_dir_retry = g.next_retry(&dir_usage).unwrap();
+        assert!(next_dir_retry >= inst + GUARD_DIR_RETRY_FLOOR);
+        assert!(!g.ready_for_usage(&dir_usage, inst));
+        assert!(g.ready_for_usage(&dir_usage, next_dir_retry));
+
+        // Record a circuit success again.  This does not make the guard usable
+        // as a directory cache.
+        let _ = g.record_success(st, &params);
+        assert!(g.ready_for_usage(&data_usage, inst));
+        assert!(!g.ready_for_usage(&dir_usage, inst));
+
+        // Record a circuit failure.
+        g.record_failure(inst + sec * 10, true);
+        let next_circ_retry = g.next_retry(&data_usage).unwrap();
+        assert!(!g.ready_for_usage(&data_usage, inst + sec * 10));
+        assert!(!g.ready_for_usage(&dir_usage, inst + sec * 10));
+        assert_eq!(
+            g.next_retry(&dir_usage).unwrap(),
+            std::cmp::max(next_circ_retry, next_dir_retry)
+        );
+
+        // Record a directory success.  This won't supersede the circuit
+        // failure.
+        g.record_external_success(ExternalActivity::DirCache);
+        assert_eq!(g.next_retry(&data_usage).unwrap(), next_circ_retry);
+        assert_eq!(g.next_retry(&dir_usage).unwrap(), next_circ_retry);
+        assert!(!g.ready_for_usage(&dir_usage, inst + sec * 10));
+        assert!(!g.ready_for_usage(&data_usage, inst + sec * 10));
     }
 }

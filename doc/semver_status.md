@@ -18,6 +18,10 @@ We can delete older sections here after we bump the releases.
 
 ## Since Arti 0.2.0
 
+### tor-basic-util
+
+MODIFIED: Added `reset()` method to RetrySchedule.
+
 ### tor-circmgr
 
 MODIFIED: Added a new variant in tor_circmgr::Error.

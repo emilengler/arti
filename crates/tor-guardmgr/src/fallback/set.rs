@@ -1,9 +1,9 @@
 //! Declare the [`FallbackState`] type, which is used to store a set of FallbackDir.
 
 use rand::seq::IteratorRandom;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use super::{FallbackDir, Status};
+use super::{DirStatus, FallbackDir};
 use crate::{ids::FallbackId, PickGuardError};
 use serde::Deserialize;
 
@@ -67,13 +67,18 @@ pub(super) struct Entry {
     /// guard as well.  Ought to fix that.)
     pub(super) fallback: crate::FirstHop,
     /// The status for the fallback directory.
-    pub(super) status: Status,
+    pub(super) status: DirStatus,
 }
+
+/// Least amount of time we'll wait before retrying a fallback cache.
+//
+// TODO: we may want to make this configurable to a smaller value for chutney networks.
+const FALLBACK_RETRY_FLOOR: Duration = Duration::from_secs(150);
 
 impl From<FallbackDir> for Entry {
     fn from(fallback: FallbackDir) -> Self {
         let fallback = fallback.as_guard();
-        let status = Status::default();
+        let status = DirStatus::new(FALLBACK_RETRY_FLOOR);
         Entry { fallback, status }
     }
 }
