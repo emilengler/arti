@@ -129,21 +129,17 @@ impl std::iter::FromIterator<Error> for Option<Error> {
 fn format_access_bits(bits: u32) -> String {
     let mut s = String::new();
 
-    for (shift, prefix) in [(6, "u+"), (3, "g+"), (0, "o+")] {
+    for (shift, prefix) in [(6, "u="), (3, "g="), (0, "o=")] {
         let b = (bits >> shift) & 7;
         if b != 0 {
             if !s.is_empty() {
                 s.push(' ');
             }
             s.push_str(prefix);
-            if b & 4 != 0 {
-                s.push('r');
-            }
-            if b & 2 != 0 {
-                s.push('w');
-            }
-            if b & 1 != 0 {
-                s.push('x');
+            for (bit, ch) in [(4, 'r'), (2, 'w'), (1, 'x')] {
+                if b & bit != 0 {
+                    s.push(ch);
+                }
             }
         }
     }

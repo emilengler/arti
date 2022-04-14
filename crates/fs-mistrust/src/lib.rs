@@ -1,9 +1,8 @@
 //! # `fs-mistrust`: make sure that files are really private.
 //!
-//! This crates provides a set of functionality to check and repair the
-//! permissions on files and directories to ensure that they are effectively
-//! private—that is, that they are only readable or writable by trusted[^1]
-//! users.
+//! This crates provides a set of functionality to check the permissions on
+//! files and directories to ensure that they are effectively private—that is,
+//! that they are only readable or writable by trusted[^1] users.
 //!
 //! That's trickier than it sounds:
 //!
@@ -62,14 +61,19 @@
 //! ## Acknowledgements
 //!
 //! The list of checks performed here was inspired by the lists from OpenSSH's
-//! [safe_path], GnuPG's [check_permissions], and Tor's [check_private_dir].
-//! All errors are my own.
+//! [safe_path], GnuPG's [check_permissions], and Tor's [check_private_dir]. All
+//! errors are my own.
 //!
-//! [safe_path]: https://github.com/openssh/openssh-portable/blob/master/misc.c#L2177
-//! [check_permissions]: https://github.com/gpg/gnupg/blob/master/g10/gpg.c#L1551
-//! [check_private_dir]: https://gitlab.torproject.org/tpo/core/tor/-/blob/main/src/lib/fs/dir.c#L70
+//! [safe_path]:
+//!     https://github.com/openssh/openssh-portable/blob/master/misc.c#L2177
+//! [check_permissions]:
+//!     https://github.com/gpg/gnupg/blob/master/g10/gpg.c#L1551
+//! [check_private_dir]:
+//!     https://gitlab.torproject.org/tpo/core/tor/-/blob/main/src/lib/fs/dir.c#L70
 
 // TODO: Stuff to add before this crate is ready....
+//  - Actually handle symlinks correctly, with all that entails.
+//  - Make API distinguish "configuration" from "action".
 //
 //  - Ability to create directory if it doesn't exist.
 //  - Get more flexible about group permissions. (diziet had an idea.)
@@ -78,8 +82,10 @@
 // POSSIBLY TODO:
 //  - Forbid special files?
 //  - Ability to repair permissions (maybe)?
-//  - Tolerate missing items towards the end
+//  - Tolerate missing items towards the end of the path, maybe.
 //  - Cache information across runs.
+//  - Add a way to recursively check the contents of a directory.
+//  - Define a hard-to-misuse API for opening files, making secret directories, etc etc.
 
 #![deny(missing_docs)]
 #![warn(noop_method_call)]
