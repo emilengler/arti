@@ -14,7 +14,7 @@ publish = false
 [features]
 
 [dependencies]
-arti = { package = "arti", path = "../arti", version = "0.2.0"}
+arti = { package = "arti", path = "../arti", version = "0.2.0", default-features=false }
 arti-client = { package = "arti-client", path = "../arti-client", version = "0.2.0", features = [
     "dirfilter",
 ] }

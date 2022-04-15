@@ -22,7 +22,7 @@ tracing = "0.1.18"
 tracing-subscriber = { version = "0.3.0", features = ["env-filter"] }
 tokio = { version = "1.7", features = ["full"] }
 tor-rtcompat = { path="../tor-rtcompat", version = "0.2.0", features = ["tokio", "native-tls"] }
-arti = { path="../arti", version = "0.2.0"}
+arti = { path="../arti", version = "0.2.0", default-features = false }
 arti-config = { path="../arti-config", version = "0.2.0"}
 arti-client = { package="arti-client", path = "../arti-client", version = "0.2.0"}
 tokio-socks = "0.5"
