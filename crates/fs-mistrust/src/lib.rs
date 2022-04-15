@@ -119,6 +119,7 @@
 
 mod err;
 mod imp;
+mod walk;
 
 use std::path::{Path, PathBuf};
 
