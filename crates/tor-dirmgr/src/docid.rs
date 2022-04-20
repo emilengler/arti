@@ -1,8 +1,12 @@
 //! Declare a general purpose "document ID type" for tracking which
 //! documents we want and which we have.
 
+use std::sync::Mutex;
 use std::{borrow::Borrow, collections::HashMap};
+use tracing::trace;
 
+use crate::storage::Store;
+use crate::{DocumentText, DynStore};
 use tor_dirclient::request;
 #[cfg(feature = "routerdesc")]
 use tor_netdoc::doc::routerdesc::RdDigest;
@@ -193,6 +197,77 @@ impl DocQuery {
                 v.sort_unstable();
                 v[..].chunks(N).map(|s| RouterDesc(s.to_vec())).collect()
             }
+        }
+    }
+
+    /// Load the documents specified in this query from a `Store` into the specified hashmap.
+    pub(crate) fn load_documents_into(
+        &self,
+        store: &dyn Store,
+        result: &mut HashMap<DocId, DocumentText>,
+    ) -> crate::Result<()> {
+        use DocQuery::*;
+        match self {
+            LatestConsensus {
+                flavor,
+                cache_usage,
+            } => {
+                if *cache_usage == CacheUsage::MustDownload {
+                    // Do nothing: we don't want a cached consensus.
+                    trace!("MustDownload is set; not checking for cached consensus.");
+                } else if let Some(c) =
+                    store.latest_consensus(*flavor, cache_usage.pending_requirement())?
+                {
+                    trace!("Found a reasonable consensus in the cache");
+                    let id = DocId::LatestConsensus {
+                        flavor: *flavor,
+                        cache_usage: *cache_usage,
+                    };
+                    result.insert(id, c.into());
+                }
+            }
+            AuthCert(ids) => result.extend(
+                store
+                    .authcerts(ids)?
+                    .into_iter()
+                    .map(|(id, c)| (DocId::AuthCert(id), DocumentText::from_string(c))),
+            ),
+            Microdesc(digests) => {
+                result.extend(
+                    store
+                        .microdescs(digests)?
+                        .into_iter()
+                        .map(|(id, md)| (DocId::Microdesc(id), DocumentText::from_string(md))),
+                );
+            }
+            #[cfg(feature = "routerdesc")]
+            RouterDesc(digests) => result.extend(
+                store
+                    .routerdescs(digests)?
+                    .into_iter()
+                    .map(|(id, rd)| (DocId::RouterDesc(id), DocumentText::from_string(rd))),
+            ),
+        }
+        Ok(())
+    }
+}
+
+impl From<ClientRequest> for DocQuery {
+    fn from(r: ClientRequest) -> Self {
+        match r {
+            ClientRequest::Consensus(r) => {
+                DocQuery::LatestConsensus {
+                    flavor: r.flavor(),
+                    // NOTE(eta): this actually loses data from the original DocQuery used to
+                    //            construct this request, which is a bit dodgy. However, nothing
+                    //            relies on this field.
+                    cache_usage: CacheUsage::MustDownload,
+                }
+            }
+            ClientRequest::AuthCert(r) => DocQuery::AuthCert(r.keys().cloned().collect()),
+            ClientRequest::Microdescs(r) => DocQuery::Microdesc(r.digests().cloned().collect()),
+            #[cfg(feature = "routerdesc")]
+            ClientRequest::RouterDescs(r) => DocQuery::RouterDesc(r.digests().cloned().collect()),
         }
     }
 }

@@ -98,6 +98,11 @@ impl ConsensusRequest {
     pub fn last_consensus_date(&self) -> Option<SystemTime> {
         self.last_consensus_published
     }
+
+    /// Return the consensus flavor.
+    pub fn flavor(&self) -> ConsensusFlavor {
+        self.flavor
+    }
 }
 
 impl Default for ConsensusRequest {

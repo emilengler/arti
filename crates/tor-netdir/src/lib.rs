@@ -212,7 +212,7 @@ impl From<u64> for RelayWeight {
 /// consensus document, and then adding enough microdescriptors to
 /// that `PartialNetDir` so that it can be used to build paths.
 /// (Thus, if you have a NetDir, it is definitely adequate to build
-/// paths.)
+/// paths.) FIXME(eta): that comment isn't correct now
 #[derive(Debug, Clone)]
 pub struct NetDir {
     /// A microdescriptor consensus that lists the members of the network,

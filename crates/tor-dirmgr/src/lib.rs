@@ -74,7 +74,7 @@ use crate::docid::{CacheUsage, ClientRequest, DocQuery};
 use crate::shared_ref::SharedMutArc;
 #[cfg(feature = "experimental-api")]
 pub use crate::shared_ref::SharedMutArc;
-use crate::storage::DynStore;
+use crate::storage::{DynStore, EXPIRATION_DEFAULTS};
 use postage::watch;
 pub use retry::DownloadSchedule;
 use tor_circmgr::CircMgr;
@@ -86,6 +86,7 @@ use futures::{channel::oneshot, stream::BoxStream, task::SpawnExt};
 use tor_rtcompat::{Runtime, SleepProviderExt};
 use tracing::{debug, info, trace, warn};
 
+use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -181,7 +182,7 @@ pub struct DirMgr<R: Runtime> {
     // TODO(nickm): I'd like to use an rwlock, but that's not feasible, since
     // rusqlite::Connection isn't Sync.
     // TODO is needed?
-    store: Mutex<DynStore>,
+    store: Arc<Mutex<DynStore>>,
     /// Our latest sufficiently bootstrapped directory, if we have one.
     ///
     /// We use the RwLock so that we can give this out to a bunch of other
@@ -516,74 +517,62 @@ impl<R: Runtime> DirMgr<R> {
         weak: Weak<Self>,
         mut on_complete: Option<oneshot::Sender<()>>,
     ) -> Result<()> {
-        let mut state: Box<dyn DirState> = Box::new(state::GetConsensusState::new(
-            Weak::clone(&weak),
-            CacheUsage::CacheOkay,
-        )?);
-
-        let runtime = {
+        let (runtime, store, circmgr) = {
             let dirmgr = upgrade_weak_ref(&weak)?;
-            dirmgr.runtime.clone()
+            (
+                dirmgr.runtime.clone(),
+                dirmgr.store.clone(),
+                dirmgr
+                    .circmgr
+                    .as_ref()
+                    .expect("download_forever called in offline mode")
+                    .clone(),
+            )
         };
 
+        let mut cache_usage = CacheUsage::CacheOkay;
+
         loop {
-            let mut usable = false;
-
-            let retry_config = {
+            let (current_netdir, config) = {
                 let dirmgr = upgrade_weak_ref(&weak)?;
-                // TODO(nickm): instead of getting this every time we loop, it
-                // might be a good idea to refresh it with each attempt, at
-                // least at the point of checking the number of attempts.
-                *dirmgr.config.get().schedule().retry_bootstrap()
+                // FIXME(eta): unnecessary clone
+                (
+                    dirmgr.opt_netdir().map(|x| x.deref().clone()),
+                    dirmgr.config.get(),
+                )
             };
-            let mut retry_delay = retry_config.schedule();
 
-            'retry_attempt: for _ in retry_config.attempts() {
-                let (newstate, recoverable_err) =
-                    bootstrap::download(Weak::clone(&weak), state, &mut on_complete).await?;
-                state = newstate;
+            let (netdir, cmeta) = bootstrap::run_bootstrap(
+                runtime.clone(),
+                config,
+                cache_usage,
+                current_netdir,
+                circmgr.clone(),
+                store.clone(),
+            )
+            .await?;
 
-                if let Some(err) = recoverable_err {
-                    if state.is_ready(Readiness::Usable) {
-                        usable = true;
-                        info!("Unable to completely download a directory: {}.  Nevertheless, the directory is usable, so we'll pause for now.", err);
-                        break 'retry_attempt;
-                    }
+            // Figure out when to next download a consensus.
+            let reset_time = bootstrap::pick_download_time(netdir.lifetime());
+            // Load the new netdir into the DirMgr.
+            upgrade_weak_ref(&weak)?.load_netdir(netdir);
+            // We won't accept reloading the same consensus from the cache.
+            cache_usage = CacheUsage::MustDownload;
 
-                    let delay = retry_delay.next_delay(&mut rand::thread_rng());
-                    warn!(
-                        "Unable to download a usable directory: {}.  We will restart in {:?}.",
-                        err, delay
-                    );
-                    runtime.sleep(delay).await;
-                    state = state.reset()?;
-                } else {
-                    info!("Directory is complete.");
-                    usable = true;
-                    break 'retry_attempt;
-                }
+            {
+                let mut store = store.lock().expect("Directory storage lock poisoned");
+                info!("Marked consensus usable.");
+                store.mark_consensus_usable(&cmeta)?;
+                // Now that a consensus is usable, older consensuses may
+                // need to expire.
+                store.expire_all(&EXPIRATION_DEFAULTS)?;
             }
 
-            if !usable {
-                // we ran out of attempts.
-                warn!(
-                    "We failed {} times to bootstrap a directory. We're going to give up.",
-                    retry_config.n_attempts()
-                );
-                return Err(Error::CantAdvanceState);
-            } else {
-                // Report success, if appropriate.
-                if let Some(send_done) = on_complete.take() {
-                    let _ = send_done.send(());
-                }
+            if let Some(onc) = on_complete.take() {
+                let _ = onc.send(());
             }
 
-            let reset_at = state.reset_time();
-            match reset_at {
-                Some(t) => runtime.sleep_until_wallclock(t).await,
-                None => return Ok(()),
-            }
-            state = state.reset()?;
+            runtime.sleep_until_wallclock(reset_time).await;
         }
     }
 
@@ -693,7 +682,7 @@ impl<R: Runtime> DirMgr<R> {
         circmgr: Option<Arc<CircMgr<R>>>,
         offline: bool,
     ) -> Result<Self> {
-        let store = Mutex::new(config.open_store(offline)?);
+        let store = Arc::new(Mutex::new(config.open_store(offline)?));
         let netdir = SharedMutArc::new();
         let events = event::FlagPublisher::new();
 
@@ -721,15 +710,44 @@ impl<R: Runtime> DirMgr<R> {
         })
     }
 
+    /// Make the provided netdir be our current netdir, if it's newer than the one
+    /// we have (or has the same validity), and is actually usable.
+    ///
+    /// Returns whether the netdir was loaded or not.
+    fn load_netdir(&self, mut nd: NetDir) -> bool {
+        if let Some(cm) = self.circmgr.as_ref() {
+            if !cm.netdir_is_sufficient(&nd) {
+                // Do not accept an insufficient netdir.
+                return false;
+            }
+        }
+        if self
+            .netdir
+            .get()
+            .map(|existing| nd.lifetime().valid_after() < existing.lifetime().valid_after())
+            .unwrap_or(false)
+        {
+            // The provided netdir is actually older.
+            return false;
+        }
+        nd.replace_overridden_parameters(self.config.get().override_net_params());
+        self.netdir.replace(nd);
+        self.events.publish(DirEvent::NewConsensus);
+        self.events.publish(DirEvent::NewDescriptors);
+        true
+    }
+
     /// Load the latest non-pending non-expired directory from the
     /// cache, if it is newer than the one we have.
     ///
     /// Return false if there is no such consensus.
     async fn load_directory(self: &Arc<Self>) -> Result<bool> {
-        let state = state::GetConsensusState::new(Arc::downgrade(self), CacheUsage::CacheOnly)?;
-        let _ = bootstrap::load(Arc::clone(self), Box::new(state)).await?;
-
-        Ok(self.netdir.get().is_some())
+        let netdir = bootstrap::load(self.runtime.clone(), self.store.clone(), self.config.get())?;
+        Ok(if let Some(nd) = netdir {
+            self.load_netdir(nd)
+        } else {
+            false
+        })
     }
 
     /// Return an Arc handle to our latest directory, if we have one.
@@ -1102,7 +1120,7 @@ const CONSENSUS_ALLOW_SKEW: Duration = Duration::from_secs(3600 * 48);
 
 /// Given a time `now`, return the age of the oldest consensus that we should
 /// request at that time.
-fn default_consensus_cutoff(now: SystemTime) -> Result<SystemTime> {
+pub(crate) fn default_consensus_cutoff(now: SystemTime) -> Result<SystemTime> {
     let cutoff = time::OffsetDateTime::from(now - CONSENSUS_ALLOW_SKEW);
     // We now round cutoff to the next hour, so that we aren't leaking our exact
     // time to the directory cache.
