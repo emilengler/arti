@@ -120,7 +120,7 @@ pub struct ArtiConfig {
     application: ApplicationConfig,
 
     /// Configuration for proxy listeners
-    proxy: ProxyConfig,
+    pub(crate) proxy: ProxyConfig,
 
     /// Logging configuration
     logging: LoggingConfig,
@@ -130,6 +130,12 @@ pub struct ArtiConfig {
 
     /// Configuration of the actual Tor client
     tor: TorClientConfig,
+}
+
+impl AsRef<ArtiConfig> for ArtiConfig {
+    fn as_ref(&self) -> &ArtiConfig {
+        self
+    }
 }
 
 impl TryFrom<config::Config> for ArtiConfig {

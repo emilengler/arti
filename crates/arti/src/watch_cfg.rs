@@ -6,13 +6,17 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::channel as std_channel;
 use std::time::Duration;
 
+use anyhow::{anyhow, Context, Result};
 use arti_client::config::Reconfigure;
 use arti_client::TorClient;
+use futures::task::SpawnExt as _;
+use futures::StreamExt as _;
 use notify::Watcher;
 use tor_rtcompat::Runtime;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::ArtiConfig;
+use crate::service::ManagedServices;
+use crate::{ArtiConfig, ServiceList};
 
 /// How long (worst case) should we take to learn about configuration changes?
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -25,13 +29,17 @@ pub fn watch_for_config_changes<R: Runtime>(
     sources: arti_config::ConfigurationSources,
     original: ArtiConfig,
     client: TorClient<R>,
-) -> anyhow::Result<()> {
+    mut reconfigurables: ServiceList<R, ArtiConfig>,
+) -> Result<()> {
     let (tx, rx) = std_channel();
     let mut watcher = FileWatcher::new(tx, POLL_INTERVAL)?;
 
     for file in sources.files() {
         watcher.watch_file(file)?;
     }
+
+    let (mut sync2async_tx, mut sync2async_rx) =
+        futures::channel::mpsc::channel(1 /* 0 ought to suffice according to the docs */);
 
     std::thread::spawn(move || {
         // TODO: If someday we make this facility available outside of the
@@ -54,23 +62,48 @@ pub fn watch_for_config_changes<R: Runtime>(
                 // events: if we're disconnected, we'll notice it when we next
                 // call recv() in the outer loop.
             }
-            debug!("FS event {:?}: reloading configuration.", event);
-            match reconfigure(&sources, &original, &client) {
-                Ok(exit) => {
-                    info!("Successfully reloaded configuration.");
-                    if exit {
+            match sync2async_tx.try_send(event) {
+                Ok(()) => {}
+                Err(e) if e.is_full() => {} // reconfigure task is backlogged, it will catch up
+                Err(e) => {
+                    if !e.is_disconnected() {
+                        error!(
+                            "unexpected error from futures::channel::mpsc::Sender::try_send: {}",
+                            e
+                        );
                         break;
                     }
                 }
-                Err(e) => warn!("Couldn't reload configuration: {}", e),
             }
         }
         debug!("Thread exiting");
     });
-
     // Dropping the thread handle here means that we don't get any special
     // notification about a panic.  TODO: We should change that at some point in
     // the future.
+    //
+    // This applies to many many tasks we spawn throughout the arti codeabse.
+
+    client
+        .runtime()
+        .clone()
+        .spawn(async move {
+            debug!("Task processing FS events");
+            while let Some(event) = sync2async_rx.next().await {
+                debug!("FS event {:?}: reloading configuration.", event);
+                match reconfigure(&sources, &original, &client, &mut reconfigurables).await {
+                    Ok(exit) => {
+                        info!("Successfully reloaded configuration.");
+                        if exit {
+                            break;
+                        }
+                    }
+                    Err(e) => warn!("Couldn't reload configuration: {}", e),
+                }
+            }
+            debug!("Task exiting");
+        })
+        .context("failed to spawn watch task")?;
 
     Ok(())
 }
@@ -79,21 +112,50 @@ pub fn watch_for_config_changes<R: Runtime>(
 /// reconfigure the client as much as we can.
 ///
 /// Return true if we should stop watching for configuration changes.
-fn reconfigure<R: Runtime>(
+async fn reconfigure<R: Runtime>(
     sources: &arti_config::ConfigurationSources,
     original: &ArtiConfig,
     client: &TorClient<R>,
-) -> anyhow::Result<bool> {
+    reconfigurables: &mut ServiceList<R, ArtiConfig>,
+) -> Result<bool> {
     let config = sources.load()?;
     let config: ArtiConfig = config.try_into()?;
+
     if config.proxy() != original.proxy() {
-        warn!("Can't (yet) reconfigure proxy settings while arti is running.");
+        warn!("Can't (yet) reliably reconfigure proxy settings while arti is running.");
     }
     if config.logging() != original.logging() {
         warn!("Can't (yet) reconfigure logging settings while arti is running.");
     }
+
+    let mut any_errs = false;
+    let mut process_outcome = |outcome: Result<()>| match outcome {
+        Ok(()) => {}
+        Err(e) => {
+            any_errs = true;
+            error!("Reconfiguration failed: {}", tor_error::Report(&e));
+        }
+    };
+
+    process_outcome(
+        async {
+            reconfigurables.configure(&config)?;
+            reconfigurables.reconfigure(client.clone()).await?;
+            Ok(())
+        }
+        .await,
+    );
+
     let client_config = config.tor_client_config()?;
-    client.reconfigure(&client_config, Reconfigure::WarnOnFailures)?;
+    process_outcome(
+        client
+            .reconfigure(&client_config, Reconfigure::WarnOnFailures)
+            .context("Tor client"),
+    );
+
+    if any_errs {
+        return Err(anyhow!("Reconfiguration not successful."));
+    }
 
     if !config.application().watch_configuration {
         // Stop watching for configuration changes.
@@ -135,7 +197,7 @@ impl FileWatcher {
     fn new(
         tx: std::sync::mpsc::Sender<notify::DebouncedEvent>,
         interval: Duration,
-    ) -> anyhow::Result<Self> {
+    ) -> Result<Self> {
         let watcher = notify::watcher(tx, interval)?;
         Ok(Self {
             watcher,
@@ -145,7 +207,7 @@ impl FileWatcher {
     }
 
     /// Watch a single file (not a directory).  Does nothing if we're already watching that file.
-    fn watch_file<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
+    fn watch_file<P: AsRef<Path>>(&mut self, path: P) -> Result<()> {
         // Make the path absolute (without necessarily making it canonical).
         //
         // We do this because `notify` reports all of its events in terms of

@@ -117,8 +117,10 @@
 pub mod cfg;
 pub mod dns;
 pub mod exit;
+pub mod listen;
 pub mod logging;
 pub mod process;
+pub mod service;
 pub mod socks;
 pub mod watch_cfg;
 
@@ -126,7 +128,10 @@ pub use cfg::{
     ApplicationConfig, ApplicationConfigBuilder, ArtiConfig, ArtiConfigBuilder, ProxyConfig,
     ProxyConfigBuilder, SystemConfig, SystemConfigBuilder,
 };
+pub use listen::ListenSpec;
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
+pub use service::{ManagedServices, ServiceKind, ServiceList};
+pub use socks::SocksServiceKind;
 
 use arti_client::{TorClient, TorClientConfig};
 use arti_config::default_config_file;
@@ -141,6 +146,15 @@ use std::convert::TryInto;
 /// Shorthand for a boxed and pinned Future.
 type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 
+/// The builtin service kinds supported by `arti`
+pub fn supported_services<R, C>() -> ServiceList<R, C>
+where
+    R: Runtime,
+    C: AsRef<ArtiConfig>,
+{
+    vec![SocksServiceKind.manage()]
+}
+
 /// Run the main loop of the proxy.
 ///
 /// # Panics
@@ -148,7 +162,6 @@ type PinnedFuture<T> = std::pin::Pin<Box<dyn futures::Future<Output = T>>>;
 /// Currently, might panic if things go badly enough wrong
 pub async fn run<R: Runtime>(
     runtime: R,
-    socks_port: u16,
     dns_port: u16,
     config_sources: arti_config::ConfigurationSources,
     arti_config: ArtiConfig,
@@ -162,19 +175,8 @@ pub async fn run<R: Runtime>(
         .config(client_config)
         .bootstrap_behavior(OnDemand)
         .create_unbootstrapped()?;
-    if arti_config.application().watch_configuration {
-        watch_cfg::watch_for_config_changes(config_sources, arti_config, client.clone())?;
-    }
 
     let mut proxy: Vec<PinnedFuture<(Result<()>, &str)>> = Vec::new();
-    if socks_port != 0 {
-        let runtime = runtime.clone();
-        let client = client.isolated_client();
-        proxy.push(Box::pin(async move {
-            let res = socks::run_socks_proxy(runtime, client, socks_port).await;
-            (res, "SOCKS")
-        }));
-    }
 
     if dns_port != 0 {
         let runtime = runtime.clone();
@@ -185,10 +187,30 @@ pub async fn run<R: Runtime>(
         }));
     }
 
+    let mut services = supported_services();
+    let n_services = services.configure(&arti_config)?;
+    if n_services > 0 {
+        // ServiceList started via the ServiceKind interface spawn off by themselves.
+        // TODO: IMO really we need a version of spawn that lets us wait and detect failure and
+        // crash, rather than blundering on half-functional.  But we don't have that.
+        proxy.push(Box::pin(futures::future::pending()));
+    }
+
     if proxy.is_empty() {
         // TODO change this message so it's not only about socks_port
         warn!("No proxy port set; specify -p PORT or use the `socks_port` configuration option.");
         return Ok(());
+    }
+
+    services.start(client.clone()).await?;
+
+    if arti_config.application().watch_configuration {
+        watch_cfg::watch_for_config_changes(
+            config_sources,
+            arti_config.clone(),
+            client.clone(),
+            services,
+        )?;
     }
 
     let proxy = futures::future::select_all(proxy).map(|(finished, _index, _others)| finished);
@@ -305,32 +327,25 @@ pub fn main_main() -> Result<()> {
 
     let cfg = cfg_sources.load()?;
 
-    let config: ArtiConfig = cfg.try_into().context("read configuration")?;
+    let mut config: ArtiConfig = cfg.try_into().context("read configuration")?;
 
     let _log_guards = logging::setup_logging(config.logging(), matches.value_of("loglevel"))?;
 
     if let Some(proxy_matches) = matches.subcommand_matches("proxy") {
-        let socks_port = match (
-            proxy_matches.value_of("socks-port"),
-            config.proxy().socks_port,
-        ) {
-            (Some(p), _) => p.parse().expect("Invalid port specified"),
-            (None, Some(s)) => s,
-            (None, None) => 0,
-        };
+        if let Some(p) = proxy_matches.value_of("socks-port") {
+            config.proxy.socks_port = Some(p.parse().expect("Invalid port specified"));
+        }
 
-        let dns_port = match (proxy_matches.value_of("dns-port"), config.proxy().dns_port) {
-            (Some(p), _) => p.parse().expect("Invalid port specified"),
-            (None, Some(s)) => s,
-            (None, None) => 0,
-        };
+        if let Some(p) = proxy_matches.value_of("dns-port") {
+            config.proxy.dns_port = Some(p.parse().expect("Invalid port specified"));
+        }
 
         let client_config = config.tor_client_config()?;
 
         info!(
-            "Starting Arti {} in SOCKS proxy mode on port {}...",
+            "Starting Arti {} in SOCKS proxy mode on port {:?}...",
             env!("CARGO_PKG_VERSION"),
-            socks_port
+            config.proxy().socks_port
         );
 
         process::use_max_file_limit(&config);
@@ -352,8 +367,7 @@ pub fn main_main() -> Result<()> {
         let rt_copy = runtime.clone();
         rt_copy.block_on(run(
             runtime,
-            socks_port,
-            dns_port,
+            config.proxy().dns_port.unwrap_or_default(),
             cfg_sources,
             config,
             client_config,

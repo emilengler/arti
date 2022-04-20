@@ -3,15 +3,22 @@
 //! A proxy is launched with [`run_socks_proxy()`], which listens for new
 //! connections and then runs
 
+use async_trait::async_trait;
+use derive_builder::Builder;
+use derive_more::Display;
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as IoError};
+use futures::select_biased;
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
+use serde::Deserialize;
 use std::convert::TryInto;
 use std::io::Result as IoResult;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use tracing::{error, info, warn};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use tracing::{info, warn};
 
+use crate::service::{self, ReconfigureCommandStream};
+use crate::{ArtiConfig, ListenSpec};
 use arti_client::{ErrorKind, HasKind, StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener};
 use tor_socksproto::{SocksAddr, SocksAuth, SocksCmd, SocksRequest};
@@ -375,38 +382,111 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
     }
 }
 
-/// Launch a SOCKS proxy to listen on a given localhost port, and run
-/// indefinitely.
+#[derive(Copy, Clone, Default, Display)]
+#[display(fmt = "SOCKS")]
+/// SOCKS service kind
+#[non_exhaustive]
+pub struct SocksServiceKind;
+
+/// Configuration for an instance of the SOCKS proxy
 ///
-/// Requires a `runtime` to use for launching tasks and handling
-/// timeouts, and a `tor_client` to use in connecting over the Tor
-/// network.
-pub async fn run_socks_proxy<R: Runtime>(
-    runtime: R,
+/// Currently, there are no configuration options (other than the listening port(s))
+#[derive(Builder, Debug, Clone, Eq, PartialEq)]
+#[non_exhaustive]
+#[builder(derive(Deserialize))]
+#[builder_struct_attr(non_exhaustive)]
+pub struct InstanceConfig {}
+
+/// Determine from config what SOCKS proxies are wanted
+pub fn wanted_instances(acfg: &ArtiConfig) -> Result<Vec<(ListenSpec, InstanceConfig)>> {
+    Ok(acfg
+        .proxy()
+        .socks_port
+        .into_iter()
+        .filter_map(|port| {
+            Some((
+                ListenSpec::from_localhost_port(port.try_into().ok()?),
+                InstanceConfig {},
+            ))
+        })
+        .collect())
+}
+
+/// SOCKS proxy instance
+#[must_use = "a socks::Proxy must be run() to do anything useful"]
+pub struct Proxy<R>
+where
+    R: Runtime,
+{
+    /// Service identity for reporting
+    kind: SocksServiceKind,
+    /// Service identity for reporting
+    id: ListenSpec,
+    ///
     tor_client: TorClient<R>,
-    socks_port: u16,
+    ///
+    listeners: Vec<R::TcpListener>,
+    ///
+    config: InstanceConfig,
+}
+
+impl<R> Proxy<R>
+where
+    R: Runtime,
+{
+    /// Create the proxy (acquiring listening ports etc.)
+    ///
+    /// After creation, the proxy must be [`run`](Proxy::run).
+    pub async fn create(
+        runtime: R,
+        tor_client: TorClient<R>,
+        socks_ports: ListenSpec,
+        config: InstanceConfig,
+    ) -> Result<Proxy<R>> {
+        let listeners = socks_ports
+            .bind(
+                &service::inst_display(&SocksServiceKind, &socks_ports),
+                |addr| {
+                    let runtime = runtime.clone();
+                    async move { Ok(runtime.listen(&addr).await?) }
+                },
+            )
+            .await?;
+
+        Ok(Proxy {
+            kind: SocksServiceKind,
+            id: socks_ports,
+            tor_client,
+            listeners,
+            config,
+        })
+    }
+
+    /// Run the proxy
+    ///
+    /// Returns Ok if the proxy is shut down (via a ReconfigureCommand),
+    /// or Err if it suffers a fatal error.
+    ///
+    /// Normally you would run this in a task.
+    pub async fn run(self, reconfigure: ReconfigureCommandStream<InstanceConfig>) -> Result<()> {
+        run_socks_proxy(self, reconfigure).await
+    }
+}
+
+/// Implementation of `Proxy::run`, separated out to avoid rightward drift
+async fn run_socks_proxy<R: Runtime>(
+    proxy: Proxy<R>,
+    mut reconfigure: ReconfigureCommandStream<InstanceConfig>,
 ) -> Result<()> {
-    let mut listeners = Vec::new();
-
-    // We actually listen on two ports: one for ipv4 and one for ipv6.
-    let localhosts: [IpAddr; 2] = [Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()];
-
-    // Try to bind to the SOCKS ports.
-    for localhost in &localhosts {
-        let addr: SocketAddr = (*localhost, socks_port).into();
-        match runtime.listen(&addr).await {
-            Ok(listener) => {
-                info!("Listening on {:?}.", addr);
-                listeners.push(listener);
-            }
-            Err(e) => warn!("Can't listen on {:?}: {}", addr, e),
-        }
-    }
-    // We weren't able to bind any ports: There's nothing to do.
-    if listeners.is_empty() {
-        error!("Couldn't open any SOCKS listeners.");
-        return Err(anyhow!("Couldn't open SOCKS listeners"));
-    }
+    let Proxy {
+        kind: service_kind,
+        id: service_id,
+        tor_client,
+        listeners,
+        config,
+    } = proxy;
+    let InstanceConfig {} = config; // ensures adding unimplemented option causes compile failure
+    let runtime = tor_client.runtime();
 
     // Create a stream of (incoming socket, listener_id) pairs, selected
     // across all the listeners.
@@ -422,28 +502,93 @@ pub async fn run_socks_proxy<R: Runtime>(
 
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
-    while let Some((stream, sock_id)) = incoming.next().await {
-        let (stream, addr) = match stream {
-            Ok((s, a)) => (s, a),
-            Err(err) => {
-                if accept_err_is_fatal(&err) {
-                    return Err(err).context("Failed to receive incoming stream on SOCKS port");
-                } else {
-                    warn!("Incoming stream failed: {}", err);
-                    continue;
+    loop {
+        select_biased! {
+            // TODO refactor this to be shared with other listeners
+            reconfigure = reconfigure.next() => {
+                let reconfigure = if let Some(y) = reconfigure { y } else { break; };
+                match reconfigure.config {
+                    None => {
+                        drop(incoming); // hopefully this is synchronous close
+                        let _ = reconfigure.respond.send(Ok(()));
+                        break;
+                    }
+                    Some(new_config) => {
+                        // We don't actually have any configuration, but compare anyway,
+                        // since (a) we might grow some and then this to still be right
+                        // (b) someone might c&p this.
+                        if new_config != config {
+                            warn!("{}: reconfiguration not supported, config changes ignored.",
+                                  service::inst_display(&service_kind, &service_id));
+                        }
+                        let _ = reconfigure.respond.send(Ok(()));
+                    }
                 }
             }
-        };
-        let client_ref = tor_client.clone();
-        let runtime_copy = runtime.clone();
-        runtime.spawn(async move {
-            let res =
-                handle_socks_conn(runtime_copy, client_ref, stream, (sock_id, addr.ip())).await;
-            if let Err(e) = res {
-                warn!("connection exited with error: {}", e);
-            }
-        })?;
+
+            accepted = incoming.next() => {
+                let (stream, sock_id) = accepted.ok_or_else(
+                    || anyhow!("stream of incoming connectiones dried up!")
+                )?;
+                let (stream, addr) = match stream {
+                    Ok((s, a)) => (s, a),
+                    Err(err) => {
+                        if accept_err_is_fatal(&err) {
+                            return Err(err).context("Failed to receive incoming stream on SOCKS port");
+                        } else {
+                            warn!("Incoming stream failed: {}", err);
+                            continue;
+                        }
+                    }
+                };
+                let client_ref = tor_client.clone();
+                let runtime_copy = runtime.clone();
+                runtime.spawn(async move {
+                    let res =
+                        handle_socks_conn(runtime_copy, client_ref, stream, (sock_id, addr.ip())).await;
+                    if let Err(e) = res {
+                        warn!("connection exited with error: {}", e);
+                    }
+                })?;
+            },
+
+            complete => break,
+        }
     }
 
     Ok(())
+}
+
+#[async_trait]
+impl<R: Runtime> service::ServiceKind<R> for SocksServiceKind {
+    type GlobalConfig = ArtiConfig;
+    type Identity = ListenSpec;
+    type InstanceConfig = InstanceConfig;
+    type Instance = Proxy<R>;
+
+    fn configure(&self, acfg: &ArtiConfig) -> Result<Vec<(Self::Identity, Self::InstanceConfig)>> {
+        wanted_instances(acfg)
+    }
+
+    async fn create(
+        &self,
+        tor_client: TorClient<R>,
+        addrs: Self::Identity,
+        config: Self::InstanceConfig,
+    ) -> Result<Proxy<R>> {
+        Proxy::create(
+            tor_client.runtime().clone(),
+            tor_client,
+            addrs.clone(),
+            config,
+        )
+        .await
+    }
+
+    async fn run(
+        proxy: Proxy<R>,
+        reconfigure: ReconfigureCommandStream<Self::InstanceConfig>,
+    ) -> Result<()> {
+        proxy.run(reconfigure).await
+    }
 }
