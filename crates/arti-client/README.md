@@ -138,7 +138,8 @@ creating TLS sessions ([`tor_rtcompat::TlsProvider`]) is also configurable using
 this crate. This can be used to embed Arti in custom environments where you want
 lots of control over how it uses the network.
 
-[**View the `tor_rtcompat` crate documentation**](tor_rtcompat) for more about these features.
+[**View the `tor_rtcompat` crate documentation**](https://gitlab.torproject.org/tpo/core/arti/-/tree/main/crates/tor-rtcompat/)
+for more about these features.
 
 ## Feature flags
 
