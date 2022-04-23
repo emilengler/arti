@@ -86,17 +86,17 @@
 //! See [`arti-client/examples/hook-tcp.rs`](https://gitlab.torproject.org/tpo/core/arti/-/blob/main/crates/arti-client/examples/hook-tcp.rs)
 //! for a full example of this.
 //!
-//! # Cargo features
+//! # Features
 //!
 //! Features supported by this crate:
 //!
-//! * `tokio` -- build with [Tokio](https://tokio.rs/) support
-//! * `async-std` -- build with [async-std](https://async.rs/) support
-//! * `native-tls` --  build with the [native-tls](https://github.com/sfackler/rust-native-tls)
-//!   crate for TLS support
-//! * `static` -- link the native TLS library statically (enables the `vendored` feature of the
+//! * `tokio` -- Build with [Tokio](https://tokio.rs/) support.
+//! * `async-std` -- Build with [async-std](https://async.rs/) support.
+//! * `native-tls` -- Build with the [native-tls](https://github.com/sfackler/rust-native-tls)
+//!   crate for TLS support.
+//! * `static` -- Link the native TLS library statically (enables the `vendored` feature of the
 //!   `native-tls` crate).
-//! * `rustls` -- build with the [rustls](https://github.com/rustls/rustls) crate for TLS support
+//! * `rustls` -- Build with the [rustls](https://github.com/rustls/rustls) crate for TLS support.
 //!
 //! By default, *this* crate doesn't enable any features. However, you're almost certainly
 //! using this as part of the `arti-client` crate, which will enable `tokio` and `native-tls` in

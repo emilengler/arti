@@ -1,6 +1,6 @@
 # tor-rtmock
 
-Support for mocking with `tor-rtcompat` asynchronous runtimes.
+`tor-rtmock`: Support for mocking with `tor-rtcompat` asynchronous runtimes.
 
 ## Overview
 

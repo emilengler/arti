@@ -1,6 +1,6 @@
 # tor-circmgr
 
-`tor-circmgr`: circuits through the Tor network on demand.
+`tor-circmgr`: Circuits through the Tor network on demand.
 
 ## Overview
 

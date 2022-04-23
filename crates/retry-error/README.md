@@ -1,6 +1,6 @@
 # retry-error
 
-An error attempt to represent multiple failures.
+`retry-error`: An error attempt to represent multiple failures.
 
 This crate implements [`RetryError`], a type to use when you
 retry something a few times, and all those attempts can fail differently

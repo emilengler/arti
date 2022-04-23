@@ -1,6 +1,6 @@
 # tor-netdoc
 
-Parse and represent directory objects used in Tor.
+`tor-netdoc`: Parse and represent directory objects used in Tor.
 
 ## Overview
 
@@ -28,13 +28,13 @@ the parsers for the documents themselves.
 
 ## Features
 
-`build_docs`: enable code to construct the objects representing different
+`build_docs` -- Enable code to construct the objects representing different
 network documents.
 
-`routerdesc`: enable support for the "router descriptor" document type, which
+`routerdesc` -- Enable support for the "router descriptor" document type, which
 is needed by bridge clients and relays.
 
-`ns-consensus`: enable support for the "ns consensus" document type, which
+`ns-consensus` -- Enable support for the "ns consensus" document type, which
 some relays cache and serve.
 
 ## Caveat haxxor: limitations and infelicities

@@ -1,6 +1,6 @@
 # arti-testing
 
-Tool for running an Arti client with unusual behavior or limitations.
+`arti-testing`: Tool for running an Arti client with unusual behavior or limitations.
 
 Example use:
 

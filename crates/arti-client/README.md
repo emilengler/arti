@@ -1,6 +1,6 @@
 # arti-client
 
-High-level functionality for accessing the Tor network as a client.
+`arti-client`: High-level functionality for accessing the Tor network as a client.
 
 ## Overview
 

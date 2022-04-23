@@ -1,6 +1,6 @@
 # tor-cert
 
-Implementation for Tor certificates
+`tor-cert`: Implementation for Tor certificates.
 
 ## Overview
 

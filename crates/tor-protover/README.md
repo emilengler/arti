@@ -1,6 +1,6 @@
 # tor-protover
 
-Implementation of Tor's "subprotocol versioning" feature.
+`tor-protover`: Implementation of Tor's "subprotocol versioning" feature.
 
 ## Overview
 

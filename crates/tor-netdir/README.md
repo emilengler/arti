@@ -1,6 +1,6 @@
 # tor-netdir
 
-Represents a clients'-eye view of the Tor network.
+`tor-netdir`: Represents a clients'-eye view of the Tor network.
 
 ## Overview
 

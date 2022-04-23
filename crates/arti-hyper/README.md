@@ -1,6 +1,6 @@
 # arti-hyper
 
-High-level layer for making http(s) requests the Tor network as a client.
+`arti-hyper`: High-level layer for making http(s) requests the Tor network as a client.
 
 This can be used by applications which embed Arti,
 and could also be used as an example of how to build on top of [`arti_client`].

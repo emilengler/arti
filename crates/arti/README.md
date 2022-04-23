@@ -1,6 +1,6 @@
 # arti
 
-A minimal command line program for connecting to the tor network
+`arti`: A minimal command line program for connecting to the tor network.
 
 (If you want a more general Tor client library interface, use [`arti_client`].)
 
@@ -43,9 +43,9 @@ For an example see [`arti_defaults.toml`](./arti_defaults.toml).
 
 ## Compile-time features
 
-`tokio` (default): Use the tokio runtime library as our backend.
+`tokio` (default) -- Use the tokio runtime library as our backend.
 
-`async-std`: Use the async-std runtime library as our backend.
+`async-std` -- Use the async-std runtime library as our backend.
 This feature has no effect unless building with `--no-default-features`
 to disable tokio.
 

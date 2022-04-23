@@ -1,6 +1,6 @@
 # tor-socksproto
 
-Implements SOCKS in the flavors provided by Tor.
+`tor-socksproto`: Implements SOCKS in the flavors provided by Tor.
 
 ## Overview
 

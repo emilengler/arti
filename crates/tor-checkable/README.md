@@ -1,6 +1,6 @@
 # tor-checkable
 
-Traits for wrapping up signed and/or time-bound objects
+`tor-checkable`: Traits for wrapping up signed and/or time-bound objects.
 
 ## Overview
 

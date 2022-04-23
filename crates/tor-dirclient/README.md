@@ -19,10 +19,10 @@ implement [Tor](https://www.torproject.org/) in Rust.
 
 ## Features
 
-`xz` -- enable XZ compression.  This can be expensive in RAM and CPU,
+`xz` -- Enable XZ compression.  This can be expensive in RAM and CPU,
 but it saves a lot of bandwidth.  (On by default.)
 
-`zstd` -- enable ZSTD compression.  (On by default.)
+`zstd` -- Enable ZSTD compression.  (On by default.)
 
 `routerdesc` -- Add support for downloading router descriptors.
 
