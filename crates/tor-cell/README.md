@@ -1,6 +1,6 @@
 # tor-cell
 
-Coding and decoding for the cell types that make up Tor's protocol
+`tor-cell`: Coding and decoding for the cell types that make up Tor's protocol.
 
 ## Overview
 

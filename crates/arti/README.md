@@ -1,13 +1,12 @@
 # arti
 
-A minimal command line program for connecting to the tor network
+`arti`: A minimal command line program for connecting to the tor network.
 
 (If you want a more general Tor client library interface, use [`arti_client`].)
 
 This crate is the primary command-line interface for
 [Arti](https://gitlab.torproject.org/tpo/core/arti/), a project to
 implement [Tor](https://www.torproject.org/) in Rust.
-Many other crates in Arti depend on it.
 
 Note that Arti is a work in progress; although we've tried to
 write all the critical security components, you probably shouldn't
@@ -44,9 +43,9 @@ For an example see [`arti_defaults.toml`](./arti_defaults.toml).
 
 ## Compile-time features
 
-`tokio` (default): Use the tokio runtime library as our backend.
+`tokio` (default) -- Use the tokio runtime library as our backend.
 
-`async-std`: Use the async-std runtime library as our backend.
+`async-std` -- Use the async-std runtime library as our backend.
 This feature has no effect unless building with `--no-default-features`
 to disable tokio.
 

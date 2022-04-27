@@ -1,4 +1,4 @@
-//! `tor-error` -- Support for error handling in Tor and Ari
+//! `tor-error` -- Support for error handling in Tor and Arti
 //!
 //! Primarily, this crate provides the [`ErrorKind`] enum,
 //! and associated [`HasKind`] trait.
@@ -49,7 +49,7 @@ pub use retriable::*;
 mod truncated;
 pub use truncated::*;
 
-/// Classification of an error arising from Arti's Tor operations
+/// Classification of an error arising from Arti's Tor operations.
 ///
 /// This `ErrorKind` should suffice for programmatic handling by most applications embedding Arti:
 /// get the kind via [`HasKind::kind`] and compare it to the expected value(s) with equality
@@ -87,7 +87,7 @@ pub use truncated::*;
 //     exit is talking to.  (This kind of error can also indicate that the exit
 //     is lying.)
 //
-// ## Lump any locations more fine-grained than that.
+// ## Lump any locations more fine-grained than that
 //
 // We do not split locations more finely unless there's a good reason to do so.
 // For example, we don't typically split errors within the "Tor" location based
@@ -113,7 +113,7 @@ pub use truncated::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 #[non_exhaustive]
 pub enum ErrorKind {
-    /// Error connecting to the Tor network
+    /// Error connecting to the Tor network.
     ///
     /// Perhaps the local network is not working, or perhaps the chosen relay is not working
     /// properly.  Not used for errors that occur within the Tor network, or accessing the public
@@ -148,7 +148,7 @@ pub enum ErrorKind {
     #[display(fmt = "network directory is expired.")]
     DirectoryExpired,
 
-    /// IO error accessing local persistent state
+    /// IO error accessing local persistent state.
     ///
     /// For example, the disk might be full, or there may be a permissions problem.
     /// Usually the source will be [`std::io::Error`].
@@ -158,7 +158,7 @@ pub enum ErrorKind {
     #[display(fmt = "could not read/write persistent state")]
     PersistentStateAccessFailed,
 
-    /// Tor client's persistent state has been corrupted
+    /// Tor client's persistent state has been corrupted.
     ///
     /// This could be because of a bug in the Tor code, or because something
     /// else has been messing with the data.
@@ -426,7 +426,7 @@ pub enum ErrorKind {
     #[display(fmt = "remote hostname lookup failure")]
     RemoteHostNotFound,
 
-    /// Trouble involving a protocol we're using with a peer on the far side of the Tor network
+    /// Trouble involving a protocol we're using with a peer on the far side of the Tor network.
     ///
     /// We were using a higher-layer protocol over a Tor connection,
     /// and something went wrong.
@@ -544,7 +544,7 @@ pub enum ErrorKind {
     #[display(fmt = "internal error (bug)")]
     Internal,
 
-    /// Unclassified error
+    /// Unclassified error.
     ///
     /// Some other error occurred, which does not fit into any of the other kinds.
     ///
@@ -555,7 +555,7 @@ pub enum ErrorKind {
     Other,
 }
 
-/// Errors that can be categorized as belonging to an [`ErrorKind`]
+/// Errors that can be categorized as belonging to an [`ErrorKind`].
 ///
 /// The most important implementation of this trait is
 /// `arti_client::TorError`; however, other internal errors throughout Arti

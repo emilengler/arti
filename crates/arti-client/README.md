@@ -1,6 +1,6 @@
 # arti-client
 
-High-level functionality for accessing the Tor network as a client.
+`arti-client`: High-level functionality for accessing the Tor network as a client.
 
 ## Overview
 
@@ -127,7 +127,7 @@ Streams can be isolated in two ways:
 - by generating [`IsolationToken`]s, and passing them in via [`StreamPrefs`]
   to [`TorClient::connect`].
 
-## Multiple runtime support
+## Multiple runtimes support
 
 Arti uses the [`tor_rtcompat`] crate to support multiple asynchronous
 runtimes; currently, both [Tokio](https://tokio.rs) and
@@ -138,7 +138,8 @@ creating TLS sessions ([`tor_rtcompat::TlsProvider`]) is also configurable using
 this crate. This can be used to embed Arti in custom environments where you want
 lots of control over how it uses the network.
 
-[**View the `tor_rtcompat` crate documentation**](tor_rtcompat) for more about these features.
+[**View the `tor_rtcompat` crate documentation**](https://gitlab.torproject.org/tpo/core/arti/-/tree/main/crates/tor-rtcompat/)
+for more about these features.
 
 ## Feature flags
 

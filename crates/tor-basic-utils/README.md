@@ -1,6 +1,6 @@
 # tor-basic-utils
 
-`tor-basic-utils`: Utilities (low-level) for Tor
+`tor-basic-utils`: Utilities (low-level) for Tor.
 
 Miscellaneous utilities for `tor-*` and `arti-*`.
 

@@ -59,9 +59,9 @@
 //!
 //! # Features
 //!
-//! `relay` -- enable cryptography that's only used on relays.
+//! `relay` -- Enable cryptography that's only used on relays.
 //!
-//! `hsv3-client` -- enable cryptography that's only needed when running
+//! `hsv3-client` -- Enable cryptography that's only needed when running
 //! as a v3 onion service client.
 
 #![deny(missing_docs)]

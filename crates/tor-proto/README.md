@@ -1,6 +1,6 @@
 # tor-proto
 
-Implementations for the core Tor protocol
+`tor-proto`: Implementations for the core Tor protocol.
 
 ## Overview
 
