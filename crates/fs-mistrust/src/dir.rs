@@ -129,6 +129,17 @@ impl CheckedDir {
         self.location.as_path()
     }
 
+    /// Return a new [`PathBuf`] containing this directory's path, with `path`
+    /// appended to it.
+    ///
+    /// Return an error if `path` has any components that could take us outside
+    /// of this directory.
+    pub fn join<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf> {
+        let path = path.as_ref();
+        self.check_path(path)?;
+        Ok(self.location.join(path))
+    }
+
     /// Helper: create a [`Verifier`] with the appropriate rules for this
     /// `CheckedDir`.
     fn verifier(&self) -> Verifier<'_> {
@@ -143,7 +154,10 @@ impl CheckedDir {
     /// guaranteed to stay within this directory.
     fn check_path(&self, p: &Path) -> Result<()> {
         use std::path::Component;
-        if p.is_absolute() {}
+        // This check should be redundant, but let's be certain.
+        if p.is_absolute() {
+            return Err(Error::InvalidSubdirectory);
+        }
 
         for component in p.components() {
             match component {
