@@ -6,8 +6,6 @@ use crate::{load_error, store_error};
 use crate::{Error, LockStatus, Result, StateMgr};
 use fs_mistrust::CheckedDir;
 use serde::{de::DeserializeOwned, Serialize};
-use std::fs::OpenOptions;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
@@ -166,13 +164,8 @@ impl StateMgr for FsStateMgr {
     {
         let rel_fname = self.rel_filename(key);
 
-        let mut string = String::new();
-        match self
-            .inner
-            .statepath
-            .open(rel_fname, OpenOptions::new().read(true))
-        {
-            Ok(mut f) => f.read_to_string(&mut string)?,
+        let string = match self.inner.statepath.read_to_string(rel_fname) {
+            Ok(string) => string,
             Err(fs_mistrust::Error::NotFound(_)) => return Ok(None),
             Err(e) => return Err(e.into()),
         };
@@ -192,18 +185,7 @@ impl StateMgr for FsStateMgr {
 
         let output = serde_json::to_string_pretty(val).map_err(store_error)?;
 
-        let rel_fname_tmp = rel_fname.with_extension("tmp");
-        let statepath = &self.inner.statepath;
-
-        {
-            let mut file = statepath.open(
-                &rel_fname_tmp,
-                OpenOptions::new().write(true).create(true).truncate(true),
-            )?;
-            file.write_all(output.as_bytes())?;
-        }
-
-        std::fs::rename(statepath.join(rel_fname_tmp)?, statepath.join(rel_fname)?)?;
+        self.inner.statepath.write_and_replace(rel_fname, output)?;
 
         Ok(())
     }
