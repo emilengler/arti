@@ -170,7 +170,11 @@ impl tor_error::HasKind for Error {
         use tor_error::ErrorKind as K;
         match self {
             E::IoError(..)     => K::PersistentStateAccessFailed,
-            E::Permissions(..) => K::FsPermissions,
+            E::Permissions(e)  => if e.is_bad_permission() {
+                K::FsPermissions
+            } else {
+                K::PersistentStateAccessFailed
+            }
             E::NoLock          => K::BadApiUsage,
             E::Serialize(..)   => K::Internal,
             E::Deserialize(..) => K::PersistentStateCorrupted,
