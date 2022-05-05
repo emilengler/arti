@@ -71,18 +71,12 @@ impl SqliteStore {
         let blobpath = path.join("dir_blobs/");
         let lockpath = path.join("dir.lock");
 
+        let verifier = mistrust.verifier().permit_readable().check_content();
+
         let blob_dir = if readonly {
-            mistrust
-                .verifier()
-                .permit_readable()
-                .check_content()
-                .secure_dir(blobpath)?
+            verifier.secure_dir(blobpath)?
         } else {
-            mistrust
-                .verifier()
-                .permit_readable()
-                .check_content()
-                .make_secure_dir(blobpath)?
+            verifier.make_secure_dir(blobpath)?
         };
 
         // Check permissions on the sqlite and lock files; don't require them to
