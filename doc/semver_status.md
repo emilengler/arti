@@ -38,6 +38,14 @@ MODIFIED: Configuration builder structs are now all Serialize+Deseralize+Debug.
 BREAKING: Replaced LoggingConfigBuilder::file (taking Vec) with LoggingConfigBuilder::files
 BREAKING: LoggingConfigBuilder::build() throws ConfigBuildError, not a bespoke error
 MODIFIED: LoggingConfigBuilder is now Deserialize
+BREAKING: Replaced API for `run` to require fs_mistrust_disabled.
+
+
+
+### arti-client
+
+MODIFIED: Code to configure fs-mistrust.
+BREAKING: TorConfig no longer implements TryInto<DirMgrConfig>
 
 ### tor-basic-util
 
@@ -59,6 +67,7 @@ BREAKING: AuthorityBuilder::build now throws ConfigBuildError, not a custom erro
 BREAKING: DownloadSchedule::new() replaced with DownloadScheduleBuilder
 BREAKING: DownloadScheduleConfigBuilder now has accessors for the schedules, not setters
 BREAKING: DirMgrCfg: schedule and network fields rename (`_config` removed)
+BREAKING: Added new cache_trust element to DirMgrConfig.
 
 ### tor-guardmgr
 
@@ -70,6 +79,10 @@ BREAKING: Guard restriction builder interface changed to new list builder API.
 ### tor-llcrypto
 
 BREAKING: AES implementations now implement cipher 0.4 traits.
+
+### tor-persist
+
+BREAKING: Replaced from_path with from_path_and_mistrust
 
 ### tor-proto
 

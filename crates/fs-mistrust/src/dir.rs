@@ -3,6 +3,7 @@
 
 use std::{
     fs::{File, OpenOptions},
+    io::{ErrorKind as IoErrorKind, Read, Write},
     path::{Path, PathBuf},
 };
 
@@ -30,6 +31,7 @@ use std::os::unix::fs::OpenOptionsExt;
 /// APIs.
 ///
 /// See also the crate-level [Limitations](crate#limitations) section.
+#[derive(Debug, Clone)]
 pub struct CheckedDir {
     /// The `Mistrust` object whose rules we apply to members of this directory.
     mistrust: Mistrust,
@@ -102,9 +104,7 @@ impl CheckedDir {
             options.custom_flags(libc::O_NOFOLLOW);
         }
 
-        let file = options
-            .open(&path)
-            .map_err(|e| Error::inspecting(e, &path))?;
+        let file = options.open(&path).map_err(|e| Error::io(e, &path))?;
         let meta = file.metadata().map_err(|e| Error::inspecting(e, &path))?;
 
         if let Some(error) = self
@@ -128,6 +128,98 @@ impl CheckedDir {
         self.location.as_path()
     }
 
+    /// Return a new [`PathBuf`] containing this directory's path, with `path`
+    /// appended to it.
+    ///
+    /// Return an error if `path` has any components that could take us outside
+    /// of this directory.
+    pub fn join<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf> {
+        let path = path.as_ref();
+        self.check_path(path)?;
+        Ok(self.location.join(path))
+    }
+
+    /// Read the contents of the file at `path` within this directory, as a
+    /// String, if possible.
+    ///
+    /// Return an error if `path` is absent, if its permissions are incorrect,
+    /// if it has any components that could take us outside of this directory,
+    /// or if its contents are not UTF-8.
+    pub fn read_to_string<P: AsRef<Path>>(&self, path: P) -> Result<String> {
+        let path = path.as_ref();
+        let mut file = self.open(path, OpenOptions::new().read(true))?;
+        let mut result = String::new();
+        file.read_to_string(&mut result)
+            .map_err(|e| Error::io(e, path))?;
+        Ok(result)
+    }
+
+    /// Read the contents of the file at `path` within this directory, as a
+    /// vector of bytes, if possible.
+    ///
+    /// Return an error if `path` is absent, if its permissions are incorrect,
+    /// or if it has any components that could take us outside of this
+    /// directory.
+    pub fn read<P: AsRef<Path>>(&self, path: P) -> Result<Vec<u8>> {
+        let path = path.as_ref();
+        let mut file = self.open(path, OpenOptions::new().read(true))?;
+        let mut result = Vec::new();
+        file.read_to_end(&mut result)
+            .map_err(|e| Error::io(e, path))?;
+        Ok(result)
+    }
+
+    /// Store `contents` into the file located at `path` within this directory.
+    ///
+    /// We won't write to `path` directly: instead, we'll write to a temporary
+    /// file in the same directory as `path`, and then replace `path` with that
+    /// temporary file if we were successful.  (This isn't truly atomic, but
+    /// it's closer than many alternatives.)
+    pub fn write_and_replace<P: AsRef<Path>, C: AsRef<[u8]>>(
+        &self,
+        path: P,
+        contents: C,
+    ) -> Result<()> {
+        /// Up to how many temporary filenames will we try?
+        const IDX_MAX: u8 = 64;
+
+        let path = path.as_ref();
+        self.check_path(path)?;
+
+        let mut idx = 0;
+        // Loop until we have a temporary filename that is not in use.
+        let (mut tmp_file, tmp_name) = loop {
+            let tmp_name = path.with_extension(format!("tmp{}", idx));
+            match self.open(&tmp_name, OpenOptions::new().create_new(true).write(true)) {
+                // Success: we have an open file.
+                Ok(file) => break (file, tmp_name),
+                // Failure: We got an "AlreadyExists", so we know that the temp
+                // filename was already in use. Try again.
+                Err(Error::Io(_, e)) if e.kind() == IoErrorKind::AlreadyExists => {
+                    if idx == IDX_MAX {
+                        return Err(Error::NoTempFile(path.into()));
+                    }
+                    idx += 1;
+                    continue;
+                }
+                // Some other error: give up.
+                Err(e) => return Err(e),
+            }
+        };
+
+        // Write the data.
+        tmp_file
+            .write_all(contents.as_ref())
+            .map_err(|e| Error::io(e, &tmp_name))?;
+        // Flush and close.
+        drop(tmp_file);
+
+        // Replace the old file.
+        std::fs::rename(self.location.join(tmp_name), self.location.join(path))
+            .map_err(|e| Error::io(e, path))?;
+        Ok(())
+    }
+
     /// Helper: create a [`Verifier`] with the appropriate rules for this
     /// `CheckedDir`.
     fn verifier(&self) -> Verifier<'_> {
@@ -142,7 +234,10 @@ impl CheckedDir {
     /// guaranteed to stay within this directory.
     fn check_path(&self, p: &Path) -> Result<()> {
         use std::path::Component;
-        if p.is_absolute() {}
+        // This check should be redundant, but let's be certain.
+        if p.is_absolute() {
+            return Err(Error::InvalidSubdirectory);
+        }
 
         for component in p.components() {
             match component {
@@ -238,5 +333,44 @@ mod test {
         assert!(matches!(e, Error::InvalidSubdirectory));
 
         sd.make_directory("hello/world").unwrap();
+    }
+
+    #[test]
+    fn read_and_write() {
+        let d = Dir::new();
+        d.dir("a");
+        d.chmod("a", 0o700);
+        let mut m = Mistrust::new();
+        m.ignore_prefix(d.canonical_root()).unwrap();
+
+        let checked = m.verifier().secure_dir(d.path("a")).unwrap();
+
+        // Simple case: write and read.
+        checked
+            .write_and_replace("foo.txt", "this is incredibly silly")
+            .unwrap();
+
+        let s1 = checked.read_to_string("foo.txt").unwrap();
+        let s2 = checked.read("foo.txt").unwrap();
+        assert_eq!(s1, "this is incredibly silly");
+        assert_eq!(s1.as_bytes(), &s2[..]);
+
+        // Trickier: write when the preferred temporary location doesn't exist.
+        //  (Make a file in the preferred temporary location and make sure it
+        //  isn't overwritten.)
+        checked
+            .open("bar.tmp0", OpenOptions::new().create(true).write(true))
+            .unwrap()
+            .write_all("be the other guy".as_bytes())
+            .unwrap();
+
+        checked
+            .write_and_replace("bar.txt", "its hard and nobody understands")
+            .unwrap();
+
+        let s3 = checked.read_to_string("bar.tmp0").unwrap();
+        let s4 = checked.read_to_string("bar.txt").unwrap();
+        assert_eq!(s3, "be the other guy");
+        assert_eq!(s4, "its hard and nobody understands");
     }
 }
