@@ -213,7 +213,13 @@ impl HasKind for Error {
             E::Unwanted(_) => EK::TorProtocolViolation,
             E::NoDownloadSupport => EK::NotImplemented,
             E::CacheCorruption(_) => EK::CacheCorrupted,
-            Error::CachePermissions(_) => EK::FsPermissions,
+            E::CachePermissions(e) => {
+                if e.is_bad_permission() {
+                    EK::FsPermissions
+                } else {
+                    EK::CacheAccessFailed
+                }
+            }
             E::SqliteError(e) => sqlite_error_kind(e),
             E::UnrecognizedSchema => EK::CacheCorrupted,
             E::BadNetworkConfig(_) => EK::InvalidConfig,
