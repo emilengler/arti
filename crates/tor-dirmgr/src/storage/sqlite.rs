@@ -17,7 +17,6 @@ use tor_netdoc::doc::routerdesc::RdDigest;
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
@@ -200,16 +199,10 @@ impl SqliteStore {
         let digest = hex::encode(digest);
         let digeststr = format!("{}-{}", dtype, digest);
         let fname = format!("{}_{}", doctype, digeststr);
-        let mut file = self.blob_dir.open(
-            &fname,
-            OpenOptions::new().write(true).create(true).truncate(true),
-        )?;
 
         let full_path = self.blob_dir.join(&fname)?;
-
         let unlinker = Unlinker::new(&full_path);
-        file.write_all(contents)?;
-        drop(file);
+        self.blob_dir.write_and_replace(&fname, contents)?;
 
         let tx = self.conn.unchecked_transaction()?;
         tx.execute(INSERT_EXTDOC, params![digeststr, expires, dtype, fname])?;
