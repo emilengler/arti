@@ -139,6 +139,30 @@ impl Error {
         )
     }
 
+    /// Return true iff this error indicates a problem with filesystem
+    /// permissions.
+    ///
+    /// (Other errors typically indicate an IO problem, possibly one preventing
+    /// us from looking at permissions in the first place)
+    pub fn is_bad_permission(&self) -> bool {
+        match self {
+            Error::BadPermission(_, _) | Error::BadOwner(_, _) | Error::BadType(_) => true,
+
+            Error::NotFound(_)
+            | Error::CouldNotInspect(_, _)
+            | Error::StepsExceeded
+            | Error::CurrentDirectory(_)
+            | Error::CreatingDir(_)
+            | Error::Listing(_)
+            | Error::InvalidSubdirectory
+            | Error::Io(_, _)
+            | Error::NoTempFile(_) => false,
+
+            Error::Multiple(errs) => errs.iter().any(|e| e.is_bad_permission()),
+            Error::Content(err) => err.is_bad_permission(),
+        }
+    }
+
     /// Return an iterator over all of the errors contained in this Error.
     ///
     /// If this is a singleton, the iterator returns only a single element.
