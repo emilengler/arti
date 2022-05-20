@@ -100,8 +100,11 @@ minimal-versions:
   stage: test
   image: rust:1.56
   script:
+    # Need the cargo nightly for the -Z minimal-versions flag
     - rustup install nightly
     - ./maint/downgrade_dependencies
+    # Switch back to our MSRV
+    - rustup default stable
     - cargo build --verbose --target x86_64-unknown-linux-gnu --all-features
     - cargo test --verbose --target x86_64-unknown-linux-gnu --all-features
   tags:
