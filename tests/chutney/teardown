@@ -16,6 +16,9 @@ fi
 # shellcheck disable=SC1091
 source tests/chutney/arti.run
 
+# Tells shellcheck that this variables is set; exits early if it isn't.
+pid="${pid:?}"
+
 # If Arti was started, stop it. If it wasn't, that's an error and it'll be reported
 # when we can't read $result later.
 if [ -n "$pid" ]; then
