@@ -3713,6 +3713,7 @@ dependencies = [
  "curve25519-dalek",
  "digest 0.10.3",
  "ed25519-dalek",
+ "extend",
  "getrandom 0.2.7",
  "hex",
  "hex-literal",

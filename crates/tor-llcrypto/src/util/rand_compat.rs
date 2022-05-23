@@ -36,22 +36,20 @@
 //! The wrapped RNG can be used with the old version of the RngCore
 //! trait, as well as the new one.
 
+use extend::ext;
 use old_rand_core::{CryptoRng as OldCryptoRng, Error as OldError, RngCore as OldRngCore};
 use rand_core::{CryptoRng, Error, RngCore};
 
 /// Extension trait for the _current_ versions of [`RngCore`]; adds a
 /// compatibility-wrapper function.
-pub trait RngCompatExt: RngCore {
-    /// Wrapper type returned by this trait.
-    type Wrapper: RngCore + OldRngCore;
+#[ext(pub, name=RngCompatExt)]
+impl<T: RngCore> T {
     /// Return a version of this Rng that can be used with older versions
     /// of the rand_core and rand libraries, as well as the current version.
-    fn rng_compat(self) -> Self::Wrapper;
-}
-
-impl<T: RngCore + Sized> RngCompatExt for T {
-    type Wrapper = RngWrapper<T>;
-    fn rng_compat(self) -> RngWrapper<Self> {
+    fn rng_compat(self) -> RngWrapper<Self>
+    where
+        Self: Sized,
+    {
         self.into()
     }
 }
