@@ -6,6 +6,7 @@ use std::ops::{Deref, DerefMut};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+use extend::ext;
 use futures::future::FusedFuture;
 use futures::ready;
 use futures::Sink;
@@ -17,7 +18,8 @@ macro_rules! dprintln { { $f:literal $($a:tt)* } => { () } }
 //macro_rules! dprintln { { $f:literal $($a:tt)* } => { eprintln!(concat!("    ",$f) $($a)*) } }
 
 /// Extension trait for [`Sink`]
-pub trait SinkExt<'w, OS, OM>
+#[ext(pub, name=SinkExt)]
+impl<'w, OS, OM> Pin<&'w mut OS>
 where
     OS: Sink<OM>,
 {
@@ -216,18 +218,6 @@ where
     /// There are provided implementations for `Pin<&mut impl Sink>`
     /// and `&mut impl Sink + Unpin`, for your convenience.
     fn prepare_send_from<IF, IM>(
-        self,
-        message_generator: IF,
-    ) -> SinkPrepareSendFuture<'w, IF, OS, OM>
-    where
-        IF: Future<Output = IM>;
-}
-
-impl<'w, OS, OM> SinkExt<'w, OS, OM> for Pin<&'w mut OS>
-where
-    OS: Sink<OM>,
-{
-    fn prepare_send_from<'r, IF, IM>(
         self,
         message_generator: IF,
     ) -> SinkPrepareSendFuture<'w, IF, OS, OM>

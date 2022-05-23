@@ -13,6 +13,7 @@ categories = ["rust-patterns"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 
 [dependencies]
+extend = "1"
 futures = "0.3.14"
 hex = "0.4"
 pin-project = "1"
