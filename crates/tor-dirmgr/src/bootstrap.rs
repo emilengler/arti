@@ -312,7 +312,18 @@ async fn fetch_multiple<R: Runtime>(
 async fn load_once<R: Runtime>(
     dirmgr: &Arc<DirMgr<R>>,
     state: &mut Box<dyn DirState>,
+    changed: &mut bool,
 ) -> Result<()> {
+    /// Return true if `r1` is more severe than `r2`.
+    fn more_severe(r1: &Result<()>, r2: &Result<()>) -> bool {
+        match (r1, r2) {
+            (Ok(()), Ok(())) => false,
+            (Err(_), Ok(())) => true,
+            (Ok(()), Err(_)) => false,
+            (Err(e1), Err(e2)) => e1.bootstrap_action() > e2.bootstrap_action(),
+        }
+    }
+
     let missing = state.missing_docs();
     let outcome: Result<()> = if missing.is_empty() {
         trace!("Found no missing documents; can't advance current state");
@@ -328,7 +339,18 @@ async fn load_once<R: Runtime>(
             load_documents_from_store(&missing, store.deref())?
         };
 
-        state.add_from_cache(documents)
+        let mut outcome = Ok(());
+        for (id, doc) in documents {
+            let mut singleton = HashMap::new();
+            singleton.insert(id, doc);
+
+            match state.add_from_cache(singleton) {
+                Ok(()) => *changed = true,
+                r1 @ Err(_) if more_severe(&r1, &outcome) => outcome = r1,
+                _ => {}
+            }
+        }
+        outcome
     };
 
     // We have to update the status here regardless of the outcome: even if
@@ -350,17 +372,14 @@ pub(crate) async fn load<R: Runtime>(
     let mut safety_counter = 0_usize;
     loop {
         trace!(state=%state.describe(), "Loading from cache");
-        let outcome = load_once(&dirmgr, &mut state).await;
+        let mut changed = false;
+        let outcome = load_once(&dirmgr, &mut state, &mut changed).await;
         {
             let mut store = dirmgr.store.lock().expect("store lock poisoned");
             dirmgr.apply_netdir_changes(&mut state, store.deref_mut())?;
         }
 
-        let mut no_change = false;
         if let Err(e) = outcome {
-            if matches!(e, Error::NoChange(_)) {
-                no_change = true;
-            }
             match e.bootstrap_action() {
                 BootstrapAction::Nonfatal => {
                     debug!("Recoverable error loading from cache: {}", e);
@@ -375,7 +394,7 @@ pub(crate) async fn load<R: Runtime>(
             state = state.advance();
             safety_counter = 0;
         } else {
-            if no_change {
+            if !changed {
                 // TODO: Are there more nonfatal errors that mean we should
                 // break?
                 break;
@@ -477,7 +496,8 @@ pub(crate) async fn download<R: Runtime>(
         // state must never grow, then we'll need to move it inside.
         let mut now = {
             let dirmgr = upgrade_weak_ref(&dirmgr)?;
-            let load_result = load_once(&dirmgr, state).await;
+            let mut changed = false;
+            let load_result = load_once(&dirmgr, state, &mut changed).await;
             if let Err(e) = &load_result {
                 // If the load failed but the error can be blamed on a directory
                 // cache, do so.

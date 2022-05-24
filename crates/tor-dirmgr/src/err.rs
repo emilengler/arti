@@ -142,7 +142,7 @@ impl From<signature::Error> for Error {
 }
 
 /// The effect that a given error has on our bootstrapping process
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub(crate) enum BootstrapAction {
     /// The error isn't fatal.  We should blame it on its source (if any), and
     /// continue bootstrapping.
