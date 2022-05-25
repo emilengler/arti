@@ -99,6 +99,7 @@ dependencies = [
  "tracing-journald",
  "tracing-subscriber",
  "trust-dns-proto",
+ "weak-table",
  "winapi 0.3.9",
 ]
 

@@ -3,16 +3,18 @@
 //! A resolver is launched with [`run_dns_resolver()`], which listens for new
 //! connections and then runs
 
+use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use trust_dns_proto::op::{
     header::MessageType, op_code::OpCode, response_code::ResponseCode, Message,
 };
 use trust_dns_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use trust_dns_proto::serialize::binary::{BinDecodable, BinEncodable};
+use weak_table::WeakKeyHashMap;
 
 use arti_client::{StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, UdpSocket};
@@ -36,6 +38,10 @@ async fn not_implemented<U: UdpSocket>(id: u16, addr: &SocketAddr, socket: &U) -
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DnsIsolationKey(usize, IpAddr);
 
+/// Identifier for a DNS request, composed of its source IP and transaction ID
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RequestId(IpAddr, u16);
+
 impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
     fn compatible_same_type(&self, other: &Self) -> bool {
         self == other
@@ -58,6 +64,7 @@ async fn handle_dns_req<R, U>(
     packet: &[u8],
     addr: SocketAddr,
     socket: Arc<U>,
+    current_requests: &Mutex<WeakKeyHashMap<std::sync::Weak<RequestId>, SocketAddr>>,
 ) -> Result<()>
 where
     R: Runtime,
@@ -65,6 +72,22 @@ where
 {
     let mut query = Message::from_bytes(packet)?;
     let id = query.id();
+
+    let request_id = {
+        let mut current_requests = current_requests.lock().await;
+        let request_id = RequestId(addr.ip(), id);
+        // if there is a pending request, mutate the address to answer to.
+        // Don't re-insert as this request and its Arc<id> would be dropped instantly
+        if let Some(a) = current_requests.get_mut(&request_id) {
+            debug!("Received a query already being served");
+            *a = addr;
+            return Ok(());
+        };
+        debug!("Received a new query");
+        let request_id = Arc::new(request_id);
+        current_requests.insert(request_id.clone(), addr);
+        request_id
+    };
 
     let mut answers = Vec::new();
 
@@ -133,6 +156,12 @@ where
         .add_answers(answers);
     // TODO maybe add some edns?
 
+    // remove() should never return None
+    let addr = current_requests
+        .lock()
+        .await
+        .remove(&request_id)
+        .unwrap_or(addr);
     socket.send(&response.to_bytes()?, &addr).await?;
     Ok(())
 }
@@ -184,6 +213,9 @@ pub async fn run_dns_resolver<R: Runtime>(
             }),
     );
 
+    // use a weak map so requests that are not answered due to some error get cleaned up
+    let pending_requests = Arc::new(Mutex::new(WeakKeyHashMap::new()));
+    let mut counter = 0_u8;
     while let Some((packet, id)) = incoming.next().await {
         let (packet, size, addr, socket) = match packet {
             Ok(packet) => packet,
@@ -195,12 +227,27 @@ pub async fn run_dns_resolver<R: Runtime>(
         };
 
         let client_ref = tor_client.clone();
+        let pending_requests2 = pending_requests.clone();
         runtime.spawn(async move {
-            let res = handle_dns_req(client_ref, id, &packet[..size], addr, socket).await;
+            let res = handle_dns_req(
+                client_ref,
+                id,
+                &packet[..size],
+                addr,
+                socket,
+                &pending_requests2,
+            )
+            .await;
             if let Err(e) = res {
                 warn!("connection exited with error: {}", e);
             }
         })?;
+
+        counter = counter.wrapping_add(1);
+        if counter == 0 {
+            // garbage collect regularly
+            pending_requests.lock().await.remove_expired();
+        }
     }
 
     Ok(())
