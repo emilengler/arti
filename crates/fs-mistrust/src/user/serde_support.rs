@@ -2,6 +2,7 @@
 
 use super::{TrustedGroup, TrustedUser};
 use serde::{Deserialize, Serialize};
+use std::os::unix::ffi::OsStringExt as _;
 use std::{convert::TryFrom, ffi::OsString};
 
 /// Helper type: when encoding or decoding a group or user, we do so as one of
@@ -38,7 +39,7 @@ pub(super) enum Serde {
     /// A username that cannot be represented as a String.
     Raw {
         /// The username in question.
-        raw_name: OsString,
+        raw_name: UnixString,
     },
     /// A special entity.
     Special {
@@ -50,6 +51,24 @@ pub(super) enum Serde {
         /// The UID or GID.
         id: u32,
     },
+}
+
+/// A representation of an OsString for serialization purposes.
+///
+/// (The `toml` crate doesn't support serialize_newtype_variant, which )
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(transparent)]
+pub(super) struct UnixString(Vec<u8>);
+
+impl From<OsString> for UnixString {
+    fn from(s: OsString) -> Self {
+        UnixString(s.into_vec())
+    }
+}
+impl From<UnixString> for OsString {
+    fn from(s: UnixString) -> Self {
+        OsString::from_vec(s.0)
+    }
 }
 
 impl Serde {
@@ -101,7 +120,7 @@ macro_rules! implement_serde {
                             Self::Str(name)
                         }
                     } else {
-                        Self::Raw { raw_name: name }
+                        Self::Raw { raw_name: name.into() }
                     }
                 }
                 $(
@@ -120,7 +139,7 @@ macro_rules! implement_serde {
                 }
                 Serde::Bool(b) => $struct::from_boolean(b)?,
                 Serde::Name { name } => $struct::Name(name.into()),
-                Serde::Raw { raw_name } => $struct::Name(raw_name),
+                Serde::Raw { raw_name } => $struct::Name(raw_name.into()),
                 Serde::Special { special } => {
                     $struct::from_special_str(special.as_ref())?
                 }
@@ -239,7 +258,8 @@ mod test {
     fn os_string() {
         // Try round-tripping a username that isn't UTF8.
         use std::os::unix::ffi::OsStringExt as _;
-        let not_utf8 = OsString::from_vec(vec![1, 0, 0, 1]);
+        let not_utf8 = OsString::from_vec(vec![255, 254, 253, 252]);
+        assert!(not_utf8.to_str().is_none());
         let chum = Chum {
             handle: TrustedUser::Name(not_utf8.clone()),
             team: TrustedGroup::Name(not_utf8),
