@@ -9,7 +9,7 @@ use futures::task::SpawnExt;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use trust_dns_proto::op::{
     header::MessageType, op_code::OpCode, response_code::ResponseCode, Message, Query,
 };
@@ -28,7 +28,7 @@ const MAX_DATAGRAM_SIZE: usize = 1536;
 ///
 /// Composed of an usize (representing which listener socket accepted
 /// the connection and the source IpAddr of the client)
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DnsIsolationKey(usize, IpAddr);
 
 impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
@@ -47,7 +47,18 @@ impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
 
 /// Identifier for a DNS request, composed of its source IP and transaction ID
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct RequestId(IpAddr, u16);
+struct DnsCacheKey(DnsIsolationKey, Vec<Query>);
+
+/// Target for a DNS response
+#[derive(Debug, Clone)]
+struct DnsResponseTarget<U> {
+    /// Transaction ID
+    id: u16,
+    /// Address of the client
+    addr: SocketAddr,
+    /// Socket to send the response through
+    socket: Arc<U>,
+}
 
 /// Run a DNS query over tor, returning either a list of answers, or a DNS error code.
 async fn do_query<R>(
@@ -131,7 +142,7 @@ async fn handle_dns_req<R, U>(
     packet: &[u8],
     addr: SocketAddr,
     socket: Arc<U>,
-    current_requests: &Mutex<HashMap<RequestId, SocketAddr>>,
+    current_requests: &Mutex<HashMap<DnsCacheKey, Vec<DnsResponseTarget<U>>>>,
 ) -> Result<()>
 where
     R: Runtime,
@@ -140,30 +151,31 @@ where
     // if we can't parse the request, don't try to answer it.
     let mut query = Message::from_bytes(packet)?;
     let id = query.id();
+    let queries = query.queries();
+    let isolation = DnsIsolationKey(socket_id, addr.ip());
 
     let request_id = {
-        let mut current_requests = current_requests.lock().await;
-        let request_id = RequestId(addr.ip(), id);
-        // if there is a pending request, mutate the address to answer to.
-        // Don't re-insert as this request and its Arc<id> would be dropped instantly
-        if let Some(a) = current_requests.get_mut(&request_id) {
-            debug!("Received a query already being served");
-            *a = addr;
-            return Ok(());
-        };
-        debug!("Received a new query");
-        current_requests.insert(request_id.clone(), addr);
+        let request_id = DnsCacheKey(isolation.clone(), queries.to_vec());
+
+        let response_target = DnsResponseTarget { id, addr, socket };
+
+        current_requests
+            .lock()
+            .await
+            .entry(request_id.clone())
+            .or_default()
+            .push(response_target);
+
         request_id
     };
 
     let mut prefs = StreamPrefs::new();
-    prefs.set_isolation(DnsIsolationKey(socket_id, addr.ip()));
+    prefs.set_isolation(isolation);
 
-    let response = match do_query(tor_client, query.queries(), &prefs).await {
+    let mut response = match do_query(tor_client, queries, &prefs).await {
         Ok(answers) => {
             let mut response = Message::new();
             response
-                .set_id(id)
                 .set_message_type(MessageType::Response)
                 .set_op_code(OpCode::Query)
                 .set_recursion_desired(query.recursion_desired())
@@ -176,14 +188,23 @@ where
         Err(error_type) => Message::error_msg(id, OpCode::Query, error_type),
     };
 
-    // remove() should never return None
-    let addr = current_requests
+    // remove() should never return None, but just in case
+    let targets = current_requests
         .lock()
         .await
         .remove(&request_id)
-        .unwrap_or(addr);
+        .unwrap_or_default();
 
-    socket.send(&response.to_bytes()?, &addr).await?;
+    for target in targets {
+        response.set_id(target.id);
+        // ignore errors, we want to reply to everybody
+        let response = if let Ok(r) = response.to_bytes() {
+            r
+        } else {
+            continue;
+        };
+        let _ = target.socket.send(&response, &target.addr).await;
+    }
     Ok(())
 }
 
