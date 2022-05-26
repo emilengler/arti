@@ -6,6 +6,7 @@
 use futures::lock::Mutex;
 use futures::stream::StreamExt;
 use futures::task::SpawnExt;
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
@@ -14,7 +15,6 @@ use trust_dns_proto::op::{
 };
 use trust_dns_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use trust_dns_proto::serialize::binary::{BinDecodable, BinEncodable};
-use weak_table::WeakKeyHashMap;
 
 use arti_client::{StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, UdpSocket};
@@ -131,7 +131,7 @@ async fn handle_dns_req<R, U>(
     packet: &[u8],
     addr: SocketAddr,
     socket: Arc<U>,
-    current_requests: &Mutex<WeakKeyHashMap<std::sync::Weak<RequestId>, SocketAddr>>,
+    current_requests: &Mutex<HashMap<RequestId, SocketAddr>>,
 ) -> Result<()>
 where
     R: Runtime,
@@ -152,7 +152,6 @@ where
             return Ok(());
         };
         debug!("Received a new query");
-        let request_id = Arc::new(request_id);
         current_requests.insert(request_id.clone(), addr);
         request_id
     };
@@ -235,9 +234,7 @@ pub async fn run_dns_resolver<R: Runtime>(
             }),
     );
 
-    // use a weak map so requests that are not answered due to some error get cleaned up
-    let pending_requests = Arc::new(Mutex::new(WeakKeyHashMap::new()));
-    let mut counter = 0_u8;
+    let pending_requests = Arc::new(Mutex::new(HashMap::new()));
     while let Some((packet, id)) = incoming.next().await {
         let (packet, size, addr, socket) = match packet {
             Ok(packet) => packet,
@@ -266,12 +263,6 @@ pub async fn run_dns_resolver<R: Runtime>(
                 }
             }
         })?;
-
-        counter = counter.wrapping_add(1);
-        if counter == 0 {
-            // garbage collect regularly
-            pending_requests.lock().await.remove_expired();
-        }
     }
 
     Ok(())
