@@ -10,7 +10,7 @@ use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 use trust_dns_proto::op::{
-    header::MessageType, op_code::OpCode, response_code::ResponseCode, Message,
+    header::MessageType, op_code::OpCode, response_code::ResponseCode, Message, Query,
 };
 use trust_dns_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use trust_dns_proto::serialize::binary::{BinDecodable, BinEncodable};
@@ -24,23 +24,12 @@ use anyhow::{anyhow, Result};
 /// Maximum length for receiving a single datagram
 const MAX_DATAGRAM_SIZE: usize = 1536;
 
-/// Send an error DNS response with code NotImplemented
-async fn not_implemented<U: UdpSocket>(id: u16, addr: &SocketAddr, socket: &U) -> Result<()> {
-    let response = Message::error_msg(id, OpCode::Query, ResponseCode::NotImp);
-    socket.send(&response.to_bytes()?, addr).await?;
-    Ok(())
-}
-
 /// A Key used to isolate dns requests.
 ///
 /// Composed of an usize (representing which listener socket accepted
 /// the connection and the source IpAddr of the client)
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DnsIsolationKey(usize, IpAddr);
-
-/// Identifier for a DNS request, composed of its source IP and transaction ID
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct RequestId(IpAddr, u16);
 
 impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
     fn compatible_same_type(&self, other: &Self) -> bool {
@@ -54,6 +43,84 @@ impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
             None
         }
     }
+}
+
+/// Identifier for a DNS request, composed of its source IP and transaction ID
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct RequestId(IpAddr, u16);
+
+/// Run a DNS query over tor, returning either a list of answers, or a DNS error code.
+async fn do_query<R>(
+    tor_client: TorClient<R>,
+    queries: &[Query],
+    prefs: &StreamPrefs,
+) -> Result<Vec<Record>, ResponseCode>
+where
+    R: Runtime,
+{
+    let mut answers = Vec::new();
+
+    for query in queries {
+        let mut a = Vec::new();
+        let mut ptr = Vec::new();
+
+        match query.query_class() {
+            DNSClass::IN => {
+                match query.query_type() {
+                    typ @ RecordType::A | typ @ RecordType::AAAA => {
+                        let mut name = query.name().clone();
+                        // name would be "torproject.org." without this
+                        name.set_fqdn(false);
+                        let res = tor_client
+                            .resolve_with_prefs(&name.to_utf8(), prefs)
+                            .await
+                            .map_err(|_| ResponseCode::ServFail)?;
+                        for ip in res {
+                            a.push((query.name().clone(), ip, typ));
+                        }
+                    }
+                    RecordType::PTR => {
+                        let addr = query
+                            .name()
+                            .parse_arpa_name()
+                            .map_err(|_| ResponseCode::FormErr)?
+                            .addr();
+                        let res = tor_client
+                            .resolve_ptr_with_prefs(addr, prefs)
+                            .await
+                            .map_err(|_| ResponseCode::ServFail)?;
+                        for domain in res {
+                            let domain =
+                                Name::from_utf8(domain).map_err(|_| ResponseCode::ServFail)?;
+                            ptr.push((query.name().clone(), domain));
+                        }
+                    }
+                    _ => {
+                        return Err(ResponseCode::NotImp);
+                    }
+                }
+            }
+            _ => {
+                return Err(ResponseCode::NotImp);
+            }
+        }
+        for (name, ip, typ) in a {
+            match (ip, typ) {
+                (IpAddr::V4(v4), RecordType::A) => {
+                    answers.push(Record::from_rdata(name, 3600, RData::A(v4)));
+                }
+                (IpAddr::V6(v6), RecordType::AAAA) => {
+                    answers.push(Record::from_rdata(name, 3600, RData::AAAA(v6)));
+                }
+                _ => (),
+            }
+        }
+        for (ptr, name) in ptr {
+            answers.push(Record::from_rdata(ptr, 3600, RData::PTR(name)));
+        }
+    }
+
+    Ok(answers)
 }
 
 /// Given a datagram containing a DNS query, resolve the query over
@@ -70,6 +137,7 @@ where
     R: Runtime,
     U: UdpSocket,
 {
+    // if we can't parse the request, don't try to answer it.
     let mut query = Message::from_bytes(packet)?;
     let id = query.id();
 
@@ -89,72 +157,25 @@ where
         request_id
     };
 
-    let mut answers = Vec::new();
-
     let mut prefs = StreamPrefs::new();
     prefs.set_isolation(DnsIsolationKey(socket_id, addr.ip()));
 
-    for query in query.queries() {
-        let mut a = Vec::new();
-        let mut ptr = Vec::new();
-        // TODO maybe support ANY?
-        match query.query_class() {
-            DNSClass::IN => {
-                match query.query_type() {
-                    typ @ RecordType::A | typ @ RecordType::AAAA => {
-                        let mut name = query.name().clone();
-                        // name would be "torproject.org." without this
-                        name.set_fqdn(false);
-                        let res = tor_client
-                            .resolve_with_prefs(&name.to_utf8(), &prefs)
-                            .await?;
-                        for ip in res {
-                            a.push((query.name().clone(), ip, typ));
-                        }
-                    }
-                    RecordType::PTR => {
-                        let addr = query.name().parse_arpa_name()?.addr();
-                        let res = tor_client.resolve_ptr_with_prefs(addr, &prefs).await?;
-                        for domain in res {
-                            let domain = Name::from_utf8(domain)?;
-                            ptr.push((query.name().clone(), domain));
-                        }
-                    }
-                    _ => {
-                        return not_implemented(id, &addr, &*socket).await;
-                    }
-                }
-            }
-            _ => {
-                return not_implemented(id, &addr, &*socket).await;
-            }
+    let response = match do_query(tor_client, query.queries(), &prefs).await {
+        Ok(answers) => {
+            let mut response = Message::new();
+            response
+                .set_id(id)
+                .set_message_type(MessageType::Response)
+                .set_op_code(OpCode::Query)
+                .set_recursion_desired(query.recursion_desired())
+                .set_recursion_available(true)
+                .add_queries(query.take_queries())
+                .add_answers(answers);
+            // TODO maybe add some edns?
+            response
         }
-        for (name, ip, typ) in a {
-            match (ip, typ) {
-                (IpAddr::V4(v4), RecordType::A) => {
-                    answers.push(Record::from_rdata(name, 3600, RData::A(v4)));
-                }
-                (IpAddr::V6(v6), RecordType::AAAA) => {
-                    answers.push(Record::from_rdata(name, 3600, RData::AAAA(v6)));
-                }
-                _ => (),
-            }
-        }
-        for (ptr, name) in ptr {
-            answers.push(Record::from_rdata(ptr, 3600, RData::PTR(name)));
-        }
-    }
-
-    let mut response = Message::new();
-    response
-        .set_id(id)
-        .set_message_type(MessageType::Response)
-        .set_op_code(OpCode::Query)
-        .set_recursion_desired(query.recursion_desired())
-        .set_recursion_available(true)
-        .add_queries(query.take_queries())
-        .add_answers(answers);
-    // TODO maybe add some edns?
+        Err(error_type) => Message::error_msg(id, OpCode::Query, error_type),
+    };
 
     // remove() should never return None
     let addr = current_requests
@@ -162,6 +183,7 @@ where
         .await
         .remove(&request_id)
         .unwrap_or(addr);
+
     socket.send(&response.to_bytes()?, &addr).await?;
     Ok(())
 }
@@ -227,19 +249,21 @@ pub async fn run_dns_resolver<R: Runtime>(
         };
 
         let client_ref = tor_client.clone();
-        let pending_requests2 = pending_requests.clone();
-        runtime.spawn(async move {
-            let res = handle_dns_req(
-                client_ref,
-                id,
-                &packet[..size],
-                addr,
-                socket,
-                &pending_requests2,
-            )
-            .await;
-            if let Err(e) = res {
-                warn!("connection exited with error: {}", e);
+        runtime.spawn({
+            let pending_requests = pending_requests.clone();
+            async move {
+                let res = handle_dns_req(
+                    client_ref,
+                    id,
+                    &packet[..size],
+                    addr,
+                    socket,
+                    &pending_requests,
+                )
+                .await;
+                if let Err(e) = res {
+                    warn!("connection exited with error: {}", e);
+                }
             }
         })?;
 
