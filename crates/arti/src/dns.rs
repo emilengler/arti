@@ -9,7 +9,7 @@ use futures::task::SpawnExt;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 use trust_dns_proto::op::{
     header::MessageType, op_code::OpCode, response_code::ResponseCode, Message, Query,
 };
@@ -75,6 +75,8 @@ where
         let mut a = Vec::new();
         let mut ptr = Vec::new();
 
+        // TODO if there are N questions, this would take N rtt to answer. By joining all futures it
+        // could take only 1 rtt, but having more than 1 question is actually very rare.
         match query.query_class() {
             DNSClass::IN => {
                 match query.query_type() {
@@ -159,12 +161,16 @@ where
 
         let response_target = DnsResponseTarget { id, addr, socket };
 
-        current_requests
-            .lock()
-            .await
-            .entry(request_id.clone())
-            .or_default()
-            .push(response_target);
+        let mut current_requests = current_requests.lock().await;
+
+        let req = current_requests.entry(request_id.clone()).or_default();
+        req.push(response_target);
+
+        if req.len() > 1 {
+            debug!("Received a query already being served");
+            return Ok(());
+        }
+        debug!("Received a new query");
 
         request_id
     };
