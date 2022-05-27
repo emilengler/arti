@@ -207,6 +207,7 @@ where
         let response = if let Ok(r) = response.to_bytes() {
             r
         } else {
+            error!("Failed to serialize DNS packet: {:?}", response);
             continue;
         };
         let _ = target.socket.send(&response, &target.addr).await;
