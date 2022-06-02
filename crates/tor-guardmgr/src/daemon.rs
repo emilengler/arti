@@ -9,7 +9,9 @@ use crate::GuardMgrInner;
 #[cfg(test)]
 use futures::channel::oneshot;
 use futures::{channel::mpsc, stream::StreamExt};
+use tor_netdir::NetDirProvider;
 use tor_proto::ClockSkew;
+use tor_rtcompat::Runtime;
 
 use std::sync::{Mutex, Weak};
 
@@ -85,5 +87,35 @@ pub(crate) async fn run_periodic<R: tor_rtcompat::SleepProvider>(
             return;
         };
         runtime.sleep(delay).await;
+    }
+}
+
+/// Background task to keep a guard manager up-to-date with a given network
+/// directory provider.
+pub(crate) async fn keep_guardmgr_updated<RT: Runtime>(
+    runtime: RT,
+    inner: Weak<Mutex<GuardMgrInner>>,
+    netdir_provider: Weak<dyn NetDirProvider + Send + Sync + 'static>,
+) {
+    use tor_netdir::DirEvent;
+
+    let mut event_stream = match netdir_provider.upgrade().map(|p| p.events()) {
+        Some(s) => s,
+        None => return,
+    };
+
+    while let Some(event) = event_stream.next().await {
+        match event {
+            DirEvent::NewConsensus | DirEvent::NewDescriptors => {
+                if let (Some(inner), Some(provider)) = (inner.upgrade(), netdir_provider.upgrade())
+                {
+                    let mut inner = inner.lock().expect("Poisoned lock");
+                    if let Some(netdir) = provider.latest_netdir() {
+                        inner.update(runtime.wallclock(), Some(&netdir));
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }

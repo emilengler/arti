@@ -139,7 +139,7 @@ use futures::task::SpawnExt;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant, SystemTime};
 use tor_proto::ClockSkew;
 use tracing::{debug, info, trace, warn};
@@ -147,7 +147,7 @@ use tracing::{debug, info, trace, warn};
 use tor_config::impl_standard_builder;
 use tor_config::{define_list_builder_accessors, define_list_builder_helper};
 use tor_llcrypto::pk;
-use tor_netdir::{params::NetParameters, NetDir, Relay};
+use tor_netdir::{params::NetParameters, NetDir, NetDirProvider, Relay};
 use tor_persist::{DynStorageHandle, StateMgr};
 use tor_rtcompat::Runtime;
 
@@ -286,7 +286,8 @@ impl<R: Runtime> GuardMgr<R> {
     /// Create a new "empty" guard manager and launch its background tasks.
     ///
     /// It won't be able to hand out any guards until
-    /// [`GuardMgr::update_network`] has been called.
+    /// [`GuardMgr::update_network`] has been called, either directly or via
+    /// a background task created with [`GuardMgr::launch_update_task`].
     pub fn new<S>(
         runtime: R,
         state_mgr: S,
@@ -333,6 +334,26 @@ impl<R: Runtime> GuardMgr<R> {
                 .map_err(|e| GuardMgrError::from_spawn("periodic guard updater", e))?;
         }
         Ok(GuardMgr { runtime, inner })
+    }
+
+    /// Launch a background task to keep this guard manager updated whenever the
+    /// underlying network directory changes.
+    ///
+    pub fn launch_update_task<D>(&self, netdir_provider: &Arc<D>) -> Result<(), GuardMgrError>
+    where
+        D: NetDirProvider + Send + Sync + 'static,
+    {
+        let provider = Arc::downgrade(netdir_provider) as Weak<_>;
+        {
+            let rt_clone = self.runtime.clone();
+            let weak_inner = Arc::downgrade(&self.inner);
+            self.runtime
+                .spawn(daemon::keep_guardmgr_updated(
+                    rt_clone, weak_inner, provider,
+                ))
+                .map_err(|e| GuardMgrError::from_spawn("guard updater from networkstatus", e))?;
+        }
+        Ok(())
     }
 
     /// Flush our current guard state to the state manager, if there
