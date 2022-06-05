@@ -275,6 +275,11 @@ impl<R: Runtime> CircMgr<R> {
             ))
             .map_err(|e| Error::from_spawn("preemptive circuit launcher", e))?;
 
+        self.mgr
+            .peek_builder()
+            .guardmgr()
+            .launch_update_task(dir_provider)?;
+
         Ok(ret)
     }
 
