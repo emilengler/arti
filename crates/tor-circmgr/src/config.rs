@@ -43,7 +43,7 @@ pub struct PathConfig {
     #[builder(default = "ipv6_prefix_default()")]
     ipv6_subnet_family_prefix: u8,
 
-    /// The set of addresses to which we're willing to make direct connections.
+    /// See accessor docs
     #[builder(sub_builder, setter(custom))]
     pub(crate) reachable_addrs: ReachableAddrs,
 }
@@ -68,6 +68,7 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct PathConfigBuilder {
+        /// The set of addresses to which we're willing to make direct connections.
         pub reachable_addrs: [AddrPortPattern],
     }
 }
