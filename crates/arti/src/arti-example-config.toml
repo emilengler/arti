@@ -17,10 +17,10 @@
 # listen on localhost.
 #
 # Note that only one process can listen on a given port at a time.
-#socks_port = 9150
+#socks.port = 9150
 
 # Port to use to listen for DNS requests.  0 means disabled.
-#dns_port = 0
+#dns.port = 0
 
 # Configure logging
 [logging]
@@ -116,7 +116,7 @@
 # attempt, and "initial_delay" is a parameter determining both our
 # _first_ delay before we reattempt, and our _minimum_ delay for
 # subsequent attempts.
-[download_schedule]
+[download.schedule]
 
 # How to retry our initial bootstrapping when we're trying to start up.
 #retry_bootstrap = { attempts = 128, initial_delay = "1 sec", parallelism = 1 }
@@ -131,7 +131,7 @@
 #retry_microdescs = { attempts = 3, initial_delay = "1 sec", parallelism = 4 }
 
 # Configuration for how much clock skew to tolerate in our directory information
-[download_tolerance]
+[download.tolerance]
 # For how long before a directory document is valid should we accept it?
 #pre_valid_tolerance = "1 day"
 
