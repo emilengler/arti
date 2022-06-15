@@ -300,11 +300,15 @@ macro_rules! define_list_builder_accessors {
     {
         struct $OuterBuilder:ty {
             $(
+                $( $( #[ doc $($fdoc:tt)* ] )+ )?
                 $vis:vis $things:ident: [$EntryBuilder:ty],
             )*
         }
     } => {
         impl $OuterBuilder { $( $crate::paste!{
+            $( $( #[ doc $($fdoc)* ] )+
+            ///
+            )?
             /// Access the being-built list (resolving default)
             ///
             /// If the field has not yet been set or accessed, the default list will be
@@ -314,11 +318,17 @@ macro_rules! define_list_builder_accessors {
                 self.$things.access()
             }
 
+            $( $( #[ doc $($fdoc)* ] )+
+            ///
+            )?
             /// Set the whole list (overriding the default)
             $vis fn [<set_ $things>](&mut self, list: Vec<$EntryBuilder>) {
                 *self.$things.access_opt_mut() = Some(list)
             }
 
+            $( $( #[ doc $($fdoc)* ] )+
+            ///
+            )?
             /// Inspect the being-built list (with default unresolved)
             ///
             /// If the list has not yet been set, or accessed, `&None` is returned.
@@ -326,6 +336,9 @@ macro_rules! define_list_builder_accessors {
                 self.$things.access_opt()
             }
 
+            $( $( #[ doc $($fdoc)* ] )+
+            ///
+            )?
             /// Mutably access the being-built list (with default unresolved)
             ///
             /// If the list has not yet been set, or accessed, `&mut None` is returned.
