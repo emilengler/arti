@@ -41,7 +41,7 @@ pub struct FallbackDir {
     rsa_identity: RsaIdentity,
     /// Ed25519 identity for the directory relay
     ed_identity: Ed25519Identity,
-    /// List of ORPorts for the directory relay
+    /// See accessor docs
     #[builder(sub_builder(fn_name = "build"), setter(custom))]
     orports: Vec<SocketAddr>,
 }
@@ -50,6 +50,7 @@ impl_standard_builder! { FallbackDir: !Default }
 
 define_list_builder_accessors! {
     struct FallbackDirBuilder {
+        /// List of ORPorts for the directory relay
         pub orports: [SocketAddr],
     }
 }
