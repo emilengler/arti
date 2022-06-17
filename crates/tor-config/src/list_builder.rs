@@ -318,7 +318,6 @@ macro_rules! define_list_builder_accessors {
             $( #[ doc= concat!( $fdoc1, " (accessor)." ) ]
             $( #[ doc $($fdoc)* ] )*
             ///
-            )?
             /// ### Mutable accessor
             ///
             #[doc=concat!("This method access the being-built list `",
@@ -328,6 +327,7 @@ macro_rules! define_list_builder_accessors {
             /// If the field has not yet been set or accessed, the default list will be
             /// constructed and a mutable reference to the now-defaulted list of builders
             /// will be returned.
+            )?
             $vis fn $things(&mut self) -> &mut Vec<$EntryBuilder> {
                 self.$things.access()
             }
@@ -335,7 +335,6 @@ macro_rules! define_list_builder_accessors {
             $( #[ doc= concat!( $fdoc1, " (setter)." ) ]
             $( #[ doc $($fdoc)* ] )*
             ///
-            )?
             /// ### Setter
             ///
             #[doc=concat!("This method replaces the whole being-built list `",
@@ -343,6 +342,7 @@ macro_rules! define_list_builder_accessors {
                           "`.")]
             ///
             /// This overrides the default, and also overrides any previous settings.
+            )?
             $vis fn [<set_ $things>](&mut self, list: Vec<$EntryBuilder>) {
                 *self.$things.access_opt_mut() = Some(list)
             }
@@ -350,7 +350,6 @@ macro_rules! define_list_builder_accessors {
             $( #[ doc= concat!( $fdoc1, " (inspector, `Option`)." ) ]
             $( #[ doc $($fdoc)* ] )*
             ///
-            )?
             /// ### Inspector (default-aware, involving `Option`)
             ///
             #[doc=concat!("This method inspects the being-built list `",
@@ -358,6 +357,7 @@ macro_rules! define_list_builder_accessors {
                           "` (with default unresolved).")]
             ///
             /// If the list has not yet been set, or accessed, `&None` is returned.
+            )?
             $vis fn [<opt_ $things>](&self) -> &Option<Vec<$EntryBuilder>> {
                 self.$things.access_opt()
             }
@@ -365,7 +365,6 @@ macro_rules! define_list_builder_accessors {
             $( #[ doc= concat!( $fdoc1, " (accessor, `Option`)." ) ]
             $( #[ doc $($fdoc)* ] )*
             ///
-            )?
             /// ### Mutable accessor (default-aware, involving `Option`)
             ///
             #[doc=concat!("This method mutably accesses the being-built list `",
@@ -376,6 +375,7 @@ macro_rules! define_list_builder_accessors {
             /// If the list has not yet been set, or accessed, `&mut None` is returned.
             /// Assigning `None` will undo any previous settings and
             /// arrange for the default value to be used when the field value is resolved,
+            )?
             $vis fn [<opt_ $things _mut>](&mut self) -> &mut Option<Vec<$EntryBuilder>> {
                 self.$things.access_opt_mut()
             }
