@@ -133,15 +133,7 @@ pub struct PreemptiveCircuitConfig {
     #[builder(default = "default_preemptive_threshold()")]
     pub(crate) disable_at_threshold: usize,
 
-    /// At startup, which exit ports should we expect that the client will want?
-    ///
-    /// (Over time, new ports are added to the predicted list, in response to
-    /// what the client has actually requested.)
-    ///
-    /// This value cannot be changed on a running Arti client, because doing so
-    /// would be meaningless.
-    ///
-    /// The default is `[80, 443]`.
+    /// See accessor docs
     #[builder(sub_builder, setter(custom))]
     pub(crate) initial_predicted_ports: PredictedPortsList,
 
@@ -220,6 +212,15 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct PreemptiveCircuitConfigBuilder {
+        /// At startup, which exit ports should we expect that the client will want?
+        ///
+        /// (Over time, new ports are added to the predicted list, in response to
+        /// what the client has actually requested.)
+        ///
+        /// This value cannot be changed on a running Arti client, because doing so
+        /// would be meaningless.
+        ///
+        /// The default is `[80, 443]`.
         pub initial_predicted_ports: [u16],
     }
 }
