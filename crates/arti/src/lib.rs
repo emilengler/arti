@@ -257,7 +257,7 @@ pub async fn run<R: Runtime>(
     }
 
     if proxy.is_empty() {
-        warn!("No proxy port set; specify -p PORT (for `sock_port`) or -d PORT (for `dns_port`). Alternatively, use the `socks_port` or `dns_port` configuration option.");
+        warn!("No proxy port set; specify -p PORT (for `socks_port`) or -d PORT (for `dns_port`). Alternatively, use the `socks_port` or `dns_port` configuration option.");
         return Ok(());
     }
 
