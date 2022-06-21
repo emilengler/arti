@@ -59,7 +59,7 @@
 //! #[builder(build_fn(error = "ConfigBuildError"))]
 //! #[builder(derive(Debug, Serialize, Deserialize))]
 //! pub struct Outer {
-//!     /// List of things, being built as part of the configuration
+//!     /// See accessor docs
 //!     #[builder(sub_builder, setter(custom))]
 //!     things: ThingList,
 //! }
@@ -75,6 +75,8 @@
 //!
 //! define_list_builder_helper! {
 //!     pub(crate) struct ThingListBuilder {
+//!         /// List of things
+//!         // Do not put a full stop at the end ^, the macro will provide that
 //!         pub(crate) things: [ThingBuilder],
 //!     }
 //!     built: ThingList = things;
@@ -183,8 +185,8 @@ pub use crate::define_list_builder_helper;
 /// Inline bounds (`T: Debug`) are not supported; use a `where` clause instead.
 /// Due to limitations of `macro_rules`, the parameters must be within `[ ]` rather than `< >`,
 /// and an extraneous pair of `[ ]` must appear around any `$where_clauses`.
-//
 // This difficulty with macro_rules is not well documented.
+//
 // The upstream Rust bug tracker has this issue
 //   https://github.com/rust-lang/rust/issues/73174
 //   Matching function signature is nearly impossible in declarative macros (mbe)
@@ -292,6 +294,13 @@ macro_rules! define_list_builder_helper {
 ///
 /// Each `$EntryBuilder` should have been defined by [`define_list_builder_helper`];
 /// the method bodies from this macro rely on facilities which will beprovided by that macro.
+///
+/// The entire first "paragraph" (summary line) of the docs in the macro argument
+/// should be on the first line
+/// (and should not contain a final full stop).
+/// The macro will provide some additional text about the generated methods.
+/// It is not normally useful to provide substantial docs on the actual field in the struct,
+/// since it won't appear in public rustdoc output.
 ///
 /// You can call `define_list_builder_accessors` once for a particular `$OuterBuilder`,
 /// with any number of fields with possibly different entry (`$EntryBuilder`) types.
