@@ -300,13 +300,14 @@ macro_rules! define_list_builder_accessors {
     {
         struct $OuterBuilder:ty {
             $(
-                $( $( #[ doc $($fdoc:tt)* ] )+ )?
+                $( #[ doc= $fdoc1:tt ] $( #[ doc $($fdoc:tt)* ] )* )?
                 $vis:vis $things:ident: [$EntryBuilder:ty],
             )*
         }
     } => {
         impl $OuterBuilder { $( $crate::paste!{
-            $( $( #[ doc $($fdoc)* ] )+
+            $( #[ doc= concat!( $fdoc1, " (accessor)." ) ]
+            $( #[ doc $($fdoc)* ] )*
             ///
             )?
             /// Access the being-built list (resolving default)
@@ -318,7 +319,8 @@ macro_rules! define_list_builder_accessors {
                 self.$things.access()
             }
 
-            $( $( #[ doc $($fdoc)* ] )+
+            $( #[ doc= concat!( $fdoc1, " (setter)." ) ]
+            $( #[ doc $($fdoc)* ] )*
             ///
             )?
             /// Set the whole list (overriding the default)
@@ -326,7 +328,8 @@ macro_rules! define_list_builder_accessors {
                 *self.$things.access_opt_mut() = Some(list)
             }
 
-            $( $( #[ doc $($fdoc)* ] )+
+            $( #[ doc= concat!( $fdoc1, " (inspector, `Option`)." ) ]
+            $( #[ doc $($fdoc)* ] )*
             ///
             )?
             /// Inspect the being-built list (with default unresolved)
@@ -336,7 +339,8 @@ macro_rules! define_list_builder_accessors {
                 self.$things.access_opt()
             }
 
-            $( $( #[ doc $($fdoc)* ] )+
+            $( #[ doc= concat!( $fdoc1, " (accessor, `Option`)." ) ]
+            $( #[ doc $($fdoc)* ] )*
             ///
             )?
             /// Mutably access the being-built list (with default unresolved)

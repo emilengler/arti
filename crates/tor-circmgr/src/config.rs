@@ -68,7 +68,7 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct PathConfigBuilder {
-        /// The set of addresses to which we're willing to make direct connections.
+        /// The set of addresses to which we're willing to make direct connections
         pub reachable_addrs: [AddrPortPattern],
     }
 }
