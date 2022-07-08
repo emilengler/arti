@@ -1360,9 +1360,7 @@ pub struct GuardUsage {
     /// The purpose for which this guard will be used.
     #[builder(default)]
     kind: GuardUsageKind,
-    /// A list of restrictions on which guard may be used.
-    ///
-    /// The default is the empty list.
+    /// See accessor docs
     #[builder(sub_builder, setter(custom))]
     restrictions: GuardRestrictionList,
 }
@@ -1383,6 +1381,9 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct GuardUsageBuilder {
+        /// A list of restrictions on which guard may be used
+        ///
+        /// The default is the empty list.
         pub restrictions: [GuardRestriction],
     }
 }

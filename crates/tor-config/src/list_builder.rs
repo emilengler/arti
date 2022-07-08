@@ -59,7 +59,7 @@
 //! #[builder(build_fn(error = "ConfigBuildError"))]
 //! #[builder(derive(Debug, Serialize, Deserialize))]
 //! pub struct Outer {
-//!     /// List of things, being built as part of the configuration
+//!     /// See accessor docs
 //!     #[builder(sub_builder, setter(custom))]
 //!     things: ThingList,
 //! }
@@ -75,6 +75,8 @@
 //!
 //! define_list_builder_helper! {
 //!     pub(crate) struct ThingListBuilder {
+//!         /// List of things
+//!         // Do not put a full stop at the end ^, the macro will provide that
 //!         pub(crate) things: [ThingBuilder],
 //!     }
 //!     built: ThingList = things;
@@ -183,8 +185,8 @@ pub use crate::define_list_builder_helper;
 /// Inline bounds (`T: Debug`) are not supported; use a `where` clause instead.
 /// Due to limitations of `macro_rules`, the parameters must be within `[ ]` rather than `< >`,
 /// and an extraneous pair of `[ ]` must appear around any `$where_clauses`.
-//
 // This difficulty with macro_rules is not well documented.
+//
 // The upstream Rust bug tracker has this issue
 //   https://github.com/rust-lang/rust/issues/73174
 //   Matching function signature is nearly impossible in declarative macros (mbe)
@@ -293,6 +295,13 @@ macro_rules! define_list_builder_helper {
 /// Each `$EntryBuilder` should have been defined by [`define_list_builder_helper`];
 /// the method bodies from this macro rely on facilities which will beprovided by that macro.
 ///
+/// The entire first "paragraph" (summary line) of the docs in the macro argument
+/// should be on the first line
+/// (and should not contain a final full stop).
+/// The macro will provide some additional text about the generated methods.
+/// It is not normally useful to provide substantial docs on the actual field in the struct,
+/// since it won't appear in public rustdoc output.
+///
 /// You can call `define_list_builder_accessors` once for a particular `$OuterBuilder`,
 /// with any number of fields with possibly different entry (`$EntryBuilder`) types.
 #[macro_export]
@@ -300,35 +309,73 @@ macro_rules! define_list_builder_accessors {
     {
         struct $OuterBuilder:ty {
             $(
+                $( #[ doc= $fdoc1:tt ] $( #[ doc $($fdoc:tt)* ] )* )?
                 $vis:vis $things:ident: [$EntryBuilder:ty],
             )*
         }
     } => {
         impl $OuterBuilder { $( $crate::paste!{
-            /// Access the being-built list (resolving default)
+            $( #[ doc= concat!( $fdoc1, " (accessor)." ) ]
+            $( #[ doc $($fdoc)* ] )*
+            ///
+            /// ### Mutable accessor
+            ///
+            #[doc=concat!("This method access the being-built list `",
+                          stringify!($things),
+                          "` (resolving the default first).")]
             ///
             /// If the field has not yet been set or accessed, the default list will be
             /// constructed and a mutable reference to the now-defaulted list of builders
             /// will be returned.
+            )?
             $vis fn $things(&mut self) -> &mut Vec<$EntryBuilder> {
                 self.$things.access()
             }
 
-            /// Set the whole list (overriding the default)
+            $( #[ doc= concat!( $fdoc1, " (setter)." ) ]
+            $( #[ doc $($fdoc)* ] )*
+            ///
+            /// ### Setter
+            ///
+            #[doc=concat!("This method replaces the whole being-built list `",
+                          stringify!($things),
+                          "`.")]
+            ///
+            /// This overrides the default, and also overrides any previous settings.
+            )?
             $vis fn [<set_ $things>](&mut self, list: Vec<$EntryBuilder>) {
                 *self.$things.access_opt_mut() = Some(list)
             }
 
-            /// Inspect the being-built list (with default unresolved)
+            $( #[ doc= concat!( $fdoc1, " (inspector, `Option`)." ) ]
+            $( #[ doc $($fdoc)* ] )*
+            ///
+            /// ### Inspector (default-aware, involving `Option`)
+            ///
+            #[doc=concat!("This method inspects the being-built list `",
+                          stringify!($things),
+                          "` (with default unresolved).")]
             ///
             /// If the list has not yet been set, or accessed, `&None` is returned.
+            )?
             $vis fn [<opt_ $things>](&self) -> &Option<Vec<$EntryBuilder>> {
                 self.$things.access_opt()
             }
 
-            /// Mutably access the being-built list (with default unresolved)
+            $( #[ doc= concat!( $fdoc1, " (accessor, `Option`)." ) ]
+            $( #[ doc $($fdoc)* ] )*
             ///
+            /// ### Mutable accessor (default-aware, involving `Option`)
+            ///
+            #[doc=concat!("This method mutably accesses the being-built list `",
+                          stringify!($things),
+                          "` (with default unresolved).")]
+            ///
+            /// `None` represents the use of the default value:
             /// If the list has not yet been set, or accessed, `&mut None` is returned.
+            /// Assigning `None` will undo any previous settings and
+            /// arrange for the default value to be used when the field value is resolved,
+            )?
             $vis fn [<opt_ $things _mut>](&mut self) -> &mut Option<Vec<$EntryBuilder>> {
                 self.$things.access_opt_mut()
             }
