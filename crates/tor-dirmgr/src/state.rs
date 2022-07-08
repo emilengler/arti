@@ -1291,9 +1291,9 @@ mod test {
 
     fn make_dirmgr_config(authorities: Option<Vec<AuthorityBuilder>>) -> Arc<DirMgrConfig> {
         let mut netcfg = crate::NetworkConfig::builder();
-        netcfg.set_fallback_caches(vec![]);
+        *netcfg.fallback_caches_mut() = Some(vec![]);
         if let Some(a) = authorities {
-            netcfg.set_authorities(a);
+            *netcfg.authorities_mut() = Some(a);
         }
         let cfg = DirMgrConfig {
             cache_path: "/we_will_never_use_this/".into(),

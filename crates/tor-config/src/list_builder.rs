@@ -64,8 +64,10 @@
 //!     things: ThingList,
 //! }
 //!
+//! // Note: doc comments are needed for the macro to work.
 //! define_list_builder_accessors! {
 //!     struct OuterBuilder {
+//!         /// List of values, being built as part of the configuration
 //!         pub things: [ThingBuilder],
 //!     }
 //! }
@@ -82,10 +84,10 @@
 //! }
 //!
 //! let mut builder = OuterBuilder::default();
-//! builder.things().push(ThingBuilder::default().value(42).clone());
+//! builder.things_or_insert_default().push(ThingBuilder::default().value(42).clone());
 //! assert_eq!{ builder.build().unwrap().things, &[Thing { value: 42 }] }
 //!
-//! builder.set_things(vec![ThingBuilder::default().value(38).clone()]);
+//! *builder.things_mut() = Some(vec![ThingBuilder::default().value(38).clone()]);
 //! assert_eq!{ builder.build().unwrap().things, &[Thing { value: 38 }] }
 //! ```
 //!
@@ -107,6 +109,7 @@
 //!
 //! define_list_builder_accessors! {
 //!    struct OuterBuilder {
+//!        /// List of values, being built as part of the configuration
 //!        pub values: [u32],
 //!    }
 //! }
@@ -126,7 +129,7 @@
 //! let mut builder = OuterBuilder::default();
 //! assert_eq!{ builder.build().unwrap().values, &[27] }
 //!
-//! builder.values().push(12);
+//! builder.values_or_insert_default().push(12);
 //! assert_eq!{ builder.build().unwrap().values, &[27, 12] }
 //! ```
 
@@ -262,14 +265,14 @@ macro_rules! define_list_builder_helper {
                 self.$things.get_or_insert_with(Self::default_list)
             }
 
-            /// Resolve the list to the default if necessary and then return `&mut Vec`
-            $vis fn access_opt(&self) -> &Option<Vec<$EntryBuilder>> {
-                &self.$things
-            }
-
-            /// Resolve the list to the default if necessary and then return `&mut Vec`
+            /// Return the list mutably
             $vis fn access_opt_mut(&mut self) -> &mut Option<Vec<$EntryBuilder>> {
                 &mut self.$things
+            }
+
+            /// Return the list immutably
+            $vis fn access_opt_ref(&self) -> &Option<Vec<$EntryBuilder>> {
+                &self.$things
             }
         }
     }
@@ -283,10 +286,8 @@ macro_rules! define_list_builder_helper {
 ///
 /// ```skip
 /// impl $OuterBuilder {
-///     pub fn $things(&mut self) -> &mut Vec<$EntryBuilder> { .. }
-///     pub fn set_$things(&mut self, list: Vec<$EntryBuilder>) { .. }
-///     pub fn opt_$things(&self) -> &Option<Vec<$EntryBuilder>> { .. }
-///     pub fn opt_$things_mut>](&mut self) -> &mut Option<Vec<$EntryBuilder>> { .. }
+///     pub fn $things_mut(&mut self) -> &mut Option<Vec<$EntryBuilder>> { .. }
+///     pub fn $things_or_insert_default(&mut self) -> &mut Vec<$EntryBuilder> { .. }
 /// }
 /// ```
 ///
@@ -295,8 +296,38 @@ macro_rules! define_list_builder_helper {
 ///
 /// You can call `define_list_builder_accessors` once for a particular `$OuterBuilder`,
 /// with any number of fields with possibly different entry (`$EntryBuilder`) types.
+///
+/// ## Documentation
+///
+/// You **must** provide doc comments for each field inside the macro invocation. The doc comment
+/// you provide should be a **single line of comments** with no capitalization or punctuation at the end.
+/// This will get copied into part of the generated documentation.
+///
+/// For example, a comment of "*list of wombat frobnicators*" would result in a generated comment
+/// like "Modify the `wombat_frobnicators` value ("*list of wombat frobnicators*")."
+///
+/// The following example fails to compile because it doesn't have any documentation:
+///
+/// ```compile_fail
+/// #[derive(Builder, Debug, Eq, PartialEq)]
+/// #[builder(build_fn(error = "ConfigBuildError"))]
+/// #[builder(derive(Debug, Serialize, Deserialize))]
+/// pub struct Outer {
+///     /// List of things, being built as part of the configuration
+///     #[builder(sub_builder, setter(custom))]
+///     things: ThingList,
+/// }
+///
+/// define_list_builder_accessors! {
+///     struct OuterBuilder {
+///         pub things: [ThingBuilder],
+///     }
+/// }
+/// ```
 #[macro_export]
 macro_rules! define_list_builder_accessors {
+    // Add a more user-friendly error message for failure to match because of no documentation.
+    // (If you don't have this, you just get "no rules expected the token `pub`" or similar.)
     {
         struct $OuterBuilder:ty {
             $(
@@ -304,33 +335,34 @@ macro_rules! define_list_builder_accessors {
             )*
         }
     } => {
+        compile_error!(concat!("Builder `", stringify!($OuterBuilder), "` does not have conforming documentation for all list fields (in invocation of `define_list_builder_accessors!`)."));
+    };
+    {
+        struct $OuterBuilder:ty {
+            $(
+                #[doc = $doc:expr]
+                $vis:vis $things:ident: [$EntryBuilder:ty],
+            )*
+        }
+    } => {
         impl $OuterBuilder { $( $crate::paste!{
-            /// Access the being-built list (resolving default)
+            #[doc = concat!("Return a mutable reference to `", stringify!($things), "` (", $doc, ").")]
             ///
-            /// If the field has not yet been set or accessed, the default list will be
-            /// constructed and a mutable reference to the now-defaulted list of builders
-            /// will be returned.
-            $vis fn $things(&mut self) -> &mut Vec<$EntryBuilder> {
+            /// If this field is left as `None`, a default value will be used when the builder is constructed.
+            $vis fn [<$things _mut>](&mut self) -> &mut Option<Vec<$EntryBuilder>> {
+                self.$things.access_opt_mut()
+            }
+            #[doc = concat!("Ensure a value exists for `", stringify!($things), "`, and return a mutable reference to that value.")]
+            ///
+            /// If the field is `None`, it is created with its default value first.
+            $vis fn [<$things _or_insert_default>](&mut self) -> &mut Vec<$EntryBuilder> {
                 self.$things.access()
             }
-
-            /// Set the whole list (overriding the default)
-            $vis fn [<set_ $things>](&mut self, list: Vec<$EntryBuilder>) {
-                *self.$things.access_opt_mut() = Some(list)
-            }
-
-            /// Inspect the being-built list (with default unresolved)
+            #[doc = concat!("Return an immutable reference to `", stringify!($things), "` (", $doc, ").")]
             ///
-            /// If the list has not yet been set, or accessed, `&None` is returned.
-            $vis fn [<opt_ $things>](&self) -> &Option<Vec<$EntryBuilder>> {
-                self.$things.access_opt()
-            }
-
-            /// Mutably access the being-built list (with default unresolved)
-            ///
-            /// If the list has not yet been set, or accessed, `&mut None` is returned.
-            $vis fn [<opt_ $things _mut>](&mut self) -> &mut Option<Vec<$EntryBuilder>> {
-                self.$things.access_opt_mut()
+            /// If this field is left as `None`, a default value will be used when the builder is constructed.
+            $vis fn [<$things _ref>](&self) -> &Option<Vec<$EntryBuilder>> {
+                self.$things.access_opt_ref()
             }
         } )* }
     }
@@ -360,12 +392,13 @@ define_list_builder_helper! {
     ///
     /// define_list_builder_accessors! {
     ///     struct FallbackDirBuilder {
+    ///         /// documentation
     ///         pub orports: [SocketAddr],
     ///     }
     /// }
     ///
     /// let mut bld = FallbackDirBuilder::default();
-    /// bld.orports().push("[2001:db8:0::42]:12".parse().unwrap());
+    /// bld.orports_or_insert_default().push("[2001:db8:0::42]:12".parse().unwrap());
     /// assert_eq!( bld.build().unwrap().orports[0].to_string(),
     ///             "[2001:db8::42]:12" );
     /// ```
@@ -393,6 +426,7 @@ mod test {
 
         define_list_builder_accessors! {
             struct OuterBuilder {
+                /// documentation
                 list: [char],
             }
         }
@@ -409,20 +443,20 @@ mod test {
         }
 
         let mut b = OuterBuilder::default();
-        assert!(b.opt_list().is_none());
+        assert!(b.list_ref().is_none());
         assert_eq! { (&b).build().expect("build failed").list, ['a'] };
 
-        b.list().push('b');
-        assert!(b.opt_list().is_some());
+        b.list_or_insert_default().push('b');
+        assert!(b.list_ref().is_some());
         assert_eq! { (&b).build().expect("build failed").list, ['a', 'b'] };
 
         for mut b in [b.clone(), OuterBuilder::default()] {
-            b.set_list(vec!['x', 'y']);
-            assert!(b.opt_list().is_some());
+            *b.list_or_insert_default() = vec!['x', 'y'];
+            assert!(b.list_ref().is_some());
             assert_eq! { (&b).build().expect("build failed").list, ['x', 'y'] };
         }
 
-        *b.opt_list_mut() = None;
+        *b.list_mut() = None;
         assert_eq! { (&b).build().expect("build failed").list, ['a'] };
     }
 

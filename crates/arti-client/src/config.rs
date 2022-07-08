@@ -404,12 +404,12 @@ mod test {
         fallback
             .rsa_identity([23; 20].into())
             .ed_identity([99; 32].into())
-            .orports()
+            .orports_or_insert_default()
             .push("127.0.0.7:7".parse().unwrap());
 
         let mut bld = TorClientConfig::builder();
-        bld.tor_network().set_authorities(vec![auth]);
-        bld.tor_network().set_fallback_caches(vec![fallback]);
+        *bld.tor_network().authorities_mut() = Some(vec![auth]);
+        *bld.tor_network().fallback_caches_mut() = Some(vec![fallback]);
         bld.storage()
             .cache_dir(CfgPath::new("/var/tmp/foo".to_owned()))
             .state_dir(CfgPath::new("/var/tmp/bar".to_owned()));

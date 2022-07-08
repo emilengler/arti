@@ -166,7 +166,7 @@ impl<'a> ExitPathBuilder<'a> {
                     family.insert(*exit_relay.id());
                     // TODO(nickm): See "limitations" note on `known_family_members`.
                     family.extend(netdir.known_family_members(exit_relay).map(|r| *r.id()));
-                    b.restrictions()
+                    b.restrictions_or_insert_default()
                         .push(tor_guardmgr::GuardRestriction::AvoidAllIds(family));
                 }
                 let guard_usage = b.build().expect("Failed while building guard usage!");

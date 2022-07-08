@@ -66,7 +66,9 @@ impl_standard_builder! { NetworkConfig }
 
 define_list_builder_accessors! {
     struct NetworkConfigBuilder {
+        /// list of locations to look in when downloading directory information, if we don't have a directory yet
         pub fallback_caches: [FallbackDirBuilder],
+        /// list of directory authorities which we expect to sign consensus documents
         pub authorities: [AuthorityBuilder],
     }
 }
@@ -81,7 +83,7 @@ impl NetworkConfig {
 impl NetworkConfigBuilder {
     /// Check that this builder will give a reasonable network.
     fn validate(&self) -> std::result::Result<(), ConfigBuildError> {
-        if self.opt_authorities().is_some() && self.opt_fallback_caches().is_none() {
+        if self.authorities_ref().is_some() && self.fallback_caches_ref().is_none() {
             return Err(ConfigBuildError::Inconsistent {
                 fields: vec!["authorities".to_owned(), "fallbacks".to_owned()],
                 problem: "Non-default authorities are use, but the fallback list is not overridden"
@@ -354,7 +356,7 @@ mod test {
 
         // with any authorities set, the fallback list _must_ be set
         // or the build fails.
-        bld.set_authorities(vec![
+        *bld.authorities_mut() = Some(vec![
             Authority::builder()
                 .name("Hello")
                 .v3ident([b'?'; 20].into())
@@ -366,12 +368,14 @@ mod test {
         ]);
         assert!(bld.build().is_err());
 
-        bld.set_fallback_caches(vec![{
+        *bld.fallback_caches_mut() = Some(vec![{
             let mut bld = FallbackDir::builder();
             bld.rsa_identity([b'x'; 20].into())
                 .ed_identity([b'y'; 32].into());
-            bld.orports().push("127.0.0.1:99".parse().unwrap());
-            bld.orports().push("[::]:99".parse().unwrap());
+            bld.orports_or_insert_default()
+                .push("127.0.0.1:99".parse().unwrap());
+            bld.orports_or_insert_default()
+                .push("[::]:99".parse().unwrap());
             bld
         }]);
         let cfg = bld.build().unwrap();

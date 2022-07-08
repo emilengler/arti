@@ -50,6 +50,7 @@ impl_standard_builder! { FallbackDir: !Default }
 
 define_list_builder_accessors! {
     struct FallbackDirBuilder {
+        /// list of ORPorts for the directory relay
         pub orports: [SocketAddr],
     }
 }
@@ -106,7 +107,7 @@ pub(crate) fn default_fallbacks() -> Vec<FallbackDirBuilder> {
             .iter()
             .map(|s| s.parse().expect("Bad socket address in fallbacklist"))
             .for_each(|p| {
-                bld.orports().push(p);
+                bld.orports_or_insert_default().push(p);
             });
 
         bld

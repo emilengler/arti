@@ -126,7 +126,7 @@ mod test {
                 let mut bld = FallbackDir::builder();
                 bld.rsa_identity([0x01; 20].into())
                     .ed_identity([0x01; 32].into())
-                    .orports()
+                    .orports_or_insert_default()
                     .push("127.0.0.1:9000".parse().unwrap());
                 bld.build().unwrap()
             },
@@ -134,7 +134,7 @@ mod test {
                 let mut bld = FallbackDir::builder();
                 bld.rsa_identity([0x03; 20].into())
                     .ed_identity([0x03; 32].into())
-                    .orports()
+                    .orports_or_insert_default()
                     .push("127.0.0.1:9003".parse().unwrap());
                 bld.build().unwrap()
             },

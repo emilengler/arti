@@ -254,7 +254,7 @@ mod test {
         let mut bld = FallbackDir::builder();
         bld.ed_identity(ed.into())
             .rsa_identity(rsa.into())
-            .orports()
+            .orports_or_insert_default()
             .push(std::net::SocketAddrV4::new(ip.into(), 9090).into());
         bld.build().unwrap()
     }

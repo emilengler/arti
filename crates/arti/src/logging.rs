@@ -78,6 +78,7 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct LoggingConfigBuilder {
+        /// list of files to log to
         pub files: [LogfileConfigBuilder],
     }
 }
