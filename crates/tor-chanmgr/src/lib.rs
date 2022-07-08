@@ -58,26 +58,15 @@ mod mgr;
 #[cfg(test)]
 mod testing;
 
-use futures::select_biased;
-use futures::task::SpawnExt;
-use futures::StreamExt;
-use std::sync::{Arc, Weak};
-use std::time::Duration;
-use tor_linkspec::{ChanTarget, OwnedChanTarget};
-use tor_netdir::NetDirProvider;
-use tor_proto::channel::Channel;
-use tracing::{debug, error};
-use void::{ResultVoidErrExt, Void};
+mod prelude;
+
+use crate::prelude::*;
 
 pub use err::Error;
-
-use tor_rtcompat::Runtime;
+pub use event::{ConnBlockage, ConnStatus, ConnStatusEvents};
 
 /// A Result as returned by this crate.
 pub type Result<T> = std::result::Result<T, Error>;
-
-pub use event::{ConnBlockage, ConnStatus, ConnStatusEvents};
-use tor_rtcompat::scheduler::{TaskHandle, TaskSchedule};
 
 /// A Type that remembers a set of live channels, and launches new
 /// ones on request.

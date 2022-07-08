@@ -1,19 +1,8 @@
 //! Simple implementation for the internal map state of a ChanMgr.
 
-use std::time::Duration;
+use crate::prelude::*;
 
-use super::{AbstractChannel, Pending};
-use crate::{Error, Result};
-
-use std::collections::{hash_map, HashMap};
-use std::result::Result as StdResult;
-use std::sync::Arc;
-use tor_error::{internal, into_internal};
-use tor_netdir::{params::CHANNEL_PADDING_TIMEOUT_UPPER_BOUND, NetDir};
-use tor_proto::channel::padding::ParametersBuilder as PaddingParametersBuilder;
-use tor_proto::ChannelsParams;
-use tor_units::BoundedInt32;
-use tracing::info;
+use super::Pending;
 
 /// A map from channel id to channel state, plus necessary auxiliary state
 ///

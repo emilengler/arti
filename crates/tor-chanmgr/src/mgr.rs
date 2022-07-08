@@ -1,20 +1,9 @@
 //! Abstract implementation of a channel manager
 
-use crate::mgr::map::OpenEntry;
-use crate::{ChanProvenance, Error, Result};
-
-use async_trait::async_trait;
-use futures::channel::oneshot;
-use futures::future::{FutureExt, Shared};
-use rand::Rng;
-use std::hash::Hash;
-use std::result::Result as StdResult;
-use std::sync::Arc;
-use std::time::Duration;
-use tor_error::internal;
-use tor_proto::channel::params::ChannelsParamsUpdates;
+use crate::prelude::*;
 
 mod map;
+use map::OpenEntry;
 
 /// Trait to describe as much of a
 /// [`Channel`](tor_proto::channel::Channel) as `AbstractChanMgr`
