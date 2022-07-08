@@ -68,6 +68,7 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct PathConfigBuilder {
+        /// the set of addresses to which we're willing to make direct connections
         pub reachable_addrs: [AddrPortPattern],
     }
 }
@@ -219,6 +220,7 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct PreemptiveCircuitConfigBuilder {
+        /// the list of ports to initially predict as wanted on startup
         pub initial_predicted_ports: [u16],
     }
 }

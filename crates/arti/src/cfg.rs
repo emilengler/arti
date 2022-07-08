@@ -203,7 +203,7 @@ mod test {
         fallback
             .rsa_identity([23; 20].into())
             .ed_identity([99; 32].into())
-            .orports()
+            .orports_or_insert_default()
             .push("127.0.0.7:7".parse().unwrap());
 
         let mut bld = ArtiConfig::builder();
@@ -212,8 +212,8 @@ mod test {
         bld.proxy().socks_port(Some(9999));
         bld.logging().console("warn");
 
-        bld_tor.tor_network().set_authorities(vec![auth]);
-        bld_tor.tor_network().set_fallback_caches(vec![fallback]);
+        *bld_tor.tor_network().authorities_mut() = Some(vec![auth]);
+        *bld_tor.tor_network().fallback_caches_mut() = Some(vec![fallback]);
         bld_tor
             .storage()
             .cache_dir(CfgPath::new("/var/tmp/foo".to_owned()))
@@ -238,9 +238,7 @@ mod test {
             .ipv4_subnet_family_prefix(20)
             .ipv6_subnet_family_prefix(48);
         bld_tor.preemptive_circuits().disable_at_threshold(12);
-        bld_tor
-            .preemptive_circuits()
-            .set_initial_predicted_ports(vec![80, 443]);
+        *bld_tor.preemptive_circuits().initial_predicted_ports_mut() = Some(vec![80, 443]);
         bld_tor
             .preemptive_circuits()
             .prediction_lifetime(Duration::from_secs(3600))

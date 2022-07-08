@@ -816,34 +816,38 @@ mod test {
         use crate::GuardUsageBuilder;
         let mut usage1 = GuardUsageBuilder::new();
         usage1
-            .restrictions()
+            .restrictions_or_insert_default()
             .push(GuardRestriction::AvoidId([22; 32].into()));
         let usage1 = usage1.build().unwrap();
         let mut usage2 = GuardUsageBuilder::new();
         usage2
-            .restrictions()
+            .restrictions_or_insert_default()
             .push(GuardRestriction::AvoidId([13; 32].into()));
         let usage2 = usage2.build().unwrap();
         let usage3 = GuardUsage::default();
         let mut usage4 = GuardUsageBuilder::new();
         usage4
-            .restrictions()
+            .restrictions_or_insert_default()
             .push(GuardRestriction::AvoidId([22; 32].into()));
         usage4
-            .restrictions()
+            .restrictions_or_insert_default()
             .push(GuardRestriction::AvoidId([13; 32].into()));
         let usage4 = usage4.build().unwrap();
         let mut usage5 = GuardUsageBuilder::new();
-        usage5.restrictions().push(GuardRestriction::AvoidAllIds(
-            vec![[22; 32].into(), [13; 32].into()].into_iter().collect(),
-        ));
+        usage5
+            .restrictions_or_insert_default()
+            .push(GuardRestriction::AvoidAllIds(
+                vec![[22; 32].into(), [13; 32].into()].into_iter().collect(),
+            ));
         let usage5 = usage5.build().unwrap();
         let mut usage6 = GuardUsageBuilder::new();
-        usage6.restrictions().push(GuardRestriction::AvoidAllIds(
-            vec![[99; 32].into(), [100; 32].into()]
-                .into_iter()
-                .collect(),
-        ));
+        usage6
+            .restrictions_or_insert_default()
+            .push(GuardRestriction::AvoidAllIds(
+                vec![[99; 32].into(), [100; 32].into()]
+                    .into_iter()
+                    .collect(),
+            ));
         let usage6 = usage6.build().unwrap();
 
         assert!(g.conforms_to_usage(&usage1));

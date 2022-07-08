@@ -1383,6 +1383,7 @@ define_list_builder_helper! {
 
 define_list_builder_accessors! {
     struct GuardUsageBuilder {
+        /// list of restrictions on which guard may be used
         pub restrictions: [GuardRestriction],
     }
 }
