@@ -462,9 +462,11 @@ impl Relay {
     {
         let body = body.as_ref();
         let mut r = [0_u8; CELL_DATA_LEN];
-        // TODO: This will panic if body is too long, but that would be a
-        // programming error anyway.
-        r[..body.len()].copy_from_slice(body);
+        if body.len() <= CELL_DATA_LEN {
+            r[..body.len()].copy_from_slice(body);
+        } else {
+            r[..CELL_DATA_LEN].copy_from_slice(&body[..CELL_DATA_LEN]);
+        }
         Relay { body: Box::new(r) }
     }
     /// Construct a Relay message from its body.
