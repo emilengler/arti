@@ -3718,6 +3718,7 @@ name = "tor-linkspec"
 version = "0.3.2"
 dependencies = [
  "hex-literal",
+ "serde",
  "tor-bytes",
  "tor-llcrypto",
  "tor-protover",

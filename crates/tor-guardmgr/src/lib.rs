@@ -575,10 +575,11 @@ impl<R: Runtime> GuardMgr<R> {
     /// in `external_failure` went wrong with it.
     pub fn note_external_failure(
         &self,
-        ed_identity: &pk::ed25519::Ed25519Identity,
-        rsa_identity: &pk::rsa::RsaIdentity,
+        identity: &impl tor_linkspec::HasRelayIds,
         external_failure: ExternalActivity,
     ) {
+        let ed_identity = identity.ed_identity();
+        let rsa_identity = identity.rsa_identity();
         let now = self.runtime.now();
         let mut inner = self.inner.lock().expect("Poisoned lock");
         let ids = inner.lookup_ids(ed_identity, rsa_identity);
@@ -604,10 +605,12 @@ impl<R: Runtime> GuardMgr<R> {
     /// described in `external_activity` was successful with it.
     pub fn note_external_success(
         &self,
-        ed_identity: &pk::ed25519::Ed25519Identity,
-        rsa_identity: &pk::rsa::RsaIdentity,
+        identity: &impl tor_linkspec::HasRelayIds,
         external_activity: ExternalActivity,
     ) {
+        let ed_identity = identity.ed_identity();
+        let rsa_identity = identity.rsa_identity();
+
         let mut inner = self.inner.lock().expect("Poisoned lock");
 
         inner.record_external_success(
@@ -1318,18 +1321,21 @@ impl FirstHop {
     }
 }
 
-// This is somewhat redundant with the implementation in crate::guard::Guard.
-impl tor_linkspec::ChanTarget for FirstHop {
+// This is somewhat redundant with the implementations in crate::guard::Guard.
+impl tor_linkspec::HasAddrs for FirstHop {
     fn addrs(&self) -> &[SocketAddr] {
         &self.orports[..]
     }
+}
+impl tor_linkspec::HasRelayIds for FirstHop {
     fn ed_identity(&self) -> &pk::ed25519::Ed25519Identity {
-        &self.id.as_ref().ed25519
+        self.id.ed_identity()
     }
     fn rsa_identity(&self) -> &pk::rsa::RsaIdentity {
-        &self.id.as_ref().rsa
+        self.id.rsa_identity()
     }
 }
+impl tor_linkspec::ChanTarget for FirstHop {}
 
 /// The purpose for which we plan to use a guard.
 ///
@@ -1414,6 +1420,7 @@ pub enum GuardRestriction {
 mod test {
     #![allow(clippy::unwrap_used)]
     use super::*;
+    use tor_linkspec::{HasAddrs, HasRelayIds};
     use tor_persist::TestingStateMgr;
     use tor_rtcompat::test_with_all_runtimes;
 
@@ -1536,8 +1543,6 @@ mod test {
     #[test]
     fn filtering_basics() {
         test_with_all_runtimes!(|rt| async move {
-            use tor_linkspec::ChanTarget;
-
             let (guardmgr, _statemgr, netdir) = init(rt);
             let u = GuardUsage::default();
             let filter = {
@@ -1558,7 +1563,6 @@ mod test {
 
     #[test]
     fn external_status() {
-        use tor_linkspec::ChanTarget;
         test_with_all_runtimes!(|rt| async move {
             let (guardmgr, _statemgr, netdir) = init(rt);
             let data_usage = GuardUsage::default();
@@ -1579,11 +1583,7 @@ mod test {
             mon.succeeded();
 
             // Record that this guard gave us a bad directory object.
-            guardmgr.note_external_failure(
-                guard.ed_identity(),
-                guard.rsa_identity(),
-                ExternalActivity::DirCache,
-            );
+            guardmgr.note_external_failure(&guard, ExternalActivity::DirCache);
 
             // We ask for another guard, for data usage.  We should get the same
             // one as last time, since the director failure doesn't mean this
@@ -1601,11 +1601,7 @@ mod test {
             mon.succeeded();
 
             // Now record a success for for directory usage.
-            guardmgr.note_external_success(
-                guard.ed_identity(),
-                guard.rsa_identity(),
-                ExternalActivity::DirCache,
-            );
+            guardmgr.note_external_success(&guard, ExternalActivity::DirCache);
 
             // Now that the guard is working as a cache, asking for it should get us the same guard.
             let (g4, _mon, _usable) = guardmgr.select_guard(dir_usage, Some(&netdir)).unwrap();
