@@ -68,7 +68,7 @@ mod weight;
 #[cfg(any(test, feature = "testing"))]
 pub mod testnet;
 
-use tor_linkspec::ChanTarget;
+use tor_linkspec::{ChanTarget, HasAddrs, HasRelayIds};
 use tor_llcrypto as ll;
 use tor_llcrypto::pk::{ed25519::Ed25519Identity, rsa::RsaIdentity};
 use tor_netdoc::doc::microdesc::{MdDigest, Microdesc};
@@ -630,6 +630,17 @@ impl NetDir {
         Some(relay)
     }
 
+    /// Return a relay with the same identities as those in `target`, if one
+    /// exists.
+    ///
+    /// Does not return unusable relays.
+    pub fn by_ids<T>(&self, target: &T) -> Option<Relay<'_>>
+    where
+        T: HasRelayIds + ?Sized,
+    {
+        self.by_id_pair(target.ed_identity(), target.rsa_identity())
+    }
+
     /// Return a relay matching a given Ed25519 identity and RSA identity,
     /// if we have a usable relay with _both_ keys.
     ///
@@ -646,7 +657,7 @@ impl NetDir {
     ///
     /// (Does not return unusable relays.)
     pub fn by_chantarget(&self, chan_target: &impl tor_linkspec::ChanTarget) -> Option<Relay<'_>> {
-        self.by_id_pair(chan_target.ed_identity(), chan_target.rsa_identity())
+        self.by_ids(chan_target)
     }
 
     /// Return a boolean if this consensus definitely has (or does not
@@ -674,6 +685,15 @@ impl NetDir {
                 Some(false)
             }
         }
+    }
+
+    /// As `id_pair_listed`, but check whether a relay exists (or may exist)
+    /// with the same identities as those in `target`.
+    pub fn ids_listed<T>(&self, target: &T) -> Option<bool>
+    where
+        T: HasRelayIds + ?Sized,
+    {
+        self.id_pair_listed(target.ed_identity(), target.rsa_identity())
     }
 
     /// Return true if we are currently missing a micro descriptor for the
@@ -1112,10 +1132,12 @@ impl<'a> Relay<'a> {
     }
 }
 
-impl<'a> ChanTarget for Relay<'a> {
+impl<'a> HasAddrs for Relay<'a> {
     fn addrs(&self) -> &[std::net::SocketAddr] {
         self.rs.addrs()
     }
+}
+impl<'a> HasRelayIds for Relay<'a> {
     fn ed_identity(&self) -> &Ed25519Identity {
         self.id()
     }
@@ -1123,6 +1145,8 @@ impl<'a> ChanTarget for Relay<'a> {
         self.rsa_id()
     }
 }
+
+impl<'a> ChanTarget for Relay<'a> {}
 
 impl<'a> tor_linkspec::CircTarget for Relay<'a> {
     fn ntor_onion_key(&self) -> &ll::pk::curve25519::PublicKey {

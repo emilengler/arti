@@ -1,31 +1,93 @@
 //! Declare traits to be implemented by types that describe a place
 //! that Tor can connect to, directly or indirectly.
 
-use std::net::SocketAddr;
+use std::{iter::FusedIterator, net::SocketAddr};
 use tor_llcrypto::pk;
 
-/// Information about a Tor relay used to connect to it.
-///
-/// Anything that implements 'ChanTarget' can be used as the
-/// identity of a relay for the purposes of launching a new
-/// channel.
-pub trait ChanTarget {
-    /// Return the addresses at which you can connect to this relay
-    // TODO: This is a questionable API. I'd rather return an iterator
-    // of addresses or references to addresses, but both of those options
-    // make defining the right associated types rather tricky.
-    fn addrs(&self) -> &[SocketAddr];
+use crate::{RelayIdRef, RelayIdType};
+
+/// An object containing information about a relay's identity keys.
+pub trait HasRelayIds {
+    /// Return the identity of this relay whose type is `key_type`, or None if
+    /// the relay has no such identity.
+    ///
+    /// (Currently all relays have all recognized identity types, but we might
+    /// implement or deprecate an identity type in the future.)
+    fn identity(&self, key_type: RelayIdType) -> Option<RelayIdRef<'_>> {
+        match key_type {
+            RelayIdType::Rsa => Some(self.rsa_identity().into()),
+            RelayIdType::Ed25519 => Some(self.ed_identity().into()),
+        }
+    }
+    /// Return an iterator over all of the identities held by this object.
+    fn identities(&self) -> RelayIdIter<'_, Self> {
+        RelayIdIter {
+            info: self,
+            next_key: crate::ids::ALL_TYPES.iter(),
+        }
+    }
+
     /// Return the ed25519 identity for this relay.
     fn ed_identity(&self) -> &pk::ed25519::Ed25519Identity;
+    /// Return the RSA identity for this relay.
+    fn rsa_identity(&self) -> &pk::rsa::RsaIdentity;
     /// Return the ed25519 identity key for this relay, if it is valid.
     ///
     /// This can be costly.
     fn ed_identity_key(&self) -> Option<pk::ed25519::PublicKey> {
         self.ed_identity().try_into().ok()
     }
-    /// Return the RSA identity for this relay.
-    fn rsa_identity(&self) -> &pk::rsa::RsaIdentity;
+
+    /// Return true if this object has exactly the same relay IDs as `other`.
+    //
+    // TODO: Once we make it so particular identity key types are optional, we
+    // should add a note saying that this function is usually not what you want
+    // for many cases, since you might want to know "could this be the same
+    // relay" vs "is this definitely the same relay."
+    fn same_relay_ids<T: HasRelayIds>(&self, other: &T) -> bool {
+        self.ed_identity() == other.ed_identity() && self.rsa_identity() == other.rsa_identity()
+    }
 }
+
+/// An iterator over all of the relay identities held by a [`HasRelayIds`]
+#[derive(Debug, Clone)]
+pub struct RelayIdIter<'a, T: HasRelayIds + ?Sized> {
+    /// The object holding the keys
+    info: &'a T,
+    /// The next key type to yield
+    next_key: std::slice::Iter<'static, RelayIdType>,
+}
+
+impl<'a, T: HasRelayIds + ?Sized> Iterator for RelayIdIter<'a, T> {
+    type Item = RelayIdRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for key_type in &mut self.next_key {
+            if let Some(key) = self.info.identity(*key_type) {
+                return Some(key);
+            }
+        }
+        None
+    }
+}
+// RelayIdIter is fused since next_key is fused.
+impl<'a, T: HasRelayIds + ?Sized> FusedIterator for RelayIdIter<'a, T> {}
+
+/// An object that represents a host on the network with known IP addresses.
+pub trait HasAddrs {
+    /// Return the addresses at which you can connect to this server.
+    // TODO: This is a questionable API. I'd rather return an iterator
+    // of addresses or references to addresses, but both of those options
+    // make defining the right associated types rather tricky.
+    fn addrs(&self) -> &[SocketAddr];
+}
+
+/// Information about a Tor relay used to connect to it.
+///
+/// Anything that implements 'ChanTarget' can be used as the
+/// identity of a relay for the purposes of launching a new
+/// channel.
+pub trait ChanTarget: HasRelayIds + HasAddrs {}
 
 /// Information about a Tor relay used to extend a circuit to it.
 ///
@@ -37,7 +99,7 @@ pub trait CircTarget: ChanTarget {
     // of link specifiers, but that's not so easy to do, since it seems
     // doing so correctly would require default associated types.
     fn linkspecs(&self) -> Vec<crate::LinkSpec> {
-        let mut result = vec![(*self.ed_identity()).into(), (*self.rsa_identity()).into()];
+        let mut result: Vec<_> = self.identities().map(|id| id.to_id().into()).collect();
         for addr in self.addrs().iter() {
             result.push(addr.into());
         }
@@ -64,10 +126,12 @@ mod test {
         ntor: pk::curve25519::PublicKey,
         pv: tor_protover::Protocols,
     }
-    impl ChanTarget for Example {
+    impl HasAddrs for Example {
         fn addrs(&self) -> &[SocketAddr] {
             &self.addrs[..]
         }
+    }
+    impl HasRelayIds for Example {
         fn ed_identity(&self) -> &pk::ed25519::Ed25519Identity {
             &self.ed_id
         }
@@ -75,6 +139,7 @@ mod test {
             &self.rsa_id
         }
     }
+    impl ChanTarget for Example {}
     impl CircTarget for Example {
         fn ntor_onion_key(&self) -> &pk::curve25519::PublicKey {
             &self.ntor
