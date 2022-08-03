@@ -3717,6 +3717,7 @@ dependencies = [
 name = "tor-linkspec"
 version = "0.4.0"
 dependencies = [
+ "derive_more",
  "hex-literal",
  "serde",
  "tor-bytes",
