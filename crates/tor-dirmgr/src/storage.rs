@@ -196,10 +196,8 @@ pub(crate) struct ExpirationConfig {
 /// Configuration of expiration shared between [`Store`] implementations.
 pub(crate) const EXPIRATION_DEFAULTS: ExpirationConfig = {
     ExpirationConfig {
-        // TODO: Choose a more realistic time.
-        router_descs: Duration::days(3 * 30),
-        // TODO: Choose a more realistic time.
-        microdescs: Duration::days(3 * 30),
+        router_descs: Duration::days(2 * 7),
+        microdescs: Duration::days(2 * 7),
         authcerts: Duration::ZERO,
         consensuses: Duration::days(2),
     }
