@@ -133,6 +133,17 @@ pub struct Parameters {
     pub(crate) high: IntegerMilliseconds<u32>,
 }
 
+// FIXME(eta): This impl duplicates the already existing builder defaults. A future commit should
+//             remove the builder on Parameters entirely.
+impl Default for Parameters {
+    fn default() -> Self {
+        Parameters {
+            low: 1500.into(),
+            high: 9500.into(),
+        }
+    }
+}
+
 impl_standard_builder! { Parameters: !Deserialize + !Builder + !Default }
 
 impl Parameters {

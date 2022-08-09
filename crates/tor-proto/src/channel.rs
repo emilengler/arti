@@ -60,6 +60,7 @@ mod circmap;
 mod codec;
 mod handshake;
 pub mod padding;
+pub mod padding_config;
 pub mod params;
 mod reactor;
 mod unique_id;
@@ -112,6 +113,28 @@ use crate::channel::unique_id::CircUniqIdContext;
 pub(crate) use codec::CodecError;
 pub use handshake::{OutboundClientHandshake, UnverifiedChannel, VerifiedChannel};
 
+/// Dormancy state, as far as a channel is concerned.
+///
+/// This is usually derived in higher layers from `arti_client::DormantMode`.
+// FIXME(eta): this duplicates an existing enum in `tor-chanmgr` for now
+#[non_exhaustive]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum Dormancy {
+    /// Not dormant
+    ///
+    /// Channels will operate normally.
+    Active,
+    /// Totally dormant
+    ///
+    /// Channels will not perform any spontaneous activity (eg, netflow padding)
+    Dormant,
+}
+
+impl Default for Dormancy {
+    fn default() -> Self {
+        Dormancy::Active
+    }
+}
 /// Type alias: A Sink and Stream that transforms a TLS connection into
 /// a cell-based communication mechanism.
 type CellFrame<T> = futures_codec::Framed<T, crate::channel::codec::ChannelCodec>;
