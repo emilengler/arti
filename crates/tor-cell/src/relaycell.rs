@@ -82,6 +82,12 @@ caret_int! {
         PADDING_NEGOTIATE = 41,
         /// Padding: reply to a PADDING_NEGOTIATE
         PADDING_NEGOTIATED = 42,
+
+        /// Flow control: enable transmission, or declare a new transmission
+        /// rate.
+        XON = 43,
+        /// FLow control: disable transmission.
+        XOFF = 44,
     }
 }
 
@@ -106,7 +112,10 @@ impl RelayCmd {
             | RelayCmd::CONNECTED
             | RelayCmd::RESOLVE
             | RelayCmd::RESOLVED
-            | RelayCmd::BEGIN_DIR => StreamIdReq::WantNonZero,
+            | RelayCmd::BEGIN_DIR
+            | RelayCmd::XON
+            | RelayCmd::XOFF => StreamIdReq::WantNonZero,
+
             #[cfg(feature = "experimental-udp")]
             RelayCmd::CONNECT_UDP | RelayCmd::CONNECTED_UDP | RelayCmd::DATAGRAM => {
                 StreamIdReq::WantNonZero

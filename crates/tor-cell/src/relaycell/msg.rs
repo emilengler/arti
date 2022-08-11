@@ -56,6 +56,10 @@ pub enum RelayMsg {
     Resolved(Resolved),
     /// Start a directory stream
     BeginDir,
+    /// Declare that a stream can receive data at a given rate.
+    Xon(Xon),
+    /// Declare that a stream cannot receive any more data for now.
+    Xoff(Xoff),
     /// Start a UDP stream.
     #[cfg(feature = "experimental-udp")]
     ConnectUdp(udp::ConnectUdp),
@@ -113,6 +117,8 @@ impl RelayMsg {
             Resolve(_) => RelayCmd::RESOLVE,
             Resolved(_) => RelayCmd::RESOLVED,
             BeginDir => RelayCmd::BEGIN_DIR,
+            Xon(_) => RelayCmd::XON,
+            Xoff(_) => RelayCmd::XOFF,
             #[cfg(feature = "experimental-udp")]
             ConnectUdp(_) => RelayCmd::CONNECT_UDP,
             #[cfg(feature = "experimental-udp")]
@@ -144,6 +150,8 @@ impl RelayMsg {
             RelayCmd::RESOLVE => RelayMsg::Resolve(Resolve::decode_from_reader(r)?),
             RelayCmd::RESOLVED => RelayMsg::Resolved(Resolved::decode_from_reader(r)?),
             RelayCmd::BEGIN_DIR => RelayMsg::BeginDir,
+            RelayCmd::XON => RelayMsg::Xon(Xon::decode_from_reader(r)?),
+            RelayCmd::XOFF => RelayMsg::Xoff(Xoff::decode_from_reader(r)?),
             #[cfg(feature = "experimental-udp")]
             RelayCmd::CONNECT_UDP => RelayMsg::ConnectUdp(udp::ConnectUdp::decode_from_reader(r)?),
             #[cfg(feature = "experimental-udp")]
@@ -182,6 +190,8 @@ impl RelayMsg {
             Resolve(b) => b.encode_onto(w),
             Resolved(b) => b.encode_onto(w),
             BeginDir => Ok(()),
+            Xon(b) => b.encode_onto(w),
+            Xoff(b) => b.encode_onto(w),
             #[cfg(feature = "experimental-udp")]
             ConnectUdp(b) => b.encode_onto(w),
             #[cfg(feature = "experimental-udp")]
@@ -1197,6 +1207,117 @@ impl Body for Resolved {
             w.write(rv)?;
             w.write_u32(*ttl);
         }
+        Ok(())
+    }
+}
+
+/// An `Xon` message tells the other side of a stream that we are able to
+/// consume data at a given rate.  
+///
+/// If we previously sent an `Xoff` message on this stream, an `Xon` tells the
+/// other side to re-enable transmission.  Otherwise, it is an advisory message,
+/// telling the other side how quickly we have been draining data recently.
+#[derive(Debug, Clone)]
+pub struct Xon {
+    /// Our latest drain rate, in kilobytes per second.
+    ///
+    /// (Note that we truly mean kilobytes, not kibibytes).
+    ///
+    /// If this value is zero, the rate is unlimited.
+    rate: u32,
+}
+
+impl Xon {
+    /// The current recognized version of the XON cell.
+    const XON_VERSION: u8 = 0;
+
+    /// Return a new Xon cell declaring that our drain rate is
+    /// `kilobytes_per_sec`.
+    ///
+    /// Note that this value truly is kilobytes (1000 bytes), not kibibytes
+    /// (1024 bytes.)
+    ///
+    /// Setting a drain rate of "0" will be rounded up to "1".  If you want to
+    /// make an Xon cell indicating "no limit", call [`Xon::new_unlimited`]
+    /// instead.
+    pub fn new(kilobytes_per_sec: u32) -> Self {
+        Xon {
+            // Never construct a cell with a rate of zero.
+            rate: kilobytes_per_sec.max(1),
+        }
+    }
+
+    /// Return a new Xon cell declaring that our drain rate is unlimited.
+    pub fn new_unlimited() -> Self {
+        Xon { rate: 0 }
+    }
+
+    /// Return the declared drain rate from this cell, in kilobytes per second.
+    ///
+    /// Returns None if the rate is unlimited.
+    ///
+    /// Note that this value truly is kilobytes (1000 bytes), not kibibytes
+    /// (1024 bytes.)
+    pub fn kbps(&self) -> Option<u32> {
+        (self.rate != 0).then(|| self.rate)
+    }
+}
+
+impl Body for Xon {
+    fn into_message(self) -> RelayMsg {
+        RelayMsg::Xon(self)
+    }
+
+    fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
+        let v = r.take_u8()?;
+        if v != Xon::XON_VERSION {
+            return Err(Error::BadMessage("unrecognized XON version"));
+        }
+        let rate = r.take_u32()?;
+        r.should_be_exhausted()?;
+        Ok(Self { rate })
+    }
+
+    fn encode_onto(self, w: &mut Vec<u8>) -> EncodeResult<()> {
+        w.write_u8(Xon::XON_VERSION);
+        w.write_u32(self.rate);
+        Ok(())
+    }
+}
+
+/// An `Xon` message tells the other side of a stream that it should stop
+/// transmitting data.
+///
+/// We send this message when we find that we have too much data buffered on our
+/// side.
+#[derive(Debug, Clone, Default)]
+#[non_exhaustive]
+pub struct Xoff {}
+
+impl Xoff {
+    /// The current recognized version of XOFF cell.
+    const XOFF_VERSION: u8 = 0;
+    /// Return a new `Xoff` message.
+    pub fn new() -> Self {
+        Default::default()
+    }
+}
+impl Body for Xoff {
+    fn into_message(self) -> RelayMsg {
+        RelayMsg::Xoff(self)
+    }
+
+    fn decode_from_reader(r: &mut Reader<'_>) -> Result<Self> {
+        let v = r.take_u8()?;
+        if v != Xoff::XOFF_VERSION {
+            return Err(Error::BadMessage("unrecognized XOFF version"));
+        }
+        r.should_be_exhausted()?;
+        Ok(Xoff::new())
+    }
+
+    fn encode_onto(self, w: &mut Vec<u8>) -> EncodeResult<()> {
+        w.write_u8(Self::XOFF_VERSION);
         Ok(())
     }
 }
