@@ -11,6 +11,7 @@
 
 mod cchan;
 mod data;
+mod drainrate;
 mod params;
 mod raw;
 mod resolve;
