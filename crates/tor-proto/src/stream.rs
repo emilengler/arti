@@ -9,6 +9,7 @@
 //!
 //! There is no fairness, rate-limiting, or flow control.
 
+mod cchan;
 mod data;
 mod params;
 mod raw;
