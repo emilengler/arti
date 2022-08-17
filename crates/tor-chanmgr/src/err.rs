@@ -1,14 +1,6 @@
 //! Declare error types for tor-chanmgr
 
-use std::net::SocketAddr;
-use std::sync::Arc;
-
-use futures::task::SpawnError;
-use thiserror::Error;
-
-use tor_error::{internal, ErrorKind};
-use tor_linkspec::{ChanTarget, OwnedChanTarget};
-use tor_proto::ClockSkew;
+use crate::prelude::*;
 
 /// An error returned by a channel manager.
 #[derive(Debug, Error, Clone)]

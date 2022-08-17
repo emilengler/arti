@@ -4,8 +4,7 @@
 // some of our testing code from tor-proto, with which it shares some
 // logic.
 
-use futures::io::{AsyncWrite, AsyncWriteExt};
-use std::io::Result as IoResult;
+use crate::prelude::*;
 
 /// Respond to a newly opened channel using a canned set of certificates.
 ///

@@ -1,14 +1,7 @@
 //! Code for exporting events from the channel manager.
 #![allow(dead_code, unreachable_pub)]
 
-use educe::Educe;
-use futures::{Stream, StreamExt};
-use postage::watch;
-use std::{
-    fmt,
-    time::{Duration, Instant},
-};
-use tor_basic_utils::skip_fmt;
+use crate::prelude::*;
 
 /// The status of our connection to the internet.
 #[derive(Default, Debug, Clone)]
