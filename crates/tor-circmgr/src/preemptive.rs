@@ -26,6 +26,8 @@ impl PreemptiveCircuitPredictor {
         for port in &config.initial_predicted_ports {
             // TODO(nickm) should this be IPv6? Should we have a way to configure IPv6 initial ports?
             usages.insert(Some(TargetPort::ipv4(*port)), Instant::now());
+            // We want to build circuits for IPv6 addresses, too.
+            usages.insert(Some(TargetPort::ipv6(*port)), Instant::now());
         }
 
         // We want to build circuits for resolving DNS, too.
