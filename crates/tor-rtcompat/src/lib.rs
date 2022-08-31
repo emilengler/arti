@@ -439,6 +439,7 @@ pub(crate) mod private {
     /// unsealing all the traits so that you may implement them.
     /// **Beware!**
     /// We reserve the right to break your implementations in semver minor versions!
+    #[cfg_attr(docsrs, doc(cfg(feature = "unseal-traits")))]
     pub trait Sealed {}
 }
 
