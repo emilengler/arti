@@ -69,6 +69,11 @@ where
     }
 }
 
+impl<SpawnR, SleepR, TcpR, TlsR, UdpR> Sealed
+    for CompoundRuntime<SpawnR, SleepR, TcpR, TlsR, UdpR>
+{
+}
+
 impl<SpawnR, SleepR, TcpR, TlsR, UdpR> BlockOn for CompoundRuntime<SpawnR, SleepR, TcpR, TlsR, UdpR>
 where
     SpawnR: BlockOn,

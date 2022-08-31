@@ -9,6 +9,8 @@ macro_rules! implement_opaque_runtime {
     $t:ty { $member:ident : $mty:ty }
 } => {
 
+    impl $crate::traits::Sealed for $t {}
+
     impl futures::task::Spawn for $t {
         #[inline]
         fn spawn_obj(&self, future: futures::future::FutureObj<'static, ()>) -> Result<(), futures::task::SpawnError> {

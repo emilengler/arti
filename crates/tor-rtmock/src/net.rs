@@ -264,6 +264,8 @@ impl ProviderBuilder {
     }
 }
 
+impl tor_rtcompat::Sealed for MockNetListener {}
+
 #[async_trait]
 impl TcpListener for MockNetListener {
     type TcpStream = LocalStream;
@@ -382,6 +384,8 @@ impl MockNetProvider {
     }
 }
 
+impl tor_rtcompat::Sealed for MockNetProvider {}
+
 #[async_trait]
 impl TcpProvider for MockNetProvider {
     type TcpStream = LocalStream;
@@ -444,6 +448,8 @@ pub struct MockTlsStream {
     stream: LocalStream,
 }
 
+impl tor_rtcompat::Sealed for MockTlsConnector {}
+
 #[async_trait]
 impl TlsConnector<LocalStream> for MockTlsConnector {
     type Conn = MockTlsStream;
@@ -465,6 +471,8 @@ impl TlsConnector<LocalStream> for MockTlsConnector {
         Ok(MockTlsStream { peer_cert, stream })
     }
 }
+
+impl tor_rtcompat::Sealed for MockTlsStream {}
 
 impl CertifiedConn for MockTlsStream {
     fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {

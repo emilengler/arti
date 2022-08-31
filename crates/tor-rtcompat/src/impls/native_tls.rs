@@ -1,6 +1,6 @@
 //! Implementation for using `native_tls`
 
-use crate::traits::{CertifiedConn, TlsConnector, TlsProvider};
+use crate::traits::{CertifiedConn, Sealed, TlsConnector, TlsProvider};
 
 use async_trait::async_trait;
 use futures::{AsyncRead, AsyncWrite};
@@ -17,6 +17,8 @@ use std::{
 #[derive(Default, Clone)]
 #[non_exhaustive]
 pub struct NativeTlsProvider {}
+
+impl<S> Sealed for async_native_tls::TlsStream<S> {}
 
 impl<S> CertifiedConn for async_native_tls::TlsStream<S>
 where
@@ -45,6 +47,8 @@ pub struct NativeTlsConnector<S> {
     _phantom: std::marker::PhantomData<fn(S) -> S>,
 }
 
+impl<S> Sealed for NativeTlsConnector<S> {}
+
 #[async_trait]
 impl<S> TlsConnector<S> for NativeTlsConnector<S>
 where
@@ -61,6 +65,8 @@ where
         Ok(conn)
     }
 }
+
+impl Sealed for NativeTlsProvider {}
 
 impl<S> TlsProvider<S> for NativeTlsProvider
 where

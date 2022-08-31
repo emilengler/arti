@@ -48,6 +48,8 @@ impl<R: Runtime> Spawn for MockNetRuntime<R> {
     }
 }
 
+impl<R: Runtime> tor_rtcompat::Sealed for MockNetRuntime<R> {}
+
 impl<R: Runtime> BlockOn for MockNetRuntime<R> {
     fn block_on<F: Future>(&self, future: F) -> F::Output {
         self.runtime.block_on(future)

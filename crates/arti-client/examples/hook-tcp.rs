@@ -113,6 +113,8 @@ struct CustomIncoming<T> {
     inner: T,
 }
 
+impl<T> tor_rtcompat::Sealed for CustomTcpProvider<T> {}
+
 impl<T> TcpProvider for CustomTcpProvider<T>
 where
     T: TcpProvider,
@@ -281,6 +283,8 @@ impl<T> Drop for CustomTcpStream<T> {
 }
 
 type AcceptResult<T> = IoResult<(T, SocketAddr)>;
+
+impl<T> tor_rtcompat::Sealed for CustomTcpListener<T> {}
 
 impl<T> TcpListener for CustomTcpListener<T>
 where

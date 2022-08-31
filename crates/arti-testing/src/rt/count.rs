@@ -53,6 +53,8 @@ where
     }
 }
 
+impl<R> tor_rtcompat::Sealed for Counting<R> {}
+
 impl<R> Counting<R> {
     /// Return a new wrapper around a TcpProvider with a new set of statistics
     pub(crate) fn new_zeroed(inner: R) -> Self

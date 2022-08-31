@@ -115,6 +115,8 @@ pub(crate) struct BrokenTcpProvider<R> {
     action: Arc<Mutex<ConditionalAction>>,
 }
 
+impl<R> tor_rtcompat::Sealed for BrokenTcpProvider<R> {}
+
 impl<R> BrokenTcpProvider<R> {
     /// Construct a new BrokenTcpProvider which responds to all outbound
     /// connections by taking the specified action.

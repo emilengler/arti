@@ -1,6 +1,6 @@
 //! Implementation for using Rustls with a runtime.
 
-use crate::traits::{CertifiedConn, TlsConnector, TlsProvider};
+use crate::traits::{CertifiedConn, Sealed, TlsConnector, TlsProvider};
 
 use async_rustls::webpki::{DNSNameRef, Error as WebpkiError};
 use async_trait::async_trait;
@@ -23,6 +23,8 @@ pub struct RustlsProvider {
     config: Arc<async_rustls::rustls::ClientConfig>,
 }
 
+impl<S> Sealed for async_rustls::client::TlsStream<S> {}
+
 impl<S> CertifiedConn for async_rustls::client::TlsStream<S> {
     fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>> {
         let (_, session) = self.get_ref();
@@ -40,6 +42,8 @@ pub struct RustlsConnector<S> {
     _phantom: std::marker::PhantomData<fn(S) -> S>,
 }
 
+impl<S> Sealed for RustlsConnector<S> {}
+
 #[async_trait]
 impl<S> TlsConnector<S> for RustlsConnector<S>
 where
@@ -52,6 +56,8 @@ where
         self.connector.connect(name, stream).await
     }
 }
+
+impl Sealed for RustlsProvider {}
 
 impl<S> TlsProvider<S> for RustlsProvider
 where
