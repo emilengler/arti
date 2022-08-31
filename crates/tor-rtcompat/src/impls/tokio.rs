@@ -6,6 +6,7 @@
 /// Types used for networking (tokio implementation)
 pub(crate) mod net {
     use crate::traits;
+    use crate::Sealed;
     use async_trait::async_trait;
 
     pub(crate) use tokio_crate::net::{
@@ -83,6 +84,9 @@ pub(crate) mod net {
             }
         }
     }
+
+    impl Sealed for TcpListener {}
+
     #[async_trait]
     impl traits::TcpListener for TcpListener {
         type TcpStream = TcpStream;
@@ -114,6 +118,8 @@ pub(crate) mod net {
         }
     }
 
+    impl Sealed for UdpSocket {}
+
     #[async_trait]
     impl traits::UdpSocket for UdpSocket {
         async fn recv(&self, buf: &mut [u8]) -> IoResult<(usize, SocketAddr)> {
@@ -137,6 +143,8 @@ use async_trait::async_trait;
 use futures::Future;
 use std::io::Result as IoResult;
 use std::time::Duration;
+
+impl crate::Sealed for TokioRuntimeHandle {}
 
 impl SleepProvider for TokioRuntimeHandle {
     type SleepFuture = tokio_crate::time::Sleep;

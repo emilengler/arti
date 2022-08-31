@@ -13,6 +13,9 @@
 //! This might be useful, for example, to dynamically open ports on a restrictive firewall or modify
 //! routing information. It would also be possible to adapt the example to make it proxy the TCP
 //! connections somehow, depending on your usecase.
+//!
+//! Note that this requires unstable APIs from `tor_rtcompat`,
+//! accessible only via the `unseal-traits` cargo feature.
 
 use std::future::Future;
 use std::io::Result as IoResult;
@@ -109,6 +112,8 @@ struct CustomTcpListener<T> {
 struct CustomIncoming<T> {
     inner: T,
 }
+
+impl<T> tor_rtcompat::Sealed for CustomTcpProvider<T> {}
 
 impl<T> TcpProvider for CustomTcpProvider<T>
 where
@@ -278,6 +283,8 @@ impl<T> Drop for CustomTcpStream<T> {
 }
 
 type AcceptResult<T> = IoResult<(T, SocketAddr)>;
+
+impl<T> tor_rtcompat::Sealed for CustomTcpListener<T> {}
 
 impl<T> TcpListener for CustomTcpListener<T>
 where

@@ -8,6 +8,7 @@
 /// Types used for networking (async_std implementation)
 mod net {
     use crate::traits;
+    use crate::Sealed;
 
     use async_std_crate::net::{TcpListener, TcpStream, UdpSocket as StdUdpSocket};
     use async_trait::async_trait;
@@ -83,6 +84,8 @@ mod net {
             }
         }
     }
+    impl Sealed for TcpListener {}
+
     #[async_trait]
     impl traits::TcpListener for TcpListener {
         type TcpStream = TcpStream;
@@ -127,6 +130,8 @@ mod net {
         socket: StdUdpSocket,
     }
 
+    impl Sealed for UdpSocket {}
+
     #[async_trait]
     impl traits::UdpSocket for UdpSocket {
         async fn recv(&self, buf: &mut [u8]) -> IoResult<(usize, SocketAddr)> {
@@ -155,6 +160,8 @@ use crate::traits::*;
 pub fn create_runtime() -> async_executors::AsyncStd {
     async_executors::AsyncStd::new()
 }
+
+impl crate::Sealed for async_executors::AsyncStd {}
 
 impl SleepProvider for async_executors::AsyncStd {
     type SleepFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;

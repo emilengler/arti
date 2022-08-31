@@ -1,4 +1,5 @@
 //! Declarations for traits that we need our runtimes to implement.
+use crate::Sealed;
 use async_trait::async_trait;
 use futures::stream;
 use futures::task::Spawn;
@@ -55,6 +56,7 @@ pub trait Runtime:
     + TlsProvider<Self::TcpStream>
     + UdpProvider
     + Debug
+    + Sealed
     + 'static
 {
 }
@@ -79,7 +81,7 @@ impl<T> Runtime for T where
 /// Every `SleepProvider` also implements
 /// [`SleepProviderExt`](crate::SleepProviderExt); see that trait
 /// for other useful functions.
-pub trait SleepProvider: Clone + Send + Sync + 'static {
+pub trait SleepProvider: Clone + Send + Sync + Sealed + 'static {
     /// A future returned by [`SleepProvider::sleep()`]
     type SleepFuture: Future<Output = ()> + Send + 'static;
     /// Return a future that will be ready after `duration` has
@@ -128,7 +130,7 @@ pub trait SleepProvider: Clone + Send + Sync + 'static {
 }
 
 /// Trait for a runtime that can block on a future.
-pub trait BlockOn: Clone + Send + Sync + 'static {
+pub trait BlockOn: Clone + Send + Sync + Sealed + 'static {
     /// Run `future` until it is ready, and return its output.
     fn block_on<F: Future>(&self, future: F) -> F::Output;
 }
@@ -142,7 +144,7 @@ pub trait BlockOn: Clone + Send + Sync + 'static {
 // TODO: Use of async_trait is not ideal, since we have to box with every
 // call.  Still, async_io basically makes that necessary :/
 #[async_trait]
-pub trait TcpProvider: Clone + Send + Sync + 'static {
+pub trait TcpProvider: Clone + Send + Sync + Sealed + 'static {
     /// The type for the TCP connections returned by [`Self::connect()`].
     type TcpStream: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static;
     /// The type for the TCP listeners returned by [`Self::listen()`].
@@ -167,7 +169,7 @@ pub trait TcpProvider: Clone + Send + Sync + 'static {
 /// use `incoming` to wrap this object as a [`stream::Stream`].
 // TODO: Use of async_trait is not ideal here either.
 #[async_trait]
-pub trait TcpListener {
+pub trait TcpListener: Sealed {
     /// The type of TCP connections returned by [`Self::accept()`].
     type TcpStream: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static;
 
@@ -187,7 +189,7 @@ pub trait TcpListener {
 
 /// Trait for a runtime that can send and receive UDP datagrams.
 #[async_trait]
-pub trait UdpProvider: Clone + Send + Sync + 'static {
+pub trait UdpProvider: Clone + Send + Sync + Sealed + 'static {
     /// The type of Udp Socket returned by [`Self::bind()`]
     type UdpSocket: UdpSocket + Send + Sync + Unpin + 'static;
 
@@ -203,7 +205,7 @@ pub trait UdpProvider: Clone + Send + Sync + 'static {
 // implement a connected Udp socket in the future, please make a new trait (and
 // a new type.)
 #[async_trait]
-pub trait UdpSocket {
+pub trait UdpSocket: Sealed {
     /// Wait for an incoming datagram; return it along its address.
     async fn recv(&self, buf: &mut [u8]) -> IoResult<(usize, SocketAddr)>;
     /// Send a datagram to the provided address.
@@ -213,7 +215,7 @@ pub trait UdpSocket {
 }
 
 /// An object with a peer certificate: typically a TLS connection.
-pub trait CertifiedConn {
+pub trait CertifiedConn: Sealed {
     /// Try to return the (DER-encoded) peer certificate for this
     /// connection, if any.
     fn peer_certificate(&self) -> IoResult<Option<Vec<u8>>>;
@@ -246,7 +248,7 @@ pub trait CertifiedConn {
 /// TLS 1.3 is completely ubiquitous, we might be able to specify a simpler link
 /// handshake than Tor uses now.
 #[async_trait]
-pub trait TlsConnector<S> {
+pub trait TlsConnector<S>: Sealed {
     /// The type of connection returned by this connector
     type Conn: AsyncRead + AsyncWrite + CertifiedConn + Unpin + Send + 'static;
 
@@ -270,7 +272,7 @@ pub trait TlsConnector<S> {
 /// See the [`TlsConnector`] documentation for a discussion of the Tor-specific
 /// limitations of this trait: If you are implementing something other than Tor,
 /// this is **not** the functionality you want.
-pub trait TlsProvider<S>: Clone + Send + Sync + 'static {
+pub trait TlsProvider<S>: Clone + Send + Sync + Sealed + 'static {
     /// The Connector object that this provider can return.
     type Connector: TlsConnector<S, Conn = Self::TlsStream> + Send + Sync + Unpin;
 

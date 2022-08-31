@@ -4,6 +4,7 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use crate::traits::*;
+use crate::Sealed;
 use async_trait::async_trait;
 use educe::Educe;
 use futures::{future::FutureObj, task::Spawn};
@@ -67,6 +68,11 @@ where
     fn spawn_obj(&self, future: FutureObj<'static, ()>) -> Result<(), futures::task::SpawnError> {
         self.inner.spawn.spawn_obj(future)
     }
+}
+
+impl<SpawnR, SleepR, TcpR, TlsR, UdpR> Sealed
+    for CompoundRuntime<SpawnR, SleepR, TcpR, TlsR, UdpR>
+{
 }
 
 impl<SpawnR, SleepR, TcpR, TlsR, UdpR> BlockOn for CompoundRuntime<SpawnR, SleepR, TcpR, TlsR, UdpR>

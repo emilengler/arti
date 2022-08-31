@@ -88,6 +88,10 @@ be the same).
 See [`arti-client/examples/hook-tcp.rs`](https://gitlab.torproject.org/tpo/core/arti/-/blob/main/crates/arti-client/examples/hook-tcp.rs)
 for a full example of this.
 
+Note that you will need to enable the `unseal-traits` experimental feature
+which will **void your semver warranty**.
+See [Experimental and unstable features](#experimental-and-unstable-features).
+
 ## Cargo features
 
 Features supported by this crate:
@@ -105,6 +109,18 @@ Features supported by this crate:
 By default, *this* crate doesn't enable any features. However, you're almost certainly
 using this as part of the `arti-client` crate, which will enable `tokio` and `native-tls` in
 its default configuration.
+
+### Experimental and unstable features
+
+Note that the APIs enabled by these features are NOT covered by semantic
+versioning[^1] guarantees: we might break them or remove them between patch
+versions.
+
+* `unseal-traits` -- un-seal traits including [`Runtime`]
+
+[^1]: Remember, semantic versioning is what makes various `cargo` features
+work reliably. To be explicit: if you want `cargo update` to _only_ make safe
+changes, then you cannot enable these features.
 
 ## Design FAQ
 

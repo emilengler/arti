@@ -87,6 +87,10 @@
 //! See [`arti-client/examples/hook-tcp.rs`](https://gitlab.torproject.org/tpo/core/arti/-/blob/main/crates/arti-client/examples/hook-tcp.rs)
 //! for a full example of this.
 //!
+//! Note that you will need to enable the `unseal-traits` experimental feature
+//! which will **void your semver warranty**.
+//! See [Experimental and unstable features](#experimental-and-unstable-features).
+//!
 //! # Cargo features
 //!
 //! Features supported by this crate:
@@ -104,6 +108,18 @@
 //! By default, *this* crate doesn't enable any features. However, you're almost certainly
 //! using this as part of the `arti-client` crate, which will enable `tokio` and `native-tls` in
 //! its default configuration.
+//!
+//! ## Experimental and unstable features
+//!
+//! Note that the APIs enabled by these features are NOT covered by semantic
+//! versioning[^1] guarantees: we might break them or remove them between patch
+//! versions.
+//!
+//! * `unseal-traits` -- un-seal traits including [`Runtime`]
+//!
+//! [^1]: Remember, semantic versioning is what makes various `cargo` features
+//! work reliably. To be explicit: if you want `cargo update` to _only_ make safe
+//! changes, then you cannot enable these features.
 //!
 //! # Design FAQ
 //!
@@ -411,6 +427,24 @@ pub mod cond {
         macro if_async_std_rustls_present = ("async-std", "rustls")
     }
 }
+
+/// A Private module for declaring a "sealed" trait.
+pub(crate) mod private {
+    /// A non-exported trait, used to prevent others from implementing a trait.
+    ///
+    /// For more information on this pattern, see [the Rust API
+    /// guidelines](https://rust-lang.github.io/api-guidelines/future-proofing.html#c-sealed).
+    ///
+    /// With the `unseal-traits` cargo feature enabled, this trait is exported,
+    /// unsealing all the traits so that you may implement them.
+    /// **Beware!**
+    /// We reserve the right to break your implementations in semver minor versions!
+    #[cfg_attr(docsrs, doc(cfg(feature = "unseal-traits")))]
+    pub trait Sealed {}
+}
+
+#[cfg_attr(feature = "unseal-traits", visibility::make(pub))]
+pub(crate) use private::Sealed;
 
 /// Run a test closure, passing as argument every supported runtime.
 ///

@@ -304,6 +304,8 @@ impl SleepSchedule {
     }
 }
 
+impl tor_rtcompat::Sealed for MockSleepProvider {}
+
 impl SleepProvider for MockSleepProvider {
     type SleepFuture = Sleeping;
     fn sleep(&self, duration: Duration) -> Self::SleepFuture {
