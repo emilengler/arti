@@ -225,6 +225,7 @@ where
 
 /// Launch a DNS resolver to listen on a given local port, and run indefinitely.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 pub(crate) async fn run_dns_resolver<R: Runtime>(
     runtime: R,
     tor_client: TorClient<R>,

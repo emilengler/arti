@@ -9,6 +9,7 @@ use crate::Result;
 /// documentation for `tokio::signal::ctrl_c` and `async_ctrlc` for
 /// caveats.  Notably, you can only call this once with async_std.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 pub(crate) async fn wait_for_ctrl_c() -> Result<()> {
     #[cfg(feature = "tokio")]
     {

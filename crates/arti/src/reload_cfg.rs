@@ -39,6 +39,7 @@ macro_rules! ok_or_break {
 /// and try to reload our configuration. On unix platforms, also watch
 /// for SIGHUP and reload configuration then.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 pub(crate) fn watch_for_config_changes<R: Runtime>(
     sources: ConfigurationSources,
     original: ArtiConfig,

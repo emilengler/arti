@@ -13,6 +13,7 @@ use crate::ArtiConfig;
 ///
 /// This doesn't actually do anything on windows.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 pub(crate) fn use_max_file_limit(config: &ArtiConfig) {
     match rlimit::increase_nofile_limit(config.system.max_files) {
         Ok(n) => tracing::debug!("Increased process file limit to {}", n),
@@ -30,8 +31,10 @@ pub(crate) fn use_max_file_limit(config: &ArtiConfig) {
 ///
 /// See notes from the [`secmem_proc`] crate: this is a best-effort defense, and
 /// only makes these attacks _harder_.  It can interfere with debugging.
+#[rustfmt::skip]
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 #[cfg(feature = "harden")]
+#[cfg_attr(docsrs, doc(cfg(all(feature = "experimental-api", feature = "harden"))))]
 pub(crate) fn enable_process_hardening() -> anyhow::Result<()> {
     use anyhow::Context as _;
     use std::sync::atomic::{AtomicBool, Ordering};
