@@ -41,7 +41,7 @@ tor-netdoc = { package = "tor-netdoc", path = "../tor-netdoc", version = "0.5.0"
     "experimental-api",
     "dangerous-expose-struct-fields",
 ] }
-tor-rtcompat = { path = "../tor-rtcompat", version = "0.5.0" }
+tor-rtcompat = { path = "../tor-rtcompat", version = "0.5.0", features = ["unseal-traits"] }
 tracing = "0.1.18"
 tracing-appender = "0.2.0"
 tracing-subscriber = { version = "0.3.0", features = ["env-filter"] }

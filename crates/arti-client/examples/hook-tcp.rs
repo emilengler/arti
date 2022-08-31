@@ -13,6 +13,9 @@
 //! This might be useful, for example, to dynamically open ports on a restrictive firewall or modify
 //! routing information. It would also be possible to adapt the example to make it proxy the TCP
 //! connections somehow, depending on your usecase.
+//!
+//! Note that this requires unstable APIs from `tor_rtcompat`,
+//! accessible only via the `unseal-traits` cargo feature.
 
 use std::future::Future;
 use std::io::Result as IoResult;
