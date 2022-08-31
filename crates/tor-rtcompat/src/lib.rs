@@ -105,6 +105,18 @@
 //! using this as part of the `arti-client` crate, which will enable `tokio` and `native-tls` in
 //! its default configuration.
 //!
+//! ## Experimental and unstable features
+//!
+//! Note that the APIs enabled by these features are NOT covered by semantic
+//! versioning[^1] guarantees: we might break them or remove them between patch
+//! versions.
+//!
+//! * `unseal-traits` -- un-seal traits including [`Runtime`]
+//!
+//! [^1]: Remember, semantic versioning is what makes various `cargo` features
+//! work reliably. To be explicit: if you want `cargo update` to _only_ make safe
+//! changes, then you cannot enable these features.
+//!
 //! # Design FAQ
 //!
 //! ## Why support `async_std`?
@@ -194,6 +206,9 @@ pub use traits::{
     BlockOn, CertifiedConn, Runtime, SleepProvider, TcpListener, TcpProvider, TlsProvider,
     UdpProvider, UdpSocket,
 };
+
+#[cfg(feature = "unseal-traits")]
+pub use traits::Sealed;
 
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 
