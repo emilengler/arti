@@ -87,6 +87,10 @@
 //! See [`arti-client/examples/hook-tcp.rs`](https://gitlab.torproject.org/tpo/core/arti/-/blob/main/crates/arti-client/examples/hook-tcp.rs)
 //! for a full example of this.
 //!
+//! Note that you will need to enable the `unseal-traits` experimental feature
+//! which will **void your semver warranty**.
+//! See [Experimental and unstable features](#experimental-and-unstable-features).
+//!
 //! # Cargo features
 //!
 //! Features supported by this crate:
