@@ -14,7 +14,7 @@ repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 [features]
 
 default = []
-unseal-traits = []
+unseal-traits = ["visibility"]
 full = ["async-std", "tokio", "native-tls"]
 
 async-std = ["async-std-crate", "async-io", "async_executors/async_std"]
@@ -48,6 +48,7 @@ tokio-crate = { package = "tokio", version = "1.7", optional = true, features = 
 ] }
 tokio-util = { version = "0.7.0", features = ["compat"], optional = true }
 x509-signature = { version = "0.5.0", optional = true }
+visibility = { version = "0.0.1", optional = true }
 
 [dev-dependencies]
 # Used for testing our TLS implementation.

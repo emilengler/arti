@@ -7,7 +7,8 @@
 
 /// Types used for networking (async_std implementation)
 mod net {
-    use crate::traits::{self, Sealed};
+    use crate::traits;
+    use crate::Sealed;
 
     use async_std_crate::net::{TcpListener, TcpStream, UdpSocket as StdUdpSocket};
     use async_trait::async_trait;
@@ -160,7 +161,7 @@ pub fn create_runtime() -> async_executors::AsyncStd {
     async_executors::AsyncStd::new()
 }
 
-impl Sealed for async_executors::AsyncStd {}
+impl crate::Sealed for async_executors::AsyncStd {}
 
 impl SleepProvider for async_executors::AsyncStd {
     type SleepFuture = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;

@@ -1,4 +1,5 @@
 //! Declarations for traits that we need our runtimes to implement.
+use crate::Sealed;
 use async_trait::async_trait;
 use futures::stream;
 use futures::task::Spawn;
@@ -281,19 +282,3 @@ pub trait TlsProvider<S>: Clone + Send + Sync + Sealed + 'static {
     /// Return a TLS connector for use with this runtime.
     fn tls_connector(&self) -> Self::Connector;
 }
-
-/// A Private module for declaring a "sealed" trait.
-pub(crate) mod private {
-    /// A non-exported trait, used to prevent others from implementing a trait.
-    ///
-    /// For more information on this pattern, see [the Rust API
-    /// guidelines](https://rust-lang.github.io/api-guidelines/future-proofing.html#c-sealed).
-    ///
-    /// With the `unseal-traits` cargo feature enabled, this trait is exported,
-    /// unsealing all the traits so that you may implement them.
-    /// **Beware!**
-    /// We reserve the right to break your implementations in semver minor versions!
-    pub trait Sealed {}
-}
-
-pub use private::Sealed;

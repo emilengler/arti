@@ -4,6 +4,7 @@
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use crate::traits::*;
+use crate::Sealed;
 use async_trait::async_trait;
 use educe::Educe;
 use futures::{future::FutureObj, task::Spawn};

@@ -1,6 +1,7 @@
 //! Implementation for using Rustls with a runtime.
 
-use crate::traits::{CertifiedConn, Sealed, TlsConnector, TlsProvider};
+use crate::traits::{CertifiedConn, TlsConnector, TlsProvider};
+use crate::Sealed;
 
 use async_rustls::webpki::{DNSNameRef, Error as WebpkiError};
 use async_trait::async_trait;

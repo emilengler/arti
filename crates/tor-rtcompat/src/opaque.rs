@@ -9,7 +9,7 @@ macro_rules! implement_opaque_runtime {
     $t:ty { $member:ident : $mty:ty }
 } => {
 
-    impl $crate::traits::Sealed for $t {}
+    impl $crate::Sealed for $t {}
 
     impl futures::task::Spawn for $t {
         #[inline]

@@ -211,9 +211,6 @@ pub use traits::{
     UdpProvider, UdpSocket,
 };
 
-#[cfg(feature = "unseal-traits")]
-pub use traits::Sealed;
-
 pub use timer::{SleepProviderExt, Timeout, TimeoutError};
 
 /// Traits used to describe TLS connections and objects that can
@@ -430,6 +427,23 @@ pub mod cond {
         macro if_async_std_rustls_present = ("async-std", "rustls")
     }
 }
+
+/// A Private module for declaring a "sealed" trait.
+pub(crate) mod private {
+    /// A non-exported trait, used to prevent others from implementing a trait.
+    ///
+    /// For more information on this pattern, see [the Rust API
+    /// guidelines](https://rust-lang.github.io/api-guidelines/future-proofing.html#c-sealed).
+    ///
+    /// With the `unseal-traits` cargo feature enabled, this trait is exported,
+    /// unsealing all the traits so that you may implement them.
+    /// **Beware!**
+    /// We reserve the right to break your implementations in semver minor versions!
+    pub trait Sealed {}
+}
+
+#[cfg_attr(feature = "unseal-traits", visibility::make(pub))]
+pub(crate) use private::Sealed;
 
 /// Run a test closure, passing as argument every supported runtime.
 ///

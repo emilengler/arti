@@ -5,7 +5,8 @@
 
 /// Types used for networking (tokio implementation)
 pub(crate) mod net {
-    use crate::traits::{self, Sealed};
+    use crate::traits;
+    use crate::Sealed;
     use async_trait::async_trait;
 
     pub(crate) use tokio_crate::net::{
@@ -143,7 +144,7 @@ use futures::Future;
 use std::io::Result as IoResult;
 use std::time::Duration;
 
-impl Sealed for TokioRuntimeHandle {}
+impl crate::Sealed for TokioRuntimeHandle {}
 
 impl SleepProvider for TokioRuntimeHandle {
     type SleepFuture = tokio_crate::time::Sleep;

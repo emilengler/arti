@@ -1,6 +1,7 @@
 //! Implementation for using `native_tls`
 
-use crate::traits::{CertifiedConn, Sealed, TlsConnector, TlsProvider};
+use crate::traits::{CertifiedConn, TlsConnector, TlsProvider};
+use crate::Sealed;
 
 use async_trait::async_trait;
 use futures::{AsyncRead, AsyncWrite};
