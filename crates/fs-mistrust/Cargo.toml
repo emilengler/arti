@@ -20,6 +20,7 @@ derive_builder = { version = "0.11", package = "derive_builder_fork_arti" }
 derive_more = "0.99"
 dirs = { version = "4", optional = true }
 educe = "0.4.6"
+extend = "1"
 once_cell = { version = "1", optional = true }
 serde = { version = "1.0.103", features = ["derive"], optional = true }
 thiserror = "1"

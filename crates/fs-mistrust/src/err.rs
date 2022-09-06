@@ -11,12 +11,8 @@ use crate::anon_home::PathExt as _;
 // Define a local-only version of anonymize_home so that we can define our errors
 // unconditionally.
 #[cfg(not(feature = "anon_home"))]
-trait PathExt {
-    /// A do-nothing extension function.
-    fn anonymize_home(&self) -> &Path;
-}
-#[cfg(not(feature = "anon_home"))]
-impl PathExt for Path {
+#[ext(pub)]
+impl Path {
     fn anonymize_home(&self) -> &Path {
         self
     }

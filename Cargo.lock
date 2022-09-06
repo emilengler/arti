@@ -1239,6 +1239,7 @@ dependencies = [
  "derive_more",
  "dirs",
  "educe",
+ "extend",
  "libc",
  "once_cell",
  "serde",
