@@ -411,16 +411,8 @@ where
 ///
 /// We provide this as an extension trait became the implementation is a bit fiddly.
 /// This lets us concentrate on the actual logic, when we use it.
-pub trait PostageWatchSenderExt<T> {
-    /// Update, by calling a fallible function, sending only if necessary
-    ///
-    /// Calls `update` on the current value in the watch, to obtain a new value.
-    /// If the new value doesn't compare equal, updates the watch, notifying receivers.
-    fn try_maybe_send<F, E>(&mut self, update: F) -> Result<(), E>
-    where
-        T: PartialEq,
-        F: FnOnce(&T) -> Result<T, E>;
-
+#[ext(pub, name=PostageWatchSenderExt)]
+impl<T> postage::watch::Sender<T> {
     /// Update, by calling a function, sending only if necessary
     ///
     /// Calls `update` on the current value in the watch, to obtain a new value.
@@ -433,9 +425,11 @@ pub trait PostageWatchSenderExt<T> {
         self.try_maybe_send(|t| Ok::<_, Void>(update(t)))
             .void_unwrap();
     }
-}
 
-impl<T> PostageWatchSenderExt<T> for postage::watch::Sender<T> {
+    /// Update, by calling a fallible function, sending only if necessary
+    ///
+    /// Calls `update` on the current value in the watch, to obtain a new value.
+    /// If the new value doesn't compare equal, updates the watch, notifying receivers.
     fn try_maybe_send<F, E>(&mut self, update: F) -> Result<(), E>
     where
         T: PartialEq,
