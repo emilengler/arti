@@ -42,6 +42,7 @@ members = [
     "crates/arti",
     "crates/arti-bench",
     "crates/arti-testing",
+    "crates/tor-arti-dev-tools",
 ]
 
 resolver = "2"
