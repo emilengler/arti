@@ -322,13 +322,196 @@ pub struct ManagedTransportConfig {
 
 
 // ############################################################
+// ############################################################
+//
+//    PART 4: Bridge configuration
+
+// ==============================
+// Somewhere in `tor-guardmgr`
+#[derive(Builder,...)]
+pub struct Bridge {
+    addrs: Vec<RichAddr>,
+    rsa_id: RsaIdentity,
+    ed_id: Option<Ed25519Identity>,
+}
+// ^ Additionally, make sure that Bridge can be deserialized from a string,
+// when that string is a "bridge" line.
+
+
+// TODO: We want a "list of bridges'" configuration type
+
+// TODO: we want a "should we use bridges at this moment"
+// configuration object.
+
+
+// ############################################################
+// ############################################################
+//
+//    PART 5: Bridges as guards.
+
+// Digression:
+//
+// We need to handle the case where the user configures lots of
+// bridges.  To avoid sampling attacks, we still only want to pick a
+// few bridges as our guards, and use those.  Therefore, we need to
+// define a guard sample that draws from the set of bridges, and which
+// can be used as our first hops.
+//
+// Therefore, we need to extend the Guard type to handle transport
+// information in addition to regular information, and to handle
+// guards with unknown keys.  We should make sure this is done in a
+// backward-compatible way with the existing json files for guards.
+
+// ==============================
+// In tor-guardmgr:
+
+// change both of these
+pub struct Guard { ... }
+pub struct FirstHop { ... }
+
+enum GuardSetSelector {
+    // ...
+    Bridges
+}
+struct GuardSets {
+    // ...
+    bridges: GuardSet,
+}
+
+// TODO: The set of configured bridges should be held by the GuardMgr, and
+// used in place of a NetDir when creating or updating the "Bridges"
+// GuardSet.
+//
+// TODO: This may imply having a trait that can be implemented by a
+// BridgeList or a NetDir, and having GuardSet take that in place of a
+// NetDir.
+//
+// TODO: The set of parameters to use for bridges may be different from
+// those default on the network for regular guards; we should see what
+// Tor does there.
+
+
+// ############################################################
+// ############################################################
+//    PART 6: Bridges and the directory system.
+//
+// Here we get a bit fishy, and there is substantial opportunity for
+// different choices.  I'll try to explain what the choices are, and
+// why I'm making them.
+//
+// Q1: Should bridges or bridge be part of the NetDir?  I say no.
+//     In Tor we said "yes" and got into a fair amount of trouble by
+//     failing to distinguish bridges non-bridge relays.
+//
+//     If we do decide to keep bridges in the netdir, we need to treat
+//     them as absolutely different from regular relays: we should
+//     never have an API that can return either a bridge or a relay,
+//     and we should never .
+//
+// Q2: Should keeping bridge descriptors up-to-date be the
+//     responsibility of the DirMgr?  I say "yes": the "keep these
+//     things downloaded and up-to-date and cached on disk" logic
+//     lives there happily.
+//
+// Q3: Who "owns" the RouterDescs (or a representation of them) that
+//     we use to talk to bridges?  I say that `tor-guardmgr` is a
+//     logical place for those.
+//
+// Taken together, this logic means that the dirmgr needs a way to
+// find out from the guardmgr (via the circmgr) "Which bridge
+// descriptors do I need to download?" and to tell the guardmgr "Here
+// is a router descriptor that I think you may want."
+//
+// Note that unlike microdescs describing a Relay, you can ONLY get a
+// bridge descriptor from the bridge itself, so the director manager
+// code should store them separately from any other descriptors.
+
+// ==============================
+// In tor-guardmgr:
+
+/// This is analogous to MdReceiver.
+pub trait BridgeDescReceiver {
+    // Return a list of bridges whose descriptors we'd like to
+    // download.
+    //
+    // I think that this needs to be a dyn ChanTarget or
+    // OwnedChanTarget or something like that: Otherwise the directory
+    // manager cannot reliably request the correct resource over the correct
+    // circuit.
+    //
+    // This should return an empty set if we aren't using bridges.
+    fn missing_bridge_descs(&self) -> Box<dyn Iterator<Item=&dyn ChanTarget>>;
+    // Possibly this one should take &self, and do interior mutability.
+    fn add_desc(&mut self, desc: RouterDesc);
+    fn n_missing(&self) -> usize;
+
+    // Return true if we have enough bridge information to build
+    // multihop circuits through them.
+    //
+    // If we don't have enough bridge descriptors, then we can't
+    // build multihop circuits.
+    fn enough_descs(&self) -> bool;
+
+    // Return a stream that will get an event when the set of required
+    // bridges changes.
+    fn brige_descs_needed_changed(&self) -> Box<dyn Stream<Item=()>>;
+}
+
+// ==============================
+// In tor-dirmgr:
+impl DirMgr
+    // ...
+
+    /// Set an object that should be used to find out which bridge
+    /// descriptors we want, and to provide them.
+    pub fn set_bridge_desc_receiver(&self, recv: impl BridgeDescReceiver);
+}
+
+
+// ############################################################
+// ############################################################
+//    PART 7: Building circuits.
+//
+// We need two new rules in tor-circmgr:
+//
+//   First, if we get a Guard that's a bridge, we _don't_ want to look
+//   it up in the NetDir in order to find its onion keys.  Instead, we
+//   need to ask that guard itself.  This could be done with:
+
+// ==============================
+// tor-guardmgr:
+impl FirstHop {
+   // ...
+
+   // If this is a valid circuit target, then return a view of it as
+   // a CircTarget.  Otherwise, it can't be used on its own to build
+   // circuits.
+   pub fn as_circ_target(&self) -> Option<&dyn CircTarget>;
+
+
+   // This function already exists; but for bridges, it should always
+   // return None.
+   pub fn get_relay<'a>(&self, netdir: &'a NetDir) -> Option<Relay<'a>>;
+}
+
+// Second, we need a to make circuits through bridges become 4-hop,
+// since we assume the first hop does not provide anonymity.
+
+impl FirstHop {
+   /// Return true if this hop should count towards the circuit length.
+   pub fn counts_towards_circuit_len(&self) -> bool;
+
+}
+
+
+
+
+
+
+// ############################################################
 
 // STILL TO GO:
 //
-// - Configuring bridges
-// - updated apis in guardmgr
-// - updates in circmgr
-// - communicating from circmgr to guardmgr
 // - reporting bootstrap status with bridges.
 
 
