@@ -150,6 +150,7 @@ dependencies = [
  "derive_more",
  "directories",
  "educe",
+ "extend",
  "fs-mistrust",
  "futures",
  "humantime-serde",
