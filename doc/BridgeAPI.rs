@@ -63,16 +63,23 @@ pub enum TransportAddr {
 impl FromStr for TransportAddr {...}
 impl Display for TransportAddr {...}
 
-/// A description of one possible way to reach a relay.
-#[derive(...)]
-pub struct RichAddr {
-    pub id: TransportId,
-    pub addr: TransportAddr,
-    // TODO: I think we will need an additional set of K=V parameters
-    // here to represent the K=V parameters that individual bridge
-    // lines can have.
+/// per-Bridge values that we use with a single transport.
+pub struct TransportSettings {
+    settings: Vec<String,String>,
 }
-// TODO: I really dislike the `RichAddr` name.
+
+#[derive(..)]
+#[non_exhaustive]
+pub enum ChannelMethod {
+    Direct {
+        addr: net::SocketAddr,
+    },
+    Pt {
+        transport: TransportId,
+        addr: TransportAddr,
+        settings: Arc<TransportSettings>,
+    }
+}
 
 /// ==============================
 /// In tor-linkspec::traits::ChanTarget
@@ -80,18 +87,17 @@ pub struct RichAddr {
 pub trait ChanTarget {
     // ... Existing methods, and then
 
-    /// Return a list of RichAddr for connecting to this channel
+    /// Return a list of ChannelMehod for connecting to this channel
     /// target.
-    fn rich_addrs(&self) -> Vec<RichAddr> {
+    fn chan_methods(&self) -> Vec<ChannelMethod> {
         // The default implementation uses HasAddrs::addrs() and maps
         // that to RichAddr::IpPort
     }
 }
-// TODO: I still dislike the rich_addrs() name.
-// TODO: Does rich_addrs belong in a new HasRichAddrs trait?
 // TODO: I don't like returning a Vec, but what can you do.
 
-
+// TODO: we need to consider the impact of these addresses on family
+// detection.
 
 
 // ############################################################
@@ -220,6 +226,7 @@ pub enum Error {
 
 { // ????
 
+    // TODO
     // Somewhere, we need to update our internal map of channels, so
     // that we can look them up not only by Ed25519 identity, but by
     // RSA identity too.  We also need a way to be able to get a
@@ -330,7 +337,10 @@ pub struct ManagedTransportConfig {
 // Somewhere in `tor-guardmgr`
 #[derive(Builder,...)]
 pub struct Bridge {
-    addrs: Vec<RichAddr>,
+    // TODO: Should the `ChannelMethod` here have a variant to allow
+    // multiple TransportAddr for the same settings and ID?  That could
+    // save a bunch of typing if we want to allow dual-address bridges.
+    addrs: Vec<ChannelMethod>,
     rsa_id: RsaIdentity,
     ed_id: Option<Ed25519Identity>,
 }
