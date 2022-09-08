@@ -1,0 +1,24 @@
+[package]
+name = "tor-arti-dev-tools"
+version = "0.0.1"
+authors = ["The Tor Project, Inc.", "Nick Mathewson <nickm@torproject.org>"]
+edition = "2021"
+rust-version = "1.56"
+license = "MIT OR Apache-2.0"
+homepage = "https://gitlab.torproject.org/tpo/core/arti/-/wikis/home"
+description = "Utilities for helping develop Arti."
+keywords = ["tor", "arti", "privacy", "anonymity"]
+categories = ["command-line-utilities", "cryptography"]
+repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
+
+[features]
+
+full = []
+
+[dependencies]
+itertools = "*"
+proc-macro2 = "*"
+quote = "*"
+syn = "*"
+
+[dev-dependencies]
