@@ -423,9 +423,10 @@ struct GuardSets {
 //     things downloaded and up-to-date and cached on disk" logic
 //     lives there happily.
 //
-// Q3: Who "owns" the RouterDescs (or a representation of them) that
-//     we use to talk to bridges?  I say that `tor-guardmgr` is a
-//     logical place for those.
+// Q3: Who "owns" the RouterDescs (or a representation of them) that we
+//     use to talk to bridges?  I origninally said that `tor-guardmgr`
+//     was a logical place for those. Now I'm leaning to having a
+//     `BridgeList` type that is maintained by the directory manager.
 //
 // Taken together, this logic means that the dirmgr needs a way to
 // find out from the guardmgr (via the circmgr) "Which bridge
@@ -439,33 +440,51 @@ struct GuardSets {
 // ==============================
 // In tor-guardmgr:
 
-/// This is analogous to MdReceiver.
-pub trait BridgeDescReceiver {
-    // Return a list of bridges whose descriptors we'd like to
-    // download.
-    //
-    // I think that this needs to be a dyn ChanTarget or
-    // OwnedChanTarget or something like that: Otherwise the directory
-    // manager cannot reliably request the correct resource over the correct
-    // circuit.
-    //
-    // This should return an empty set if we aren't using bridges.
-    fn missing_bridge_descs(&self) -> Box<dyn Iterator<Item=&dyn ChanTarget>>;
-    // Possibly this one should take &self, and do interior mutability.
-    fn add_desc(&mut self, desc: RouterDesc);
-    fn n_missing(&self) -> usize;
+/// This is analogous to NetDirProvider.
+pub trait BridgeDescProvider {
+    fn bridges(&self) -> Arc<BridgeList>;
+    fn events(&self) -> BoxStream<'static, BridgeDescEvent>;
 
-    // Return true if we have enough bridge information to build
-    // multihop circuits through them.
-    //
-    // If we don't have enough bridge descriptors, then we can't
-    // build multihop circuits.
-    fn enough_descs(&self) -> bool;
-
-    // Return a stream that will get an event when the set of required
-    // bridges changes.
-    fn brige_descs_needed_changed(&self) -> Box<dyn Stream<Item=()>>;
+    /// Change the set of bridges that we want to download descriptors for.
+    ///
+    // TODO: I don't know if this is the best API.  If the set of
+    // bridges we want descriptors for is huge, then this API gets unweildy.
+    // On the other hand, this will only be the set of bridges that we
+    // actually want descriptors for, so it should stay small?
+    fn set_bridges(&self, bridges: &[OwnedChanTarget]);
 }
+
+#[non_exhaustive]
+pub enum BridgeDescEvent {
+    /// A new descriptor has arrived
+    //
+    // TODO: (Should we do anything to indicate which one? If so, we
+    // won't be able to use a flag-based publisher.)
+    NewDesc,
+}
+
+impl GuardMgr {
+    // ...
+
+    /// Configure a new BridgeDescProvider.
+    pub fn set_bridge_desc_provider<T>(&self, provider: T)
+        where T: BridgeDescProvider;
+}
+
+
+#[derive(Default)]
+pub struct BridgeList { ... }
+
+impl BridgeList {
+    pub fn by_id(&self, id: RelayId) -> Option<&BridgeDesc> {...}
+    pub fn by_ids(&self, id: RelayIds) -> Option<&BridgeDesc> {...}
+    pub fn bridges(&self) -> impl Iterator<Item=&BridgeDesc> {...}
+
+    pub fn insert(&mut self, desc: BridgeDesc);
+    pub fn retain<F>(&self, func: F)
+        where F: FnMut(&BridgeDesc) -> bool;
+}
+
 
 // ==============================
 // In tor-dirmgr:
