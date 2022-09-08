@@ -47,6 +47,7 @@ See <a href="https://gitlab.torproject.org/tpo/core/arti/#todo-need-to-change-wh
 /// Find out which kind of address family we can/should use for a
 /// given `SocksRequest`.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 fn stream_preference(req: &SocksRequest, addr: &str) -> StreamPrefs {
     let mut prefs = StreamPrefs::new();
     if addr.parse::<Ipv4Addr>().is_ok() {
@@ -412,6 +413,7 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
 /// timeouts, and a `tor_client` to use in connecting over the Tor
 /// network.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 pub(crate) async fn run_socks_proxy<R: Runtime>(
     runtime: R,
     tor_client: TorClient<R>,

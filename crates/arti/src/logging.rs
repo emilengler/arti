@@ -260,6 +260,7 @@ where
 /// Opaque structure that gets dropped when the program is shutting down,
 /// after logs are no longer needed.  The `Drop` impl flushes buffered messages.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 pub(crate) struct LogGuards {
     /// The actual list of guards we're returning.
     #[allow(unused)]

@@ -387,6 +387,7 @@ async fn run<R: Runtime>(
 ///
 /// Currently, might panic if wrong arguments are specified.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
+#[cfg_attr(docsrs, doc(cfg(feature = "experimental-api")))]
 fn main_main<I, T>(cli_args: I) -> Result<()>
 where
     I: IntoIterator<Item = T>,
