@@ -299,8 +299,7 @@ impl SocksRequest {
             w.write(a)?;
             w.write_u16(self.port());
         } else {
-            // TODO: sometimes I think we want to answer with ::, not 0.0.0.0
-            w.write(&SocksAddr::Ip(std::net::Ipv4Addr::UNSPECIFIED.into()))?;
+            w.write(&SocksAddr::Ip(std::net::Ipv6Addr::UNSPECIFIED.into()))?;
             w.write_u16(0);
         }
         Ok(w)
@@ -545,7 +544,7 @@ mod test {
 
         assert_eq!(
             req.reply(SocksStatus::SUCCEEDED, None).unwrap(),
-            hex!("05 00 00 01 00000000 0000")
+            hex!("05 00 00 04 0000 0000 0000 0000 0000 0000 0000 0000 0000")
         );
     }
 
