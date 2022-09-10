@@ -108,6 +108,8 @@ rust-nightly:
 coverage:
   stage: test
   image: rust:latest
+  # temporary, while grcov can't be installed https://github.com/mozilla/grcov/pull/880
+  allow_failure: true
   script:
     - apt-get update && apt-get install -y python3-pip python3-setuptools
     - pip3 install beautifulsoup4 lxml
