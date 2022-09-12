@@ -1117,7 +1117,7 @@ impl GuardMgrInner {
     pub(crate) fn run_periodic_events(&mut self, wallclock: SystemTime, now: Instant) -> Duration {
         self.update(wallclock, None);
         self.expire_and_answer_pending_requests(now);
-        Duration::from_secs(1) // TODO: Too aggressive.
+        Duration::from_secs(3)
     }
 
     /// Try to select a guard, expanding the sample if the first attempt fails.
