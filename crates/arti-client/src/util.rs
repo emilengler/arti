@@ -39,7 +39,7 @@ impl<'a, T: StateMgr + 'a> StateMgrUnlockGuard<'a, T> {
 pub(crate) fn running_as_setuid() -> bool {
     #[cfg(target_family = "unix")]
     {
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
         {
             // Use `libc` to find our real, effective, and saved UIDs and GIDs.
             //
@@ -64,7 +64,7 @@ pub(crate) fn running_as_setuid() -> bool {
             let same_resgid = resgid.iter().all(|gid| gid == &resgid[0]);
             !(same_resuid && same_resgid)
         }
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
         {
             // Unaccountably, MacOS lacks setresuid/setresgid, which were invented literally
             // decades ago to save people navigating the almost-incomprehensible swamp that is
