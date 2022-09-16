@@ -308,6 +308,12 @@ coverage-aggregated:
   tags:
     - amd64
 
+check-targets:
+  stage: test
+  image: rust:latest
+  script:
+    - ./maint/cargo_check_target -il
+
 pages:
   rules:
     - if: $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_REF_NAME == "main"

@@ -1,0 +1,110 @@
+#!/bin/bash
+
+set -euo pipefail
+
+SCRIPT_NAME=$(basename "$0")
+
+# all targets with status "maintained" or higher", linux commented because of issues with openssl-sys
+MAINTAINED=(
+	"aarch64-apple-darwin"
+	"aarch64-apple-ios"
+	"aarch64-apple-ios-sim"
+	"aarch64-linux-android"
+	"aarch64-pc-windows-msvc"
+	"aarch64-unknown-linux-gnu"
+	"aarch64-unknown-linux-musl"
+	#"arm-linux-androideabi" fail?
+	"arm-unknown-linux-gnueabi"
+	"arm-unknown-linux-gnueabihf"
+	"arm-unknown-linux-musleabi"
+	"arm-unknown-linux-musleabihf"
+	#"armv5te-unknown-linux-gnueabi" fail?
+	#"armv5te-unknown-linux-musleabi" fail?
+	"armv7-linux-androideabi"
+	"armv7-unknown-linux-gnueabi"
+	"armv7-unknown-linux-gnueabihf"
+	"armv7-unknown-linux-musleabi"
+	"armv7-unknown-linux-musleabihf"
+	#"i586-pc-windows-msvc" fail?
+	#"i586-unknown-linux-gnu" fail?
+	#"i586-unknown-linux-musl" fail?
+	"i686-linux-android"
+	"i686-pc-windows-gnu"
+	"i686-pc-windows-msvc"
+	"i686-unknown-linux-gnu"
+	"i686-unknown-linux-musl"
+	"thumbv7neon-linux-androideabi"
+	"thumbv7neon-unknown-linux-gnueabihf"
+	"x86_64-apple-ios"
+	"x86_64-linux-android"
+	"x86_64-pc-windows-gnu"
+	"x86_64-pc-windows-msvc"
+	"x86_64-unknown-linux-gnu"
+	"x86_64-unknown-linux-gnux32"
+	"x86_64-unknown-linux-musl"
+	"x86_64-apple-darwin"
+)
+
+# TARGET, excluding emulators (x86 android...), and unusual combo (Windows on ARM...)
+TARGET=(
+	"aarch64-apple-darwin"
+	"aarch64-apple-ios"
+	"aarch64-linux-android"
+	"aarch64-unknown-linux-gnu"
+	"armv7-linux-androideabi"
+	"i686-pc-windows-gnu"
+	"i686-unknown-linux-gnu"
+	"x86_64-pc-windows-gnu"
+	"x86_64-pc-windows-msvc"
+	"x86_64-unknown-linux-gnu"
+	"x86_64-unknown-linux-musl"
+	"x86_64-apple-darwin"
+)
+
+function usage()
+{
+    cat <<EOF
+${SCRIPT_NAME}: Check arti for many targets, with parameters minimising dependancies
+on platform dependant tooling.
+   Usage:
+  cargo_check_target [opts] : Run cargo check for many targets.
+
+Options:
+  -h: Print this message.
+  -i: Install the target if they are missing
+  -l: Longer test, test ${#MAINTAINED[@]} targets instead of ${#TARGET[@]}.
+EOF
+}
+
+install=no
+to_build=("${TARGET[@]}")
+
+while getopts "hil" opt ; do
+    case "$opt" in
+        h) usage
+	   exit 0
+	   ;;
+	i) install=yes
+	   ;;
+	l) to_build=("${MAINTAINED[@]}")
+	   ;;
+	*) echo "Unknown option."
+           exit 1
+           ;;
+    esac
+done
+
+if [ "$install" = "yes" ]; then
+	rustup target add "${to_build[@]}"
+fi
+
+export CC=$(mktemp)
+echo "#!/bin/sh" > "$CC"
+echo "echo RUST_VERSION_OPENSSL_0x101010efL" >> "$CC"
+chmod +x "$CC"
+for target in "${to_build[@]}" ; do
+	echo "Testing $target"
+	# don't include "compression" as it requires a C compiler for the given target
+	PKG_CONFIG_ALLOW_CROSS=1 cargo check -p arti --no-default-features --features tokio,native-tls,dns-proxy,harden --target "$target"
+done
+rm "$CC"
