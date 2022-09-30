@@ -152,6 +152,7 @@ dependencies = [
  "derive_more",
  "directories",
  "educe",
+ "extend",
  "fs-mistrust",
  "futures",
  "humantime-serde",
@@ -1118,6 +1119,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0206175f82b8d6bf6652ff7d71a1e27fd2e4efde587fd368662814d6ec1d9ce0"
 
 [[package]]
+name = "extend"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c5216e387a76eebaaf11f6d871ec8a4aae0b25f05456ee21f228e024b1b3610"
+dependencies = [
+ "proc-macro-error",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "fallible-iterator"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1226,6 +1239,7 @@ dependencies = [
  "derive_more",
  "dirs",
  "educe",
+ "extend",
  "libc",
  "once_cell",
  "serde",
@@ -3345,10 +3359,10 @@ version = "0.4.0"
 dependencies = [
  "derive_more",
  "educe",
+ "extend",
  "futures",
  "futures-await-test",
  "hex",
- "libc",
  "pin-project",
  "postage",
  "rand 0.8.5",
@@ -3711,6 +3725,7 @@ dependencies = [
  "curve25519-dalek",
  "digest 0.10.5",
  "ed25519-dalek",
+ "extend",
  "getrandom 0.2.7",
  "hex",
  "hex-literal",

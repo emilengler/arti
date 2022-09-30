@@ -13,6 +13,7 @@ categories = ["rust-patterns"]
 repository = "https://gitlab.torproject.org/tpo/core/arti.git/"
 
 [dependencies]
+extend = "1"
 futures = "0.3.14"
 hex = "0.4"
 pin-project = "1"
@@ -21,9 +22,6 @@ rand = "0.8"
 rand_chacha = "0.3"
 thiserror = "1"
 void = "1"
-
-[target.'cfg(unix)'.dependencies]
-libc = { version = "0.2", default-features = false }
 
 [dev-dependencies]
 derive_more = "0.99"

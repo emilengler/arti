@@ -4,6 +4,7 @@
 
 use derive_builder::Builder;
 use derive_more::AsRef;
+use extend::ext;
 use fs_mistrust::{Mistrust, MistrustBuilder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -101,17 +102,9 @@ fn default_dns_resolve_ptr_timeout() -> Duration {
 
 /// Extension trait for `MistrustBuilder` to convert the error type on
 /// build.
-trait BuilderExt {
-    /// Type that this builder provides.
-    type Built;
-    /// Run this builder and convert its error type (if any)
-    fn build_for_arti(&self) -> Result<Self::Built, ConfigBuildError>;
-}
-
-impl BuilderExt for MistrustBuilder {
-    type Built = Mistrust;
-
-    fn build_for_arti(&self) -> Result<Self::Built, ConfigBuildError> {
+#[ext]
+impl MistrustBuilder {
+    fn build_for_arti(&self) -> Result<Mistrust, ConfigBuildError> {
         self.clone()
             .controlled_by_env_var_if_not_set(FS_PERMISSIONS_CHECKS_DISABLE_VAR)
             .build()
