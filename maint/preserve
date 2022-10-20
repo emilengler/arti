@@ -1,0 +1,19 @@
+#!/bin/sh
+
+set -eu
+
+# script to preseve a few files from cleanup, usefull only in CI
+PREFIX=".preserve"
+
+if [ "$1" = "-u" ]; then
+	cp -a "$PREFIX/"* .
+	exit 0
+else
+	for path in "$@"
+	do
+		DIR=$(dirname "$path")
+		mkdir -p "$PREFIX/$DIR"
+		cp -a "$path" "$PREFIX/$path"
+	done
+fi
+
