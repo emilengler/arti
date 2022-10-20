@@ -19,16 +19,13 @@ use std::{
     sync::Arc,
 };
 
-use async_trait::async_trait;
 use futures::{AsyncReadExt, AsyncWriteExt};
-use tor_error::{bad_api_usage, internal};
-use tor_linkspec::{ChannelMethod, HasChanMethod, OwnedChanTarget, PtTargetAddr};
+use tor_error::internal;
+use tor_linkspec::PtTargetAddr;
 use tor_rtcompat::TcpProvider;
 use tor_socksproto::{
     SocksAddr, SocksAuth, SocksClientHandshake, SocksCmd, SocksRequest, SocksStatus, SocksVersion,
 };
-
-use super::TransportHelper;
 
 /// Information about what proxy protocol to use, and how to use it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -371,7 +368,6 @@ fn settings_to_protocol(s: String) -> Result<Protocol, ProxyError> {
 #[cfg(test)]
 mod test {
     #![allow(clippy::unwrap_used)]
-    use super::*;
 
     #[cfg(feature = "pt-client")]
     #[test]
