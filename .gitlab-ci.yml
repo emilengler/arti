@@ -174,9 +174,8 @@ build-repro:
 integration-chutney:
   stage: test
   image: debian:stable-slim
-  before_script:
-    - ./maint/preserve -u
   script:
+    - ./maint/preserve -u
     - apt update
     - apt install -y tor git python3 curl dnsutils
     - ./tests/chutney/setup proxy
@@ -208,9 +207,8 @@ integration-shadow:
       paths:
       - opt/tgen
   image: debian:11-slim
-  before_script:
-    - ./maint/preserve -u
   script:
+    - ./maint/preserve -u
     # We're going to install binaries to $HOME/.local/bin
     - 'export PATH=$HOME/.local/bin:$PATH'
 
