@@ -98,10 +98,11 @@ if [ "$install" = "yes" ]; then
 	rustup target add "${to_build[@]}"
 fi
 
-export CC=$(mktemp)
+CC=$(mktemp)
 echo "#!/bin/sh" > "$CC"
 echo "echo RUST_VERSION_OPENSSL_0x101010efL" >> "$CC"
 chmod +x "$CC"
+export CC
 for target in "${to_build[@]}" ; do
 	echo "Testing $target"
 	# don't include "compression" as it requires a C compiler for the given target
