@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_NAME=$(basename "$0")
 
-# all targets with status "maintained" or higher", linux commented because of issues with openssl-sys
+# all targets with status "maintained" or higher"
 MAINTAINED=(
 	"aarch64-apple-darwin"
 	"aarch64-apple-ios"
@@ -13,21 +13,21 @@ MAINTAINED=(
 	"aarch64-pc-windows-msvc"
 	"aarch64-unknown-linux-gnu"
 	"aarch64-unknown-linux-musl"
-	#"arm-linux-androideabi" fail?
+	#"arm-linux-androideabi"
 	"arm-unknown-linux-gnueabi"
 	"arm-unknown-linux-gnueabihf"
 	"arm-unknown-linux-musleabi"
 	"arm-unknown-linux-musleabihf"
-	#"armv5te-unknown-linux-gnueabi" fail?
-	#"armv5te-unknown-linux-musleabi" fail?
+	#"armv5te-unknown-linux-gnueabi"
+	#"armv5te-unknown-linux-musleabi"
 	"armv7-linux-androideabi"
 	"armv7-unknown-linux-gnueabi"
 	"armv7-unknown-linux-gnueabihf"
 	"armv7-unknown-linux-musleabi"
 	"armv7-unknown-linux-musleabihf"
-	#"i586-pc-windows-msvc" fail?
-	#"i586-unknown-linux-gnu" fail?
-	#"i586-unknown-linux-musl" fail?
+	#"i586-pc-windows-msvc"
+	#"i586-unknown-linux-gnu"
+	#"i586-unknown-linux-musl"
 	"i686-linux-android"
 	"i686-pc-windows-gnu"
 	"i686-pc-windows-msvc"
