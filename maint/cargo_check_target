@@ -5,7 +5,8 @@ set -euo pipefail
 SCRIPT_NAME=$(basename "$0")
 
 # all targets with status "maintained" or higher"
-MAINTAINED=(
+# this should match `rustup target list | grep -E '(linux|windows|ios|darwin)' | grep -E '(arm|i.86|x86|aarch|thumb)'`
+MAINTAINED_PLATFORMS=(
 	"aarch64-apple-darwin"
 	"aarch64-apple-ios"
 	"aarch64-apple-ios-sim"
@@ -13,21 +14,21 @@ MAINTAINED=(
 	"aarch64-pc-windows-msvc"
 	"aarch64-unknown-linux-gnu"
 	"aarch64-unknown-linux-musl"
-	#"arm-linux-androideabi"
+	#"arm-linux-androideabi" AtomicU64 not supported; breaks coarsetime
 	"arm-unknown-linux-gnueabi"
 	"arm-unknown-linux-gnueabihf"
 	"arm-unknown-linux-musleabi"
 	"arm-unknown-linux-musleabihf"
-	#"armv5te-unknown-linux-gnueabi"
-	#"armv5te-unknown-linux-musleabi"
+	#"armv5te-unknown-linux-gnueabi" AtomicU64 not supported; breaks coarsetime
+	#"armv5te-unknown-linux-musleabi" AtomicU64 not supported; breaks coarsetime
 	"armv7-linux-androideabi"
 	"armv7-unknown-linux-gnueabi"
 	"armv7-unknown-linux-gnueabihf"
 	"armv7-unknown-linux-musleabi"
 	"armv7-unknown-linux-musleabihf"
-	#"i586-pc-windows-msvc"
-	#"i586-unknown-linux-gnu"
-	#"i586-unknown-linux-musl"
+	#"i586-pc-windows-msvc" trait `Zeroize` is not implemented for `__m128i`; breaks aes
+	#"i586-unknown-linux-gnu" trait `Zeroize` is not implemented for `__m128i`; breaks aes
+	#"i586-unknown-linux-musl" trait `Zeroize` is not implemented for `__m128i`; breaks aes
 	"i686-linux-android"
 	"i686-pc-windows-gnu"
 	"i686-pc-windows-msvc"
@@ -35,6 +36,7 @@ MAINTAINED=(
 	"i686-unknown-linux-musl"
 	"thumbv7neon-linux-androideabi"
 	"thumbv7neon-unknown-linux-gnueabihf"
+	"x86_64-apple-darwin"
 	"x86_64-apple-ios"
 	"x86_64-linux-android"
 	"x86_64-pc-windows-gnu"
@@ -42,11 +44,10 @@ MAINTAINED=(
 	"x86_64-unknown-linux-gnu"
 	"x86_64-unknown-linux-gnux32"
 	"x86_64-unknown-linux-musl"
-	"x86_64-apple-darwin"
 )
 
-# TARGET, excluding emulators (x86 android...), and unusual combo (Windows on ARM...)
-TARGET=(
+# SUPPORTTARGET, excluding emulators (x86 android...), and unusual combo (Windows on ARM...)
+SUPPORTTARGETED_PLATFORMS=(
 	"aarch64-apple-darwin"
 	"aarch64-apple-ios"
 	"aarch64-linux-android"
@@ -54,11 +55,11 @@ TARGET=(
 	"armv7-linux-androideabi"
 	"i686-pc-windows-gnu"
 	"i686-unknown-linux-gnu"
+	"x86_64-apple-darwin"
 	"x86_64-pc-windows-gnu"
 	"x86_64-pc-windows-msvc"
 	"x86_64-unknown-linux-gnu"
 	"x86_64-unknown-linux-musl"
-	"x86_64-apple-darwin"
 )
 
 function usage()
@@ -72,12 +73,12 @@ on platform dependant tooling.
 Options:
   -h: Print this message.
   -i: Install the target if they are missing
-  -l: Longer test, test ${#MAINTAINED[@]} targets instead of ${#TARGET[@]}.
+  -l: Longer test, test ${#MAINTAINED_PLATFORMS[@]} targets instead of ${#SUPPORTTARGETED_PLATFORMS[@]}.
 EOF
 }
 
 install=no
-to_build=("${TARGET[@]}")
+to_build=("${SUPPORTTARGETED_PLATFORMS[@]}")
 
 while getopts "hil" opt ; do
     case "$opt" in
@@ -86,7 +87,7 @@ while getopts "hil" opt ; do
 	   ;;
 	i) install=yes
 	   ;;
-	l) to_build=("${MAINTAINED[@]}")
+	l) to_build=("${MAINTAINED_PLATFORMS[@]}")
 	   ;;
 	*) echo "Unknown option."
            exit 1
@@ -98,10 +99,7 @@ if [ "$install" = "yes" ]; then
 	rustup target add "${to_build[@]}"
 fi
 
-CC=$(mktemp)
-echo "#!/bin/sh" > "$CC"
-echo "echo RUST_VERSION_OPENSSL_0x101010efL" >> "$CC"
-chmod +x "$CC"
+CC=$(realpath "$(dirname "$0")")/stunt/fake-cc
 export CC
 for target in "${to_build[@]}" ; do
 	echo "Testing $target"
