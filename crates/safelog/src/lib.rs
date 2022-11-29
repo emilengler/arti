@@ -287,18 +287,8 @@ impl<T: Redactable> std::fmt::Debug for Redacted<T> {
 /// An object that may or may not be redacted.
 ///
 /// Used to implement conditional redaction
-#[derive(Clone, derive_more::Display)]
+#[derive(Clone, Debug, derive_more::Display)]
 pub struct MaybeRedacted<T: Redactable>(either::Either<T, Redacted<T>>);
-
-impl<T: Redactable> std::fmt::Debug for MaybeRedacted<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Debug;
-        match &self.0 {
-            either::Either::Left(v) => Debug::fmt(v, f),
-            either::Either::Right(v) => Debug::fmt(v, f),
-        }
-    }
-}
 
 #[cfg(test)]
 mod test {
