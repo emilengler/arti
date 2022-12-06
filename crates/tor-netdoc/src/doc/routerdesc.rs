@@ -894,6 +894,8 @@ mod test {
 
     #[test]
     fn parse_arbitrary() -> Result<()> {
+        use chrono::prelude::*;
+
         use std::str::FromStr;
         use tor_checkable::{SelfSigned, Timebound};
         let rd = RouterDesc::parse(TESTDATA)?
@@ -934,7 +936,9 @@ mod test {
         );
         assert_eq!(
             rd.published(),
-            time::SystemTime::UNIX_EPOCH + time::Duration::new(1668455932, 0)
+            Into::<std::time::SystemTime>::into(
+                Utc.with_ymd_and_hms(2022, 11, 14, 19, 58, 52).unwrap()
+            )
         );
         assert_eq!(
             rd.or_ports().collect::<Vec<_>>(),
