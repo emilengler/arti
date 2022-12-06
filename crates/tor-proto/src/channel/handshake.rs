@@ -669,7 +669,6 @@ pub(super) mod test {
 
         tor_rtcompat::test_with_one_runtime!(|rt| async move {
             let now = Utc.with_ymd_and_hms(2008, 08, 02, 17, 0, 0).unwrap().into();
-            //let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1217696400);
             let mut buf = Vec::new();
             // versions cell
             buf.extend_from_slice(VERSIONS);
