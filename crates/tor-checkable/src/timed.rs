@@ -142,23 +142,23 @@ mod test {
         let one_day = Duration::new(86400, 0);
         let mixminion_v0_0_1 = "2003-01-07T00:00:00Z"
             .parse::<humantime::Timestamp>()
-            .unwrap()
+            .expect("could not parse time in test")
             .into();
         let tor_v0_0_2pre13 = "2003-10-19T00:00:00Z"
             .parse::<humantime::Timestamp>()
-            .unwrap()
+            .expect("could not parse time in test")
             .into();
         let cussed_nougat = "2008-08-02T00:00:00Z"
             .parse::<humantime::Timestamp>()
-            .unwrap()
+            .expect("could not parse time in test")
             .into();
         let tor_v0_4_4_5 = "2020-09-15T00:00:00Z"
             .parse::<humantime::Timestamp>()
-            .unwrap()
+            .expect("could not parse time in test")
             .into();
         let today = "2020-09-22T00:00:00Z"
             .parse::<humantime::Timestamp>()
-            .unwrap()
+            .expect("could not parse time in test")
             .into();
 
         let tr = TimerangeBound::new((), ..tor_v0_4_4_5);
