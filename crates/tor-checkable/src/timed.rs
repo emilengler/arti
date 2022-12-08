@@ -135,18 +135,16 @@ impl<T> crate::Timebound<T> for TimerangeBound<T> {
 mod test {
     use super::*;
     use crate::{TimeValidityError, Timebound};
-    use chrono::prelude::*;
     use std::time::{Duration, SystemTime};
 
     #[test]
     fn test_bounds() {
         let one_day = Duration::new(86400, 0);
-
-        let mixminion_v0_0_1 = Utc.with_ymd_and_hms(2003, 01, 07, 0, 0, 0).unwrap().into(); //2003-01-07
-        let tor_v0_0_2pre13 = Utc.with_ymd_and_hms(2003, 10, 19, 0, 0, 0).unwrap().into(); //2003-10-19
-        let cussed_nougat = Utc.with_ymd_and_hms(2008, 08, 02, 0, 0, 0).unwrap().into(); //2008-08-02
-        let tor_v0_4_4_5 = Utc.with_ymd_and_hms(2020, 09, 15, 0, 0, 0).unwrap().into(); //2020-09-15
-        let today = Utc.with_ymd_and_hms(2020, 09, 22, 0, 0, 0).unwrap().into(); //2020-09-22
+        let mixminion_v0_0_1 = SystemTime::UNIX_EPOCH + 12059 * one_day; //2003-01-07
+        let tor_v0_0_2pre13 = SystemTime::UNIX_EPOCH + 12344 * one_day; //2003-10-19
+        let cussed_nougat = SystemTime::UNIX_EPOCH + 14093 * one_day; //2008-08-02
+        let tor_v0_4_4_5 = SystemTime::UNIX_EPOCH + 18520 * one_day; //2020-09-15
+        let today = SystemTime::UNIX_EPOCH + 18527 * one_day; //2020-09-22
 
         let tr = TimerangeBound::new((), ..tor_v0_4_4_5);
         assert_eq!(tr.start, None);
