@@ -2,8 +2,6 @@ use tor_cert::rsa::RsaCrosscert;
 use tor_cert::{Ed25519Cert, KeyType};
 use tor_checkable::{ExternallySigned, SelfSigned, Timebound};
 
-use std::time::{Duration, SystemTime};
-
 use hex_literal::hex;
 
 #[test]
@@ -15,7 +13,10 @@ fn test_valid_ed() {
     let signing_key = Ed25519Identity::from_bytes(&signing_key[..]).unwrap();
     let identity_key = Ed25519Identity::from_bytes(&identity_key[..]).unwrap();
 
-    let notional_time = SystemTime::UNIX_EPOCH + Duration::new(1601000000, 0);
+    let notional_time = "2020-09-25T02:13:20Z"
+        .parse::<humantime::Timestamp>()
+        .unwrap()
+        .into();
 
     // signing cert signed with signing key, type 4, one extension.
     let c = hex!(
@@ -43,7 +44,11 @@ fn test_valid_ed() {
     assert_eq!(cert.cert_type(), 4.into());
     assert_eq!(
         cert.expiry(),
-        SystemTime::UNIX_EPOCH + Duration::new(0x6cc2a * 3600, 0)
+        Into::<std::time::SystemTime>::into(
+            "2020-10-26T18:00:00Z"
+                .parse::<humantime::Timestamp>()
+                .unwrap()
+        )
     );
 
     // link cert signed with signing key, type 5, no extensions.
@@ -72,13 +77,21 @@ fn test_valid_ed() {
     assert_eq!(cert.cert_type(), 5.into());
     assert_eq!(
         cert.expiry(),
-        SystemTime::UNIX_EPOCH + Duration::new(0x6c98a * 3600, 0)
+        Into::<std::time::SystemTime>::into(
+            "2020-09-28T18:00:00Z"
+                .parse::<humantime::Timestamp>()
+                .unwrap()
+        )
     );
 }
 
 #[test]
 fn test_valid_rsa_cc() {
-    let notional_time = SystemTime::UNIX_EPOCH + Duration::new(1601000000, 0);
+    let notional_time = "2020-09-25T02:13:20Z"
+        .parse::<humantime::Timestamp>()
+        .unwrap()
+        .into();
+
     let pk = hex!("30818902818100d38b1e6ceb946e0db0751f4cbace3dcb9688b6c25304227b4710c35afb73627e50500f5913e158b621802612d1c75827003703338375237552eb3cd3c12f6ab3604e60c1a2d26bb1fbad206ff023969a90909d6a65a5458a5312c26ebd3a3dad30302d4515cdcd264146ac18e6fc60a04bd3ec327f04294d96ba5aa25b464c3f0203010001");
     let pk = tor_llcrypto::pk::rsa::PublicKey::from_der(&pk[..]).unwrap();
 

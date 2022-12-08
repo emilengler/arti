@@ -666,7 +666,10 @@ pub(super) mod test {
     #[test]
     fn connect_ok() -> Result<()> {
         tor_rtcompat::test_with_one_runtime!(|rt| async move {
-            let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1217696400);
+            let now = "2008-08-02T17:00:00Z"
+                .parse::<humantime::Timestamp>()
+                .unwrap()
+                .into();
             let mut buf = Vec::new();
             // versions cell
             buf.extend_from_slice(VERSIONS);

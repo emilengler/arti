@@ -140,11 +140,26 @@ mod test {
     #[test]
     fn test_bounds() {
         let one_day = Duration::new(86400, 0);
-        let mixminion_v0_0_1 = SystemTime::UNIX_EPOCH + 12059 * one_day; //2003-01-07
-        let tor_v0_0_2pre13 = SystemTime::UNIX_EPOCH + 12344 * one_day; //2003-10-19
-        let cussed_nougat = SystemTime::UNIX_EPOCH + 14093 * one_day; //2008-08-02
-        let tor_v0_4_4_5 = SystemTime::UNIX_EPOCH + 18520 * one_day; //2020-09-15
-        let today = SystemTime::UNIX_EPOCH + 18527 * one_day; //2020-09-22
+        let mixminion_v0_0_1 = "2003-01-07T00:00:00Z"
+            .parse::<humantime::Timestamp>()
+            .unwrap()
+            .into();
+        let tor_v0_0_2pre13 = "2003-10-19T00:00:00Z"
+            .parse::<humantime::Timestamp>()
+            .unwrap()
+            .into();
+        let cussed_nougat = "2008-08-02T00:00:00Z"
+            .parse::<humantime::Timestamp>()
+            .unwrap()
+            .into();
+        let tor_v0_4_4_5 = "2020-09-15T00:00:00Z"
+            .parse::<humantime::Timestamp>()
+            .unwrap()
+            .into();
+        let today = "2020-09-22T00:00:00Z"
+            .parse::<humantime::Timestamp>()
+            .unwrap()
+            .into();
 
         let tr = TimerangeBound::new((), ..tor_v0_4_4_5);
         assert_eq!(tr.start, None);
