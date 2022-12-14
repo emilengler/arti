@@ -67,6 +67,8 @@ use tor_checkable::{timed::TimerangeBound, ExternallySigned};
 use tor_llcrypto as ll;
 use tor_llcrypto::pk::rsa::RsaIdentity;
 
+use tracing::warn;
+
 use serde::{Deserialize, Deserializer};
 
 #[cfg(feature = "build_docs")]
@@ -1058,6 +1060,11 @@ impl DirSource {
             or_port,
         })
     }
+
+    /// Return the RSA identity used by this authority
+    pub(crate) fn identity(&self) -> RsaIdentity {
+        self.identity
+    }
 }
 
 impl ConsensusVoterInfo {
@@ -1086,6 +1093,11 @@ impl ConsensusVoterInfo {
             contact,
             vote_digest,
         })
+    }
+
+    /// Return the contents of the dirsource line about an authority
+    pub(crate) fn dir_source(&self) -> &DirSource {
+        &self.dir_source
     }
 }
 
@@ -1405,10 +1417,43 @@ impl<RS: RouterStatus + ParseRouterStatus> Consensus<RS> {
             )));
         }
 
+        let mut default_auths: HashSet<RsaIdentity> = HashSet::new();
+        // TODO: This is copied from authority.rs in tor-dirmgr.
+        // We should find some way to share this list.
+        for auth in &[
+            "27102BC123E7AF1D4741AE047E160C91ADC76B21",
+            "0232AF901C31A04EE9848595AF9BB7620D4C5B2E",
+            "E8A9C45EDE6D711294FADF8E7951F4DE6CA56B58",
+            "ED03BB616EB2F60BEC80151114BB25CEF515B226",
+            "23D15D965BC35114467363C165C4F724B64B4F66",
+            "49015F787433103580E3B66A1707A00E60F2D15B",
+            "F533C81CEF0BC0267857C99B2F471ADF249FA232",
+            "14C131DFC5C6F93646BE72FA1401C02A8DF2E8B4",
+        ] {
+            if let Some(rsa) = RsaIdentity::from_hex(auth) {
+                default_auths.insert(rsa);
+            }
+        }
+
         let mut voters = Vec::new();
+        let mut seen_auths: HashSet<RsaIdentity> = HashSet::new();
+        let mut has_diff_auths = false;
 
         while let Some(voter) = Self::take_voterinfo(r)? {
+            let rsa = voter.dir_source().identity();
+            seen_auths.insert(rsa);
+            if !default_auths.contains(&rsa) {
+                has_diff_auths = true;
+            }
             voters.push(voter);
+        }
+        for auth in default_auths {
+            if !seen_auths.contains(&auth) {
+                has_diff_auths = true;
+            }
+        }
+        if has_diff_auths {
+            warn!("The list of authorities is different than the one we recognize");
         }
 
         let mut relays: Vec<RS> = Vec::new();

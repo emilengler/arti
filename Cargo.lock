@@ -4006,6 +4006,7 @@ dependencies = [
  "tor-error",
  "tor-llcrypto",
  "tor-protover",
+ "tracing",
  "visibility",
  "visible",
  "weak-table",
