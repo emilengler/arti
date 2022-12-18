@@ -102,6 +102,21 @@ pub(crate) enum Socket<R: Runtime> {
     Udp(Arc<R::UdpSocket>),
 }
 
+/// Return true if a given IoError, when received from bind, is a fatal error.
+fn bind_err_is_fatal(err: &std::io::Error) -> bool {
+    #![allow(clippy::match_like_matches_macro)]
+    if err.kind() == std::io::ErrorKind::AddrNotAvailable {
+        return false;
+    }
+
+    match err.raw_os_error() {
+        #[cfg(unix)]
+        // this error is Shadow specific.
+        Some(libc::EAFNOSUPPORT) => false,
+        _ => true,
+    }
+}
+
 /// Shortcut for a map of socket address to their corresponding listener.
 type SocketMap<R> = HashMap<(Protocol, SocketAddr), Socket<R>>;
 
@@ -138,7 +153,7 @@ pub(crate) async fn bind_services<R: Runtime>(
                     socket_map.insert((*proto, *addr), Socket::Tcp(Arc::new(listener)));
                 }
                 Err(e) => {
-                    if e.kind() == std::io::ErrorKind::AddrNotAvailable {
+                    if !bind_err_is_fatal(&e) {
                         warn!("Tried to bind {} but this address is not available", addr);
                     } else {
                         error!("Error binding {}", addr);
@@ -152,7 +167,7 @@ pub(crate) async fn bind_services<R: Runtime>(
                     socket_map.insert((*proto, *addr), Socket::Udp(Arc::new(listener)));
                 }
                 Err(e) => {
-                    if e.kind() == std::io::ErrorKind::AddrNotAvailable {
+                    if !bind_err_is_fatal(&e) {
                         warn!("Tried to bind {} but this address is not available", addr);
                     } else {
                         error!("Error binding {}", addr);
