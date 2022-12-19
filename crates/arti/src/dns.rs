@@ -232,7 +232,6 @@ where
 /// Launch a DNS resolver to listen on a given local port, and run indefinitely.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn run_dns_resolver<R: Runtime>(
-    runtime: R,
     tor_client: TorClient<R>,
     isolation: ServiceIsolation,
     dns_socket: Arc<R::UdpSocket>,
@@ -251,7 +250,7 @@ pub(crate) async fn run_dns_resolver<R: Runtime>(
         };
         let client_ref = tor_client.clone();
         let socket = dns_socket.clone();
-        runtime.spawn({
+        tor_client.runtime().spawn({
             let pending_requests = pending_requests.clone();
             async move {
                 let res = handle_dns_req(

@@ -73,7 +73,6 @@ fn stream_preference(req: &SocksRequest, addr: &str) -> StreamPrefs {
 /// may use.  Requires that `isolation_info` is a pair listing the listener
 /// id and the source address for the socks request.
 async fn handle_socks_conn<R, S>(
-    runtime: R,
     tor_client: TorClient<R>,
     socks_stream: S,
     isolation_config: ServiceIsolation,
@@ -214,8 +213,12 @@ where
 
             // Finally, spawn two background tasks to relay traffic between
             // the socks stream and the tor stream.
-            runtime.spawn(copy_interactive(socks_r, tor_w).map(|_| ()))?;
-            runtime.spawn(copy_interactive(tor_r, socks_w).map(|_| ()))?;
+            tor_client
+                .runtime()
+                .spawn(copy_interactive(socks_r, tor_w).map(|_| ()))?;
+            tor_client
+                .runtime()
+                .spawn(copy_interactive(tor_r, socks_w).map(|_| ()))?;
         }
         SocksCmd::RESOLVE => {
             // We've been asked to perform a regular hostname lookup.
@@ -419,7 +422,6 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
 /// network.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn run_socks_proxy<R: Runtime>(
-    runtime: R,
     tor_client: TorClient<R>,
     isolation: ServiceIsolation,
     socks_socket: Arc<R::TcpListener>,
@@ -440,17 +442,8 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
             }
         };
         let client_ref = tor_client.clone();
-        let runtime_copy = runtime.clone();
-        runtime.spawn(async move {
-            let res = handle_socks_conn(
-                runtime_copy,
-                client_ref,
-                stream,
-                isolation,
-                group,
-                addr.ip(),
-            )
-            .await;
+        tor_client.runtime().spawn(async move {
+            let res = handle_socks_conn(client_ref, stream, isolation, group, addr.ip()).await;
             if let Err(e) = res {
                 warn!("connection exited with error: {}", e);
             }

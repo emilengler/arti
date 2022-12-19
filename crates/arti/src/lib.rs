@@ -174,7 +174,7 @@ async fn run<R: Runtime>(
     // TODO drop privileges here, see #363
 
     let services = services::link_services(&sockets, &requested_services);
-    let services = services::run_services(runtime.clone(), client.clone(), services);
+    let services = services::run_services(client.clone(), services);
 
     futures::select!(
         r = exit::wait_for_ctrl_c().fuse()

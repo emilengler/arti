@@ -349,7 +349,6 @@ pub(crate) fn link_services<R: Runtime>(
 /// Run the requested services
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn run_services<R: Runtime>(
-    runtime: R,
     tor_client: TorClient<R>,
     services: Vec<Service<R>>,
 ) -> Result<()> {
@@ -363,7 +362,6 @@ pub(crate) async fn run_services<R: Runtime>(
         match service.socket {
             ServiceSocket::Socks5(listener) => {
                 running_services.push(Box::pin(crate::socks::run_socks_proxy(
-                    runtime.clone(),
                     tor_client.clone(),
                     service.isolation,
                     listener,
@@ -372,7 +370,6 @@ pub(crate) async fn run_services<R: Runtime>(
             ServiceSocket::Dns(listener) => {
                 #[cfg(feature = "dns-proxy")]
                 running_services.push(Box::pin(crate::dns::run_dns_resolver(
-                    runtime.clone(),
                     tor_client.clone(),
                     service.isolation,
                     listener,
