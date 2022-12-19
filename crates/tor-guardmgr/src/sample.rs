@@ -232,11 +232,8 @@ impl GuardSet {
     /// Replace the filter used by this `GuardSet` with `filter`.
     ///
     /// Removes all primary guards that the filter doesn't permit.
-    ///
-    /// If `restrictive` is true, this filter is treated as "extremely restrictive".
-    pub(crate) fn set_filter(&mut self, filter: GuardFilter, restrictive: bool) {
+    pub(crate) fn set_filter(&mut self, filter: GuardFilter) {
         self.active_filter = filter;
-        self.filter_is_restrictive = restrictive;
 
         self.assert_consistency();
 
@@ -250,6 +247,11 @@ impl GuardSet {
         });
 
         self.primary_guards_invalidated = true;
+    }
+
+    /// Set whether this filter should be treated as "extremely restrictive".
+    pub(crate) fn set_restrictive(&mut self, restrictive: bool) {
+        self.filter_is_restrictive = restrictive;
     }
 
     /// Return the current filter for this `GuardSet`.

@@ -139,13 +139,6 @@ struct GuardMgrInner {
     /// use, along with their relative priorities and statuses.
     guards: GuardSets,
 
-    /// The current filter that we're using to decide which guards are
-    /// supported.
-    //
-    // TODO: This field is duplicated in the current active [`GuardSet`]; we
-    // should fix that.
-    filter: GuardFilter,
-
     /// Configuration values derived from the consensus parameters.
     ///
     /// This is updated whenever the consensus parameters change.
@@ -330,7 +323,6 @@ impl<R: Runtime> GuardMgr<R> {
 
         let inner = Arc::new(Mutex::new(GuardMgrInner {
             guards: state,
-            filter: GuardFilter::unfiltered(),
             last_primary_retry_time: runtime.now(),
             params: GuardParams::default(),
             ctrl,
@@ -961,17 +953,11 @@ impl GuardMgrInner {
             self.select_guard_set_based_on_filter(netdir);
         }
 
-        // Change the filter, if it doesn't match what the guards have.
-        //
-        // TODO(nickm): We could use a "dirty" flag or something to decide
-        // whether we need to call set_filter, if this comparison starts to show
-        // up in profiles.
-        if self.guards.active_guards().filter() != &self.filter {
-            let restrictive = self.guards.active_set == GuardSetSelector::Restricted;
-            self.guards
-                .active_guards_mut()
-                .set_filter(self.filter.clone(), restrictive);
-        }
+        // TODO: Why do we need to copy active_guards AND its filters?
+        let restrictive = self.guards.active_set == GuardSetSelector::Restricted;
+        self.guards
+            .active_guards_mut()
+            .set_restrictive(restrictive);
     }
 
     /// Update the status of every guard in `active_guards`, and expand it as
@@ -1088,7 +1074,11 @@ impl GuardMgrInner {
             #[cfg(feature = "bridge-client")]
             GuardSetSelector::Bridges => return,
         };
-        let frac_permitted = self.filter.frac_bw_permitted(netdir);
+        let frac_permitted = self
+            .guards
+            .active_guards()
+            .filter()
+            .frac_bw_permitted(netdir);
         let threshold = self.params.filter_threshold + offset;
         let new_choice = if frac_permitted < threshold {
             GuardSetSelector::Restricted
@@ -1136,7 +1126,10 @@ impl GuardMgrInner {
 
     /// Replace the current GuardFilter with `filter`.
     fn set_filter(&mut self, filter: GuardFilter, wallclock: SystemTime, now: Instant) {
-        self.filter = filter;
+        self.guards
+            .active_guards_mut()
+            .set_filter(filter.clone());
+
         self.update(wallclock, now);
     }
 
