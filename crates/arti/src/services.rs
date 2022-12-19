@@ -121,12 +121,16 @@ fn bind_err_is_fatal(err: &std::io::Error) -> bool {
 type SocketMap<R> = HashMap<(Protocol, SocketAddr), Socket<R>>;
 
 /// Bind and unbind sockets as required to match current requested configuration.
+///
+/// If this function returns an error, it is guarranteed `previously_bound` wasn't affected.
+/// If it returns successfully, all requested socket are now bound, and any socket no longer
+/// required has been closed.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn bind_services<R: Runtime>(
     runtime: R,
-    previously_bound: SocketMap<R>,
+    previously_bound: &mut SocketMap<R>,
     requested: &[(Service, BindAddress)],
-) -> Result<SocketMap<R>> {
+) -> Result<()> {
     // verify we don't have to bind multiple time the same thing
     let mut bound_after = HashSet::new();
     for (service, address) in requested {
@@ -139,18 +143,19 @@ pub(crate) async fn bind_services<R: Runtime>(
         }
     }
 
-    let mut socket_map = previously_bound;
+    let mut newly_bound = HashMap::new();
 
     // bind newly required sockets
+    // TODO parallelize this loop
     for (proto, addr) in &bound_after {
-        if socket_map.contains_key(&(*proto, *addr)) {
+        if previously_bound.contains_key(&(*proto, *addr)) {
             continue;
         }
         match proto {
             Protocol::Tcp => match runtime.listen(addr).await {
                 Ok(listener) => {
                     info!("Started listening on {:?}/tcp", addr);
-                    socket_map.insert((*proto, *addr), Socket::Tcp(Arc::new(listener)));
+                    newly_bound.insert((*proto, *addr), Socket::Tcp(Arc::new(listener)));
                 }
                 Err(e) => {
                     if !bind_err_is_fatal(&e) {
@@ -164,7 +169,7 @@ pub(crate) async fn bind_services<R: Runtime>(
             Protocol::Udp => match runtime.bind(addr).await {
                 Ok(listener) => {
                     info!("Started listening on {:?}/tcp.", addr);
-                    socket_map.insert((*proto, *addr), Socket::Udp(Arc::new(listener)));
+                    newly_bound.insert((*proto, *addr), Socket::Udp(Arc::new(listener)));
                 }
                 Err(e) => {
                     if !bind_err_is_fatal(&e) {
@@ -181,20 +186,20 @@ pub(crate) async fn bind_services<R: Runtime>(
     // verify we managed to bind everything that should be bound
     for (service, address) in requested {
         let proto = service.protocol();
-        if !address
-            .addresses()
-            .into_iter()
-            .any(|addr| socket_map.contains_key(&(proto, addr)))
-        {
+        if !address.addresses().into_iter().any(|addr| {
+            newly_bound.contains_key(&(proto, addr))
+                || previously_bound.contains_key(&(proto, addr))
+        }) {
             error!("Failed to bind {}", address);
             anyhow::bail!("Failed to bind {}", address);
         }
     }
 
     // drop any socket no longer needed
-    socket_map.retain(|address, _| bound_after.contains(address));
+    previously_bound.retain(|address, _| bound_after.contains(address));
+    previously_bound.extend(newly_bound);
 
-    Ok(socket_map)
+    Ok(())
 }
 
 /// Link requested services to the corresponding socket

@@ -160,12 +160,12 @@ async fn run<R: Runtime>(
     if dns_port != 0 {
         requested_services.push((Service::Dns, BindAddress::Port(dns_port)));
     }
-    let sockets =
-        services::bind_services(runtime.clone(), HashMap::new(), &requested_services).await?;
+    let mut sockets = HashMap::new();
 
-    let services = services::link_services(&sockets, &requested_services);
+    services::bind_services(runtime.clone(), &mut sockets, &requested_services).await?;
     // TODO drop privileges here, see #363
 
+    let services = services::link_services(&sockets, &requested_services);
     let services = services::run_services(runtime.clone(), client.clone(), services);
 
     futures::select!(
