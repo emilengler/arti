@@ -3,6 +3,7 @@
 //! A resolver is launched with [`run_dns_resolver()`], which listens for new
 //! connections and then runs
 
+use crate::services::{GroupIsolation, IsolationKey, ServiceIsolation, ServiceIsolationConfig};
 use futures::lock::Mutex;
 use futures::task::SpawnExt;
 use std::collections::HashMap;
@@ -23,29 +24,9 @@ use anyhow::Result;
 /// Maximum length for receiving a single datagram
 const MAX_DATAGRAM_SIZE: usize = 1536;
 
-/// A Key used to isolate dns requests.
-///
-/// Composed of the source IpAddr of the client.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct DnsIsolationKey(IpAddr);
-
-impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
-    fn compatible_same_type(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn join_same_type(&self, other: &Self) -> Option<Self> {
-        if self == other {
-            Some(self.clone())
-        } else {
-            None
-        }
-    }
-}
-
 /// Identifier for a DNS request, composed of its source IP and transaction ID
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct DnsCacheKey(DnsIsolationKey, Vec<Query>);
+struct DnsCacheKey(IsolationKey, Vec<Query>);
 
 /// Target for a DNS response
 #[derive(Debug, Clone)]
@@ -62,12 +43,16 @@ struct DnsResponseTarget<U> {
 async fn do_query<R>(
     tor_client: TorClient<R>,
     queries: &[Query],
-    prefs: &StreamPrefs,
+    isolation: IsolationKey,
+    isolate_domain: bool,
 ) -> Result<Vec<Record>, ResponseCode>
 where
     R: Runtime,
 {
     let mut answers = Vec::new();
+
+    let mut prefs = StreamPrefs::new();
+    prefs.set_isolation(isolation.clone());
 
     let err_conv = |error: Error| {
         if tor_error::ErrorKind::RemoteHostNotFound == error.kind() {
@@ -90,8 +75,13 @@ where
                         let mut name = query.name().clone();
                         // name would be "torproject.org." without this
                         name.set_fqdn(false);
+                        if isolate_domain {
+                            let mut isolation_query = isolation.clone();
+                            isolation_query.dest_addr = Some(name.to_utf8());
+                            prefs.set_isolation(isolation_query);
+                        }
                         let res = tor_client
-                            .resolve_with_prefs(&name.to_utf8(), prefs)
+                            .resolve_with_prefs(&name.to_utf8(), &prefs)
                             .await
                             .map_err(err_conv)?;
                         for ip in res {
@@ -104,8 +94,13 @@ where
                             .parse_arpa_name()
                             .map_err(|_| ResponseCode::FormErr)?
                             .addr();
+                        if isolate_domain {
+                            let mut isolation_query = isolation.clone();
+                            isolation_query.dest_addr = Some(addr.to_string());
+                            prefs.set_isolation(isolation_query);
+                        }
                         let res = tor_client
-                            .resolve_ptr_with_prefs(addr, prefs)
+                            .resolve_ptr_with_prefs(addr, &prefs)
                             .await
                             .map_err(err_conv)?;
                         for domain in res {
@@ -149,6 +144,8 @@ async fn handle_dns_req<R, U>(
     packet: &[u8],
     addr: SocketAddr,
     socket: Arc<U>,
+    isolation_config: ServiceIsolation,
+    group: GroupIsolation,
     current_requests: &Mutex<HashMap<DnsCacheKey, Vec<DnsResponseTarget<U>>>>,
 ) -> Result<()>
 where
@@ -159,7 +156,13 @@ where
     let mut query = Message::from_bytes(packet)?;
     let id = query.id();
     let queries = query.queries();
-    let isolation = DnsIsolationKey(addr.ip());
+    let mut isolation = IsolationKey::new(group);
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_CLIENT_ADDR)
+    {
+        isolation.client_addr = Some(addr.ip());
+    }
 
     let request_id = {
         let request_id = DnsCacheKey(isolation.clone(), queries.to_vec());
@@ -180,10 +183,16 @@ where
         request_id
     };
 
-    let mut prefs = StreamPrefs::new();
-    prefs.set_isolation(isolation);
-
-    let mut response = match do_query(tor_client, queries, &prefs).await {
+    let mut response = match do_query(
+        tor_client,
+        queries,
+        isolation,
+        isolation_config
+            .config
+            .contains(ServiceIsolationConfig::ISOLATE_DEST_ADDR),
+    )
+    .await
+    {
         Ok(answers) => {
             let mut response = Message::new();
             response
@@ -225,9 +234,11 @@ where
 pub(crate) async fn run_dns_resolver<R: Runtime>(
     runtime: R,
     tor_client: TorClient<R>,
+    isolation: ServiceIsolation,
     dns_socket: Arc<R::UdpSocket>,
 ) -> Result<()> {
     let pending_requests = Arc::new(Mutex::new(HashMap::new()));
+    let isolation_group = isolation.get_group_isolation();
     loop {
         let mut packet = [0; MAX_DATAGRAM_SIZE];
         let (len, addr) = match dns_socket.recv(&mut packet).await {
@@ -243,9 +254,16 @@ pub(crate) async fn run_dns_resolver<R: Runtime>(
         runtime.spawn({
             let pending_requests = pending_requests.clone();
             async move {
-                let res =
-                    handle_dns_req(client_ref, &packet[..len], addr, socket, &pending_requests)
-                        .await;
+                let res = handle_dns_req(
+                    client_ref,
+                    &packet[..len],
+                    addr,
+                    socket,
+                    isolation,
+                    isolation_group,
+                    &pending_requests,
+                )
+                .await;
                 if let Err(e) = res {
                     warn!("connection exited with error: {}", e);
                 }

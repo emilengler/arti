@@ -79,7 +79,7 @@ pub use cfg::{
     ProxyConfig, ProxyConfigBuilder, SystemConfig, SystemConfigBuilder, ARTI_EXAMPLE_CONFIG,
 };
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
-use services::{BindAddress, Service};
+use services::{BindAddress, ServiceIsolation, ServiceKind};
 
 use arti_client::config::default_config_files;
 use arti_client::{TorClient, TorClientConfig};
@@ -155,10 +155,18 @@ async fn run<R: Runtime>(
 
     let mut requested_services = Vec::new();
     if socks_port != 0 {
-        requested_services.push((Service::Socks5, BindAddress::Port(socks_port)));
+        requested_services.push((
+            ServiceKind::Socks5,
+            ServiceIsolation::default(),
+            BindAddress::Port(socks_port),
+        ));
     }
     if dns_port != 0 {
-        requested_services.push((Service::Dns, BindAddress::Port(dns_port)));
+        requested_services.push((
+            ServiceKind::Dns,
+            ServiceIsolation::default(),
+            BindAddress::Port(dns_port),
+        ));
     }
     let mut sockets = HashMap::new();
 

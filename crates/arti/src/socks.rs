@@ -3,6 +3,7 @@
 //! A proxy is launched with [`run_socks_proxy()`], which listens for new
 //! connections and then runs
 
+use crate::services::{GroupIsolation, IsolationKey, ServiceIsolation, ServiceIsolationConfig};
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as IoError};
 use futures::task::SpawnExt;
@@ -65,27 +66,6 @@ fn stream_preference(req: &SocksRequest, addr: &str) -> StreamPrefs {
     prefs
 }
 
-/// A Key used to isolate connections.
-///
-/// Composed of the source IpAddr of the client, and the
-/// authentication string provided by the client.
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SocksIsolationKey(IpAddr, SocksAuth);
-
-impl arti_client::isolation::IsolationHelper for SocksIsolationKey {
-    fn compatible_same_type(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn join_same_type(&self, other: &Self) -> Option<Self> {
-        if self == other {
-            Some(self.clone())
-        } else {
-            None
-        }
-    }
-}
-
 /// Given a just-received TCP connection `S` on a SOCKS port, handle the
 /// SOCKS handshake and relay the connection over the Tor network.
 ///
@@ -96,6 +76,8 @@ async fn handle_socks_conn<R, S>(
     runtime: R,
     tor_client: TorClient<R>,
     socks_stream: S,
+    isolation_config: ServiceIsolation,
+    isolation_group: GroupIsolation,
     source_ip: IpAddr,
 ) -> Result<()>
 where
@@ -171,15 +153,41 @@ where
         port
     );
 
-    // Use the source address, SOCKS authentication, and listener ID
-    // to determine the stream's isolation properties.  (Our current
-    // rule is that two streams may only share a circuit if they have
-    // the same values for all of these properties.)
     let auth = request.auth().clone();
+
+    let mut isolation = IsolationKey::new(isolation_group);
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_CLIENT_ADDR)
+    {
+        isolation.client_addr = Some(source_ip);
+    }
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_AUTH)
+    {
+        match auth {
+            SocksAuth::Socks4(auth) => isolation.auth = Some((auth, Vec::new())),
+            SocksAuth::Username(user, password) => isolation.auth = Some((user, password)),
+            _ => (),
+        }
+    }
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_DEST_PORT)
+    {
+        isolation.dest_port = std::num::NonZeroU16::new(port);
+    }
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_DEST_ADDR)
+    {
+        isolation.dest_addr = Some(addr.clone());
+    }
 
     // Determine whether we want to ask for IPv4/IPv6 addresses.
     let mut prefs = stream_preference(&request, &addr);
-    prefs.set_isolation(SocksIsolationKey(source_ip, auth));
+    prefs.set_isolation(isolation);
 
     match request.command() {
         SocksCmd::CONNECT => {
@@ -413,10 +421,12 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
 pub(crate) async fn run_socks_proxy<R: Runtime>(
     runtime: R,
     tor_client: TorClient<R>,
+    isolation: ServiceIsolation,
     socks_socket: Arc<R::TcpListener>,
 ) -> Result<()> {
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
+    let group = isolation.get_group_isolation();
     loop {
         let (stream, addr) = match socks_socket.accept().await {
             Ok((s, a)) => (s, a),
@@ -432,7 +442,15 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
         let client_ref = tor_client.clone();
         let runtime_copy = runtime.clone();
         runtime.spawn(async move {
-            let res = handle_socks_conn(runtime_copy, client_ref, stream, addr.ip()).await;
+            let res = handle_socks_conn(
+                runtime_copy,
+                client_ref,
+                stream,
+                isolation,
+                group,
+                addr.ip(),
+            )
+            .await;
             if let Err(e) = res {
                 warn!("connection exited with error: {}", e);
             }
