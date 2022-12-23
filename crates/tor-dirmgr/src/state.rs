@@ -116,6 +116,7 @@ pub(crate) trait DirState: Send {
         &mut self,
         docs: HashMap<DocId, DocumentText>,
         changed: &mut bool,
+        now: SystemTime,
     ) -> Result<()>;
 
     /// Add information that we have just downloaded to this state.
@@ -137,6 +138,7 @@ pub(crate) trait DirState: Send {
         source: DocSource,
         storage: Option<&Mutex<DynStore>>,
         changed: &mut bool,
+        now: SystemTime,
     ) -> Result<()>;
     /// Return a summary of this state as a [`DirProgress`].
     fn bootstrap_progress(&self) -> event::DirProgress;
@@ -279,6 +281,7 @@ impl<R: Runtime> DirState for GetConsensusState<R> {
         &mut self,
         docs: HashMap<DocId, DocumentText>,
         changed: &mut bool,
+        now: SystemTime,
     ) -> Result<()> {
         let text = match docs.into_iter().next() {
             None => return Ok(()),
@@ -299,6 +302,7 @@ impl<R: Runtime> DirState for GetConsensusState<R> {
             text.as_str().map_err(Error::BadUtf8InCache)?,
             None,
             changed,
+            now,
         )?;
         Ok(())
     }
@@ -309,12 +313,13 @@ impl<R: Runtime> DirState for GetConsensusState<R> {
         source: DocSource,
         storage: Option<&Mutex<DynStore>>,
         changed: &mut bool,
+        now: SystemTime,
     ) -> Result<()> {
         let requested_newer_than = match request {
             ClientRequest::Consensus(r) => r.last_consensus_date(),
             _ => None,
         };
-        let meta = self.add_consensus_text(source, text, requested_newer_than, changed)?;
+        let meta = self.add_consensus_text(source, text, requested_newer_than, changed, now)?;
 
         if let Some(store) = storage {
             let mut w = store.lock().expect("Directory storage lock poisoned");
@@ -351,11 +356,12 @@ impl<R: Runtime> GetConsensusState<R> {
         text: &str,
         cutoff: Option<SystemTime>,
         changed: &mut bool,
+        now: SystemTime,
     ) -> Result<&ConsensusMeta> {
         // Try to parse it and get its metadata.
         let (consensus_meta, unvalidated) = {
             let (signedval, remainder, parsed) =
-                MdConsensus::parse(text).map_err(|e| Error::from_netdoc(source.clone(), e))?;
+                MdConsensus::parse(text, now).map_err(|e| Error::from_netdoc(source.clone(), e))?;
             #[cfg(feature = "dirfilter")]
             let parsed = self.filter.filter_consensus(parsed)?;
             let parsed = self.config.tolerance.extend_tolerance(parsed);
@@ -580,6 +586,7 @@ impl<R: Runtime> DirState for GetCertsState<R> {
         &mut self,
         docs: HashMap<DocId, DocumentText>,
         changed: &mut bool,
+        _now: SystemTime,
     ) -> Result<()> {
         // Here we iterate over the documents we want, taking them from
         // our input and remembering them.
@@ -613,6 +620,7 @@ impl<R: Runtime> DirState for GetCertsState<R> {
         source: DocSource,
         storage: Option<&Mutex<DynStore>>,
         changed: &mut bool,
+        _now: SystemTime,
     ) -> Result<()> {
         let asked_for: HashSet<_> = match request {
             ClientRequest::AuthCert(a) => a.keys().collect(),
@@ -999,6 +1007,7 @@ impl<R: Runtime> DirState for GetMicrodescsState<R> {
         &mut self,
         docs: HashMap<DocId, DocumentText>,
         changed: &mut bool,
+        _now: SystemTime,
     ) -> Result<()> {
         let mut microdescs = Vec::new();
         for (id, text) in docs {
@@ -1024,6 +1033,7 @@ impl<R: Runtime> DirState for GetMicrodescsState<R> {
         source: DocSource,
         storage: Option<&Mutex<DynStore>>,
         changed: &mut bool,
+        _now: SystemTime,
     ) -> Result<()> {
         let requested: HashSet<_> = if let ClientRequest::Microdescs(req) = request {
             req.digests().collect()
@@ -1203,6 +1213,7 @@ impl DirState for PoisonedState {
         &mut self,
         _docs: HashMap<DocId, DocumentText>,
         _changed: &mut bool,
+        _now: SystemTime,
     ) -> Result<()> {
         unimplemented!()
     }
@@ -1213,6 +1224,7 @@ impl DirState for PoisonedState {
         _source: DocSource,
         _storage: Option<&Mutex<DynStore>>,
         _changed: &mut bool,
+        _now: SystemTime,
     ) -> Result<()> {
         unimplemented!()
     }
@@ -1312,6 +1324,9 @@ mod test {
     const AUTHCERT_7C47: &str = include_str!("../testdata/cert-7C47.txt");
     fn test_time() -> SystemTime {
         datetime!(2020-08-07 12:42:45 UTC).into()
+    }
+    fn test_time_now() -> SystemTime {
+        datetime!(2021-10-27 21:26:50 UTC).into()
     }
     fn rsa(s: &str) -> RsaIdentity {
         RsaIdentity::from_hex(s).unwrap()
@@ -1424,6 +1439,7 @@ mod test {
                 source.clone(),
                 Some(&store),
                 &mut changed,
+                test_time(),
             );
             assert!(matches!(outcome, Err(Error::NetDocError { .. })));
             assert!(!changed);
@@ -1443,6 +1459,7 @@ mod test {
                 source.clone(),
                 Some(&store),
                 &mut changed,
+                test_time(),
             );
             assert!(matches!(outcome, Err(Error::UnrecognizedAuthorities)));
             assert!(!changed);
@@ -1466,8 +1483,14 @@ mod test {
                 Arc::new(crate::filter::NilFilter),
             );
             let mut changed = false;
-            let outcome =
-                state.add_from_download(CONSENSUS, &req, source, Some(&store), &mut changed);
+            let outcome = state.add_from_download(
+                CONSENSUS,
+                &req,
+                source,
+                Some(&store),
+                &mut changed,
+                test_time(),
+            );
             assert!(outcome.is_ok());
             assert!(changed);
             assert!(store
@@ -1500,7 +1523,7 @@ mod test {
             let text: crate::storage::InputString = CONSENSUS.to_owned().into();
             let map = vec![(docid, text.into())].into_iter().collect();
             let mut changed = false;
-            let outcome = state.add_from_cache(map, &mut changed);
+            let outcome = state.add_from_cache(map, &mut changed, test_time());
             assert!(outcome.is_ok());
             assert!(changed);
             assert!(state.can_advance());
@@ -1526,7 +1549,14 @@ mod test {
                 let req = tor_dirclient::request::ConsensusRequest::new(ConsensusFlavor::Microdesc);
                 let req = crate::docid::ClientRequest::Consensus(req);
                 let mut changed = false;
-                let outcome = state.add_from_download(CONSENSUS, &req, source, None, &mut changed);
+                let outcome = state.add_from_download(
+                    CONSENSUS,
+                    &req,
+                    source,
+                    None,
+                    &mut changed,
+                    test_time(),
+                );
                 assert!(outcome.is_ok());
                 Box::new(state).advance()
             }
@@ -1571,7 +1601,7 @@ mod test {
                 .into_iter()
                 .collect();
             let mut changed = false;
-            let outcome = state.add_from_cache(docs, &mut changed);
+            let outcome = state.add_from_cache(docs, &mut changed, test_time());
             assert!(changed);
             assert!(outcome.is_ok()); // no error, and something changed.
             assert!(!state.can_advance()); // But we aren't done yet.
@@ -1596,6 +1626,7 @@ mod test {
                 source.clone(),
                 Some(&store),
                 &mut changed,
+                test_time(),
             );
             assert!(matches!(outcome, Err(Error::Unwanted(_))));
             assert!(!changed);
@@ -1613,8 +1644,14 @@ mod test {
             req.push(authcert_id_5a23()); // Right idea this time!
             let req = ClientRequest::AuthCert(req);
             let mut changed = false;
-            let outcome =
-                state.add_from_download(AUTHCERT_5A23, &req, source, Some(&store), &mut changed);
+            let outcome = state.add_from_download(
+                AUTHCERT_5A23,
+                &req,
+                source,
+                Some(&store),
+                &mut changed,
+                test_time(),
+            );
             assert!(outcome.is_ok()); // No error, _and_ something changed!
             assert!(changed);
             let missing3 = state.missing_docs();
@@ -1650,7 +1687,8 @@ mod test {
             fn new_getmicrodescs_state(rt: impl Runtime) -> GetMicrodescsState<impl Runtime> {
                 let rt = make_time_shifted_runtime(test_time(), rt);
                 let cfg = make_dirmgr_config(Some(test_authorities()));
-                let (signed, rest, consensus) = MdConsensus::parse(CONSENSUS2).unwrap();
+                let (signed, rest, consensus) =
+                    MdConsensus::parse(CONSENSUS2, test_time_now()).unwrap();
                 let consensus = consensus
                     .dangerously_assume_timely()
                     .dangerously_assume_wellsigned();
@@ -1719,7 +1757,7 @@ mod test {
                 .into_iter()
                 .collect();
             let mut changed = false;
-            let outcome = state.add_from_cache(docs, &mut changed);
+            let outcome = state.add_from_cache(docs, &mut changed, test_time());
             assert!(outcome.is_ok()); // successfully loaded one MD.
             assert!(changed);
             assert!(!state.can_advance());
@@ -1751,6 +1789,7 @@ mod test {
                 source,
                 Some(&store),
                 &mut changed,
+                test_time(),
             );
             assert!(outcome.is_ok()); // successfully loaded MDs
             assert!(changed);
