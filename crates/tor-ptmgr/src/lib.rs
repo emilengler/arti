@@ -301,18 +301,17 @@ impl<R: Runtime> PtMgr<R> {
     /// Transform the config into a more useful representation indexed by transport name.
     fn transform_config(
         binaries: Vec<ManagedTransportConfig>,
-    ) -> HashMap<PtTransportName, ManagedTransportConfig> {
+    ) -> Result<HashMap<PtTransportName, ManagedTransportConfig>, PtTransportName> {
         let mut ret = HashMap::new();
-        // FIXME(eta): You can currently specify overlapping protocols in your binaries, and it'll
-        //             just use the last binary specified.
-        //             I attempted to fix this, but decided I didn't want to stare into the list
-        //             builder macro void after trying it for 15 minutes.
         for thing in binaries {
             for tn in thing.protocols.iter() {
+                if ret.contains_key(tn) {
+                    return Err(tn.clone());
+                }
                 ret.insert(tn.clone(), thing.clone());
             }
         }
-        ret
+        Ok(ret)
     }
 
     /// Create a new PtMgr.
@@ -322,33 +321,41 @@ impl<R: Runtime> PtMgr<R> {
         state_dir: PathBuf,
         rt: R,
     ) -> Result<Self, PtError> {
-        let state = PtSharedState {
-            cmethods: Default::default(),
-            configured: Self::transform_config(transports),
-        };
-        let state = Arc::new(RwLock::new(state));
-        let (tx, rx) = mpsc::unbounded();
+        match Self::transform_config(transports) {
+            Ok(c) => {
+                let state = PtSharedState {
+                    cmethods: Default::default(),
+                    configured: c,
+                };
+                let state = Arc::new(RwLock::new(state));
+                let (tx, rx) = mpsc::unbounded();
 
-        let mut reactor = PtReactor::new(rt.clone(), state.clone(), rx, state_dir);
-        rt.spawn(async move {
-            loop {
-                match reactor.run_one_step().await {
-                    Ok(true) => return,
-                    Ok(false) => {}
-                    Err(e) => {
-                        error!("PtReactor failed: {}", e);
-                        return;
+                let mut reactor = PtReactor::new(rt.clone(), state.clone(), rx, state_dir);
+                rt.spawn(async move {
+                    loop {
+                        match reactor.run_one_step().await {
+                            Ok(true) => return,
+                            Ok(false) => {}
+                            Err(e) => {
+                                error!("PtReactor failed: {}", e);
+                                return;
+                            }
+                        }
                     }
-                }
-            }
-        })
-        .map_err(|e| PtError::Spawn { cause: Arc::new(e) })?;
+                })
+                .map_err(|e| PtError::Spawn { cause: Arc::new(e) })?;
 
-        Ok(Self {
-            runtime: rt,
-            state,
-            tx,
-        })
+                Ok(Self {
+                    runtime: rt,
+                    state,
+                    tx,
+                })
+            }
+            Err(t) => Err(PtError::PtDefinedMoreThanOnce(format!(
+                "Transport {} defined more than once",
+                t
+            ))),
+        }
     }
 
     /// Reload the configuration
@@ -357,13 +364,20 @@ impl<R: Runtime> PtMgr<R> {
         how: tor_config::Reconfigure,
         transports: Vec<ManagedTransportConfig>,
     ) -> Result<(), tor_config::ReconfigureError> {
-        let configured = Self::transform_config(transports);
         if how == tor_config::Reconfigure::CheckAllOrNothing {
             return Ok(());
         }
-        {
-            let mut inner = self.state.write().expect("ptmgr poisoned");
-            inner.configured = configured;
+        match Self::transform_config(transports) {
+            Ok(configured) => {
+                let mut inner = self.state.write().expect("ptmgr poisoned");
+                inner.configured = configured;
+            }
+            Err(t) => {
+                return Err(tor_config::ReconfigureError::UnsupportedSituation(format!(
+                    "Transport {} defined more than once",
+                    t
+                )));
+            }
         }
         // We don't have any way of propagating this sanely; the caller will find out the reactor
         // has died later on anyway.
