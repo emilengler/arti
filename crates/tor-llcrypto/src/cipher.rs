@@ -58,14 +58,9 @@ pub mod aes {
     }
 
     impl StreamCipher for Aes128Ctr {
-        fn try_apply_keystream_inout(
-            &mut self,
-            mut buf: InOutBuf<'_, '_, u8>,
-        ) -> Result<(), StreamCipherError> {
-            // TODO(nickm): It would be lovely if we could get rid of this copy somehow.
-            let in_buf = buf.get_in().to_vec();
+        fn try_apply_keystream_inout(&mut self, mut buf: &[u8]) -> Result<(), StreamCipherError> {
             self.0
-                .update(&in_buf, buf.get_out())
+                .update(&buf, buf.get_out())
                 .map_err(|_| StreamCipherError)?;
             Ok(())
         }
@@ -105,14 +100,9 @@ pub mod aes {
     }
 
     impl StreamCipher for Aes256Ctr {
-        fn try_apply_keystream_inout(
-            &mut self,
-            mut buf: InOutBuf<'_, '_, u8>,
-        ) -> Result<(), StreamCipherError> {
-            // TODO(nickm): It would be lovely if we could get rid of this copy.
-            let in_buf = buf.get_in().to_vec();
+        fn try_apply_keystream_inout(&mut self, mut buf: &[u8]) -> Result<(), StreamCipherError> {
             self.0
-                .update(&in_buf, buf.get_out())
+                .update(&buf, buf.get_out())
                 .map_err(|_| StreamCipherError)?;
             Ok(())
         }
