@@ -66,7 +66,7 @@ impl<'a> ExitPathBuilder<'a> {
 
     /// Create a new builder that will try to get an exit relay, but which
     /// will be satisfied with a non-exit relay.
-    pub(crate) fn for_timeout_testing() -> Self {
+    pub(crate) fn for_any_relay() -> Self {
         Self {
             inner: ExitPathBuilderInner::AnyExit { strict: false },
         }
@@ -456,8 +456,8 @@ mod test {
         assert!(matches!(outcome, Err(Error::NoExit { .. })));
 
         // For any exit (non-strict, so this will work).
-        let outcome = ExitPathBuilder::for_timeout_testing()
-            .pick_path(&mut rng, dirinfo, guards, &config, now);
+        let outcome =
+            ExitPathBuilder::for_any_relay().pick_path(&mut rng, dirinfo, guards, &config, now);
         assert!(outcome.is_ok());
     }
 

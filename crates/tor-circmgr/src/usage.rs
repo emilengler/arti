@@ -160,6 +160,9 @@ pub(crate) enum TargetCircUsage {
         /// The number of exit circuits needed for a port
         circs: usize,
     },
+    /// Use for anonymous connection to non-exit relay
+    #[allow(dead_code)] // Will be needed for onion services
+    NonExit,
     /// Use for BEGINDIR-based non-anonymous directory connections to a particular target,
     /// and therefore to a specific relay (which need not be in any netdir).
     #[cfg(feature = "specific-relay")]
@@ -182,6 +185,8 @@ pub(crate) enum SupportedCircUsage {
         /// isolation group.
         isolation: Option<StreamIsolation>,
     },
+    /// Usable for a non-exit circuit (e.g. onion service).
+    NonExit,
     /// This circuit is not suitable for any usage.
     NoUsage,
     /// Use only for BEGINDIR-based non-anonymous directory connections
@@ -247,9 +252,14 @@ impl TargetCircUsage {
                     usable,
                 ))
             }
+            TargetCircUsage::NonExit => {
+                let (path, mon, usable) =
+                    ExitPathBuilder::for_any_relay().pick_path(rng, netdir, guards, config, now)?;
+                Ok((path, SupportedCircUsage::NonExit, mon, usable))
+            }
             TargetCircUsage::TimeoutTesting => {
-                let (path, mon, usable) = ExitPathBuilder::for_timeout_testing()
-                    .pick_path(rng, netdir, guards, config, now)?;
+                let (path, mon, usable) =
+                    ExitPathBuilder::for_any_relay().pick_path(rng, netdir, guards, config, now)?;
                 let policy = path.exit_policy();
                 let usage = match policy {
                     Some(policy) if policy.allows_some_port() => SupportedCircUsage::Exit {
@@ -316,6 +326,7 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
                 }
             }
             (Exit { .. } | NoUsage, TargetCircUsage::TimeoutTesting) => true,
+            (NonExit, TargetCircUsage::NonExit) => true,
             #[cfg(feature = "specific-relay")]
             (DirSpecificTarget(a), TargetCircUsage::DirSpecificTarget(b)) => {
                 owned_targets_equivalent(a, b)
@@ -358,6 +369,8 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
                 }
             }
             (Exit { .. } | NoUsage, TargetCircUsage::TimeoutTesting) => Ok(()),
+            (NonExit, TargetCircUsage::NonExit) => Ok(()),
+            // This usage is only used to create circuits preemptively, and doesn't actually
             #[cfg(feature = "specific-relay")]
             (DirSpecificTarget(a), TargetCircUsage::DirSpecificTarget(b))
                 if owned_targets_equivalent(a, b) =>
@@ -401,6 +414,7 @@ impl crate::mgr::AbstractSpec for SupportedCircUsage {
             #[cfg(feature = "specific-relay")]
             SCU::DirSpecificTarget(_) => CU::Dir,
             SCU::Exit { .. } => CU::UserTraffic,
+            SCU::NonExit => CU::UserTraffic,
             SCU::NoUsage => CU::UselessCircuit,
         }
     }
