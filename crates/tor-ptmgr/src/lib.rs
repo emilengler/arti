@@ -305,7 +305,7 @@ impl<R: Runtime> PtMgr<R> {
         let mut ret = HashMap::new();
         for thing in binaries {
             for tn in thing.protocols.iter() {
-                if ret.insert(tn.clone(), thing.clone()) != None {
+                if ret.insert(tn.clone(), thing.clone()).is_some() {
                     return Err(PtError::PtDefinedMoreThanOnce(tn.to_string()));
                 }
             }
