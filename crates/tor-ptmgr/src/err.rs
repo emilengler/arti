@@ -16,7 +16,7 @@ pub enum PtError {
     #[error("PT launch timed out")]
     Timeout,
     /// We have specified a pluggable transport more than once.
-    #[error("PT defined more than once")]
+    #[error("PT {0} defined more than once")]
     PtDefinedMoreThanOnce(String),
     /// A PT binary does not support a set of pluggable transports.
     #[error("PT binary does not support transports: {0:?}")]

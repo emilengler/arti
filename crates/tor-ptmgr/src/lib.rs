@@ -301,14 +301,13 @@ impl<R: Runtime> PtMgr<R> {
     /// Transform the config into a more useful representation indexed by transport name.
     fn transform_config(
         binaries: Vec<ManagedTransportConfig>,
-    ) -> Result<HashMap<PtTransportName, ManagedTransportConfig>, PtTransportName> {
+    ) -> Result<HashMap<PtTransportName, ManagedTransportConfig>, PtError> {
         let mut ret = HashMap::new();
         for thing in binaries {
             for tn in thing.protocols.iter() {
-                if ret.contains_key(tn) {
-                    return Err(tn.clone());
+                if ret.insert(tn.clone(), thing.clone()) != None {
+                    return Err(PtError::PtDefinedMoreThanOnce(tn.to_string()));
                 }
-                ret.insert(tn.clone(), thing.clone());
             }
         }
         Ok(ret)
@@ -351,10 +350,7 @@ impl<R: Runtime> PtMgr<R> {
                     tx,
                 })
             }
-            Err(t) => Err(PtError::PtDefinedMoreThanOnce(format!(
-                "Transport {} defined more than once",
-                t
-            ))),
+            Err(t) => Err(PtError::PtDefinedMoreThanOnce(t.to_string())),
         }
     }
 
@@ -363,7 +359,7 @@ impl<R: Runtime> PtMgr<R> {
         &self,
         how: tor_config::Reconfigure,
         transports: Vec<ManagedTransportConfig>,
-    ) -> Result<(), tor_config::ReconfigureError> {
+    ) -> Result<(), PtError> {
         if how == tor_config::Reconfigure::CheckAllOrNothing {
             return Ok(());
         }
@@ -373,10 +369,7 @@ impl<R: Runtime> PtMgr<R> {
                 inner.configured = configured;
             }
             Err(t) => {
-                return Err(tor_config::ReconfigureError::UnsupportedSituation(format!(
-                    "Transport {} defined more than once",
-                    t
-                )));
+                return Err(PtError::PtDefinedMoreThanOnce(t.to_string()));
             }
         }
         // We don't have any way of propagating this sanely; the caller will find out the reactor
