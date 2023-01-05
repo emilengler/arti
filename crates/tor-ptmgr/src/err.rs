@@ -17,7 +17,7 @@ pub enum PtError {
     Timeout,
     /// We have specified a pluggable transport more than once.
     #[error("PT {0} defined more than once")]
-    PtDefinedMoreThanOnce(String),
+    PtTransportName(String),
     /// A PT binary does not support a set of pluggable transports.
     #[error("PT binary does not support transports: {0:?}")]
     ClientTransportsUnsupported(Vec<String>),
@@ -116,7 +116,7 @@ impl HasKind for PtError {
         use ErrorKind as EK;
         use PtError as E;
         match self {
-            E::ClientTransportsUnsupported(_) | E::PtDefinedMoreThanOnce(_) => EK::InvalidConfig,
+            E::ClientTransportsUnsupported(_) | E::PtTransportName(_) => EK::InvalidConfig,
             E::ChildProtocolViolation(_)
             | E::ProtocolViolation(_)
             | E::UnsupportedVersion
@@ -145,7 +145,7 @@ impl HasRetryTime for PtError {
             E::ClientTransportsUnsupported(_)
             | E::ChildProtocolViolation(_)
             | E::ProtocolViolation(_)
-            | E::PtDefinedMoreThanOnce(_)
+            | E::PtTransportName(_)
             | E::IpcParseFailed { .. }
             | E::NotAFile { .. }
             | E::UnsupportedVersion

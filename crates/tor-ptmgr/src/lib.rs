@@ -306,7 +306,7 @@ impl<R: Runtime> PtMgr<R> {
         for thing in binaries {
             for tn in thing.protocols.iter() {
                 if ret.insert(tn.clone(), thing.clone()).is_some() {
-                    return Err(PtError::PtDefinedMoreThanOnce(tn.to_string()));
+                    return Err(PtError::PtTransportName(tn.to_string()));
                 }
             }
         }
@@ -350,7 +350,7 @@ impl<R: Runtime> PtMgr<R> {
                     tx,
                 })
             }
-            Err(t) => Err(PtError::PtDefinedMoreThanOnce(t.to_string())),
+            Err(t) => Err(PtError::PtTransportName(t.to_string())),
         }
     }
 
@@ -369,7 +369,7 @@ impl<R: Runtime> PtMgr<R> {
                 inner.configured = configured;
             }
             Err(t) => {
-                return Err(PtError::PtDefinedMoreThanOnce(t.to_string()));
+                return Err(PtError::PtTransportName(t.to_string()));
             }
         }
         // We don't have any way of propagating this sanely; the caller will find out the reactor
