@@ -363,15 +363,10 @@ impl<R: Runtime> PtMgr<R> {
         if how == tor_config::Reconfigure::CheckAllOrNothing {
             return Ok(());
         }
-        match Self::transform_config(transports) {
-            Ok(configured) => {
-                let mut inner = self.state.write().expect("ptmgr poisoned");
-                inner.configured = configured;
-            }
-            Err(t) => {
-                return Err(PtError::PtTransportName(t.to_string()));
-            }
-        }
+        let configured = Self::transform_config(transports)
+            .map_err(|e| PtError::PtTransportName(e.to_string()))?;
+        let mut inner = self.state.write().expect("ptmgr poisoned");
+        inner.configured = configured;
         // We don't have any way of propagating this sanely; the caller will find out the reactor
         // has died later on anyway.
         let _ = self.tx.unbounded_send(PtReactorMessage::Reconfigured);
