@@ -56,7 +56,8 @@ use crate::types::misc::*;
 use crate::util::private::Sealed;
 use crate::{Error, ParseErrorKind as EK, Pos, Result};
 use std::collections::{HashMap, HashSet};
-use std::{net, result, time};
+use std::time::{Duration, SystemTime};
+use std::{net, result};
 use tor_error::internal;
 use tor_protover::Protocols;
 
@@ -86,23 +87,23 @@ pub use rs::NsConsensusRouterStatus;
 #[derive(Clone, Debug)]
 pub struct Lifetime {
     /// Time at which the document becomes valid
-    valid_after: time::SystemTime,
+    valid_after: SystemTime,
     /// Time after which there is expected to be a better version
     /// of this consensus
-    fresh_until: time::SystemTime,
+    fresh_until: SystemTime,
     /// Time after which this consensus is expired.
     ///
     /// (In practice, Tor clients will keep using documents for a while
     /// after this expiration time, if no better one can be found.)
-    valid_until: time::SystemTime,
+    valid_until: SystemTime,
 }
 
 impl Lifetime {
     /// Construct a new Lifetime.
     pub fn new(
-        valid_after: time::SystemTime,
-        fresh_until: time::SystemTime,
-        valid_until: time::SystemTime,
+        valid_after: SystemTime,
+        fresh_until: SystemTime,
+        valid_until: SystemTime,
     ) -> Result<Self> {
         if valid_after < fresh_until && fresh_until < valid_until {
             Ok(Lifetime {
@@ -118,14 +119,14 @@ impl Lifetime {
     ///
     /// (You might see a consensus a little while before this time,
     /// since voting tries to finish up before the.)
-    pub fn valid_after(&self) -> time::SystemTime {
+    pub fn valid_after(&self) -> SystemTime {
         self.valid_after
     }
     /// Return time when this consensus is no longer fresh.
     ///
     /// You can use the consensus after this time, but there is (or is
     /// supposed to be) a better one by this point.
-    pub fn fresh_until(&self) -> time::SystemTime {
+    pub fn fresh_until(&self) -> SystemTime {
         self.fresh_until
     }
     /// Return the time when this consensus is no longer valid.
@@ -133,11 +134,11 @@ impl Lifetime {
     /// You should try to get a better consensus after this time,
     /// though it's okay to keep using this one if no more recent one
     /// can be found.
-    pub fn valid_until(&self) -> time::SystemTime {
+    pub fn valid_until(&self) -> SystemTime {
         self.valid_until
     }
     /// Return true if this consensus is officially valid at the provided time.
-    pub fn valid_at(&self, when: time::SystemTime) -> bool {
+    pub fn valid_at(&self, when: SystemTime) -> bool {
         self.valid_after <= when && when <= self.valid_until
     }
 }
@@ -1300,9 +1301,9 @@ impl<RS: RouterStatus + ParseRouterStatus> Consensus<RS> {
     }
 
     /// Try to parse a single networkstatus document from a string.
-    pub fn parse(s: &str) -> Result<(&str, &str, UncheckedConsensus<RS>)> {
+    pub fn parse(s: &str, now: SystemTime) -> Result<(&str, &str, UncheckedConsensus<RS>)> {
         let mut reader = NetDocReader::new(s);
-        Self::parse_from_reader(&mut reader).map_err(|e| e.within(s))
+        Self::parse_from_reader(&mut reader, now).map_err(|e| e.within(s))
     }
     /// Extract a voter-info section from the reader; return
     /// Ok(None) when we are out of voter-info sections.
@@ -1392,6 +1393,7 @@ impl<RS: RouterStatus + ParseRouterStatus> Consensus<RS> {
     /// string, and an UncheckedConsensus.
     fn parse_from_reader<'a>(
         r: &mut NetDocReader<'a, NetstatusKwd>,
+        now: SystemTime,
     ) -> Result<(&'a str, &'a str, UncheckedConsensus<RS>)> {
         use NetstatusKwd::*;
         let (header, start_pos) = {
@@ -1409,6 +1411,17 @@ impl<RS: RouterStatus + ParseRouterStatus> Consensus<RS> {
                 RS::flavor(),
                 header.hdr.flavor
             )));
+        }
+
+        if header.hdr.lifetime.valid_until < now {
+            return Err(
+                EK::InvalidLifetime.with_msg("Our consensus document has expired".to_string())
+            );
+        }
+        if header.hdr.lifetime.valid_after > now {
+            return Err(
+                EK::InvalidLifetime.with_msg("Our consensus document isn't valid yet".to_string())
+            );
         }
 
         let mut voters = Vec::new();
@@ -1488,7 +1501,7 @@ impl<RS: RouterStatus + ParseRouterStatus> Consensus<RS> {
         };
         let lifetime = unval.consensus.header.hdr.lifetime.clone();
         let delay = unval.consensus.header.hdr.voting_delay.unwrap_or((0, 0));
-        let dist_interval = time::Duration::from_secs(delay.1.into());
+        let dist_interval = Duration::from_secs(delay.1.into());
         let starting_time = lifetime.valid_after - dist_interval;
         let timebound = TimerangeBound::new(unval, starting_time..lifetime.valid_until);
         Ok((signed_str, remainder, timebound))
@@ -1719,6 +1732,7 @@ mod test {
     //! <!-- @@ end test lint list maintained by maint/add_warning @@ -->
     use super::*;
     use hex_literal::hex;
+    use time::macros::datetime;
 
     const CERTS: &str = include_str!("../../testdata/authcerts2.txt");
     const CONSENSUS: &str = include_str!("../../testdata/mdconsensus1.txt");
@@ -1739,6 +1753,15 @@ mod test {
         fs::read_to_string(path).unwrap()
     }
 
+    fn test_time() -> SystemTime {
+        datetime!(2020-08-07 12:42:45 UTC).into()
+    }
+
+    #[cfg(feature = "ns_consensus")]
+    fn test_time_now() -> SystemTime {
+        datetime!(2021-03-26 23:26:50 UTC).into()
+    }
+
     #[test]
     fn parse_and_validate_md() -> Result<()> {
         use std::net::SocketAddr;
@@ -1752,7 +1775,7 @@ mod test {
 
         assert_eq!(certs.len(), 3);
 
-        let (_, _, consensus) = MdConsensus::parse(CONSENSUS)?;
+        let (_, _, consensus) = MdConsensus::parse(CONSENSUS, test_time())?;
         let consensus = consensus.dangerously_assume_timely().set_n_authorities(3);
 
         // The set of authorities we know _could_ validate this cert.
@@ -1817,7 +1840,7 @@ mod test {
         let auth_ids: Vec<_> = certs.iter().map(|c| &c.key_ids().id_fingerprint).collect();
         assert_eq!(certs.len(), 3);
 
-        let (_, _, consensus) = NsConsensus::parse(NS_CONSENSUS)?;
+        let (_, _, consensus) = NsConsensus::parse(NS_CONSENSUS, test_time_now())?;
         let consensus = consensus.dangerously_assume_timely().set_n_authorities(3);
         // The set of authorities we know _could_ validate this cert.
         assert!(consensus.authorities_are_correct(&auth_ids));
@@ -1836,7 +1859,7 @@ mod test {
         use crate::Pos;
         fn check(fname: &str, e: &Error) {
             let content = read_bad(fname);
-            let res = MdConsensus::parse(&content);
+            let res = MdConsensus::parse(&content, test_time());
             assert!(res.is_err());
             assert_eq!(&res.err().unwrap(), e);
         }

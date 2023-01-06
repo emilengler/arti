@@ -355,7 +355,7 @@ async fn load_once<R: Runtime>(
             load_documents_from_store(&missing, &**store)?
         };
 
-        state.add_from_cache(documents, &mut changed)
+        state.add_from_cache(documents, &mut changed, dirmgr.runtime.wallclock())
     };
 
     // We have to update the status here regardless of the outcome, if we got
@@ -459,6 +459,7 @@ async fn download_attempt<R: Runtime>(
                     doc_source,
                     Some(&dirmgr.store),
                     &mut changed,
+                    SystemTime::now(),
                 );
 
                 if !changed {
@@ -784,6 +785,7 @@ mod test {
             &mut self,
             docs: HashMap<DocId, DocumentText>,
             changed: &mut bool,
+            _now: SystemTime,
         ) -> Result<()> {
             for id in docs.keys() {
                 if let DocId::Microdesc(id) = id {
@@ -802,6 +804,7 @@ mod test {
             _source: DocSource,
             _storage: Option<&Mutex<DynStore>>,
             changed: &mut bool,
+            _now: SystemTime,
         ) -> Result<()> {
             for token in text.split_ascii_whitespace() {
                 if let Ok(v) = hex::decode(token) {
