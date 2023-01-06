@@ -1033,6 +1033,20 @@ impl ConsensusHeader {
             shared_rand_cur,
         })
     }
+
+    /// Return the global shared-random value for the previous shared-random
+    /// period.
+    #[allow(unused)]
+    pub(crate) fn shared_rand_prev(&self) -> Option<SharedRandVal> {
+        self.shared_rand_prev.clone()
+    }
+
+    /// Return the global shared-random value for the current shared-random
+    /// period.
+    #[allow(unused)]
+    pub(crate) fn shared_rand_cur(&self) -> Option<SharedRandVal> {
+        self.shared_rand_cur.clone()
+    }
 }
 
 impl DirSource {
