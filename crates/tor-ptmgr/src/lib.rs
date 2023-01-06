@@ -306,7 +306,7 @@ impl<R: Runtime> PtMgr<R> {
         for thing in binaries {
             for tn in thing.protocols.iter() {
                 if ret.insert(tn.clone(), thing.clone()).is_some() {
-                    return Err(PtError::PtTransportName(tn.to_string()));
+                    return Err(PtError::PtDefinedMoreThanOnce(tn.clone()));
                 }
             }
         }
@@ -320,38 +320,33 @@ impl<R: Runtime> PtMgr<R> {
         state_dir: PathBuf,
         rt: R,
     ) -> Result<Self, PtError> {
-        match Self::transform_config(transports) {
-            Ok(c) => {
-                let state = PtSharedState {
-                    cmethods: Default::default(),
-                    configured: c,
-                };
-                let state = Arc::new(RwLock::new(state));
-                let (tx, rx) = mpsc::unbounded();
+        let state = PtSharedState {
+            cmethods: Default::default(),
+            configured: Self::transform_config(transports).unwrap(),
+        };
+        let state = Arc::new(RwLock::new(state));
+        let (tx, rx) = mpsc::unbounded();
 
-                let mut reactor = PtReactor::new(rt.clone(), state.clone(), rx, state_dir);
-                rt.spawn(async move {
-                    loop {
-                        match reactor.run_one_step().await {
-                            Ok(true) => return,
-                            Ok(false) => {}
-                            Err(e) => {
-                                error!("PtReactor failed: {}", e);
-                                return;
-                            }
-                        }
+        let mut reactor = PtReactor::new(rt.clone(), state.clone(), rx, state_dir);
+        rt.spawn(async move {
+            loop {
+                match reactor.run_one_step().await {
+                    Ok(true) => return,
+                    Ok(false) => {}
+                    Err(e) => {
+                        error!("PtReactor failed: {}", e);
+                        return;
                     }
-                })
-                .map_err(|e| PtError::Spawn { cause: Arc::new(e) })?;
-
-                Ok(Self {
-                    runtime: rt,
-                    state,
-                    tx,
-                })
+                }
             }
-            Err(t) => Err(PtError::PtTransportName(t.to_string())),
-        }
+        })
+        .map_err(|e| PtError::Spawn { cause: Arc::new(e) })?;
+
+        Ok(Self {
+            runtime: rt,
+            state,
+            tx,
+        })
     }
 
     /// Reload the configuration
@@ -359,14 +354,15 @@ impl<R: Runtime> PtMgr<R> {
         &self,
         how: tor_config::Reconfigure,
         transports: Vec<ManagedTransportConfig>,
-    ) -> Result<(), PtError> {
+    ) -> Result<(), tor_config::ReconfigureError> {
+        let configured = Self::transform_config(transports);
         if how == tor_config::Reconfigure::CheckAllOrNothing {
             return Ok(());
         }
-        let configured = Self::transform_config(transports)
-            .map_err(|e| PtError::PtTransportName(e.to_string()))?;
-        let mut inner = self.state.write().expect("ptmgr poisoned");
-        inner.configured = configured;
+        {
+            let mut inner = self.state.write().expect("ptmgr poisoned");
+            inner.configured = configured.unwrap();
+        }
         // We don't have any way of propagating this sanely; the caller will find out the reactor
         // has died later on anyway.
         let _ = self.tx.unbounded_send(PtReactorMessage::Reconfigured);

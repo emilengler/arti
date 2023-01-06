@@ -7,6 +7,7 @@ use std::sync::Arc;
 use tor_chanmgr::factory::AbstractPtError;
 use tor_config::{CfgPath, CfgPathError};
 use tor_error::{ErrorKind, HasKind, HasRetryTime, RetryTime};
+use tor_linkspec::PtTransportName;
 
 /// An error spawning or managing a pluggable transport.
 #[derive(Clone, Debug, thiserror::Error)]
@@ -17,7 +18,7 @@ pub enum PtError {
     Timeout,
     /// We have specified a pluggable transport more than once.
     #[error("PT {0} defined more than once")]
-    PtTransportName(String),
+    PtDefinedMoreThanOnce(PtTransportName),
     /// A PT binary does not support a set of pluggable transports.
     #[error("PT binary does not support transports: {0:?}")]
     ClientTransportsUnsupported(Vec<String>),
@@ -116,7 +117,7 @@ impl HasKind for PtError {
         use ErrorKind as EK;
         use PtError as E;
         match self {
-            E::ClientTransportsUnsupported(_) | E::PtTransportName(_) => EK::InvalidConfig,
+            E::ClientTransportsUnsupported(_) | E::PtDefinedMoreThanOnce(_) => EK::InvalidConfig,
             E::ChildProtocolViolation(_)
             | E::ProtocolViolation(_)
             | E::UnsupportedVersion
@@ -145,7 +146,7 @@ impl HasRetryTime for PtError {
             E::ClientTransportsUnsupported(_)
             | E::ChildProtocolViolation(_)
             | E::ProtocolViolation(_)
-            | E::PtTransportName(_)
+            | E::PtDefinedMoreThanOnce(_)
             | E::IpcParseFailed { .. }
             | E::NotAFile { .. }
             | E::UnsupportedVersion
