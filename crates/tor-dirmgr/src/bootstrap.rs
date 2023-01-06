@@ -355,7 +355,7 @@ async fn load_once<R: Runtime>(
             load_documents_from_store(&missing, &**store)?
         };
 
-        state.add_from_cache(documents, &mut changed, SystemTime::now())
+        state.add_from_cache(documents, &mut changed, dirmgr.runtime.wallclock())
     };
 
     // We have to update the status here regardless of the outcome, if we got
