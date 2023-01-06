@@ -507,7 +507,7 @@ fn pt_identifier_as_path(binary_path: impl AsRef<Path>) -> Result<PathBuf, PtErr
 
 /// Given a path to a binary for a pluggable transport, return an identifier for
 /// that binary in human-readable form.
-fn pt_identifier(binary_path: impl AsRef<Path>) -> Result<String, PtError> {
+fn pt_identifier_lossy(binary_path: impl AsRef<Path>) -> Result<String, PtError> {
     Ok(pt_identifier_as_path(binary_path)?
         .to_string_lossy()
         .to_string())
