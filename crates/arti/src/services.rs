@@ -214,21 +214,6 @@ pub(crate) struct Service<R: Runtime> {
     isolation: ServiceIsolation,
 }
 
-/// Return true if a given IoError, when received from bind, is a fatal error.
-fn bind_err_is_fatal(err: &std::io::Error) -> bool {
-    #![allow(clippy::match_like_matches_macro)]
-    if err.kind() == std::io::ErrorKind::AddrNotAvailable {
-        return false;
-    }
-
-    match err.raw_os_error() {
-        #[cfg(unix)]
-        // this error is Shadow specific.
-        Some(libc::EAFNOSUPPORT) => false,
-        _ => true,
-    }
-}
-
 /// Shortcut for a map of socket address to their corresponding listener.
 type SocketMap<R> = HashMap<(Protocol, SocketAddr), Socket<R>>;
 
@@ -243,6 +228,21 @@ pub(crate) async fn bind_services<R: Runtime>(
     previously_bound: &mut SocketMap<R>,
     requested: &[(ServiceKind, ServiceIsolation, BindAddress)],
 ) -> Result<()> {
+    /// Returns whether an error happened because the requested address family isn't available.
+    fn is_addr_family_not_available(err: &std::io::Error) -> bool {
+        #![allow(clippy::match_like_matches_macro)]
+        if err.kind() == std::io::ErrorKind::AddrNotAvailable {
+            return true;
+        }
+
+        match err.raw_os_error() {
+            #[cfg(unix)]
+            // this error is Shadow specific.
+            Some(libc::EAFNOSUPPORT) => true,
+            _ => false,
+        }
+    }
+
     // verify we don't have to bind multiple time the same thing
     let mut bound_after = HashSet::new();
     for (service, _, address) in requested {
@@ -263,35 +263,29 @@ pub(crate) async fn bind_services<R: Runtime>(
         if previously_bound.contains_key(&(*proto, *addr)) {
             continue;
         }
-        match proto {
-            Protocol::Tcp => match runtime.listen(addr).await {
-                Ok(listener) => {
-                    info!("Started listening on {:?}/tcp", addr);
-                    newly_bound.insert((*proto, *addr), Socket::Tcp(Arc::new(listener)));
+        let listener = match proto {
+            Protocol::Tcp => runtime
+                .listen(addr)
+                .await
+                .map(|listener| Socket::Tcp(Arc::new(listener))),
+            Protocol::Udp => runtime
+                .bind(addr)
+                .await
+                .map(|listener| Socket::Udp(Arc::new(listener))),
+        };
+        match listener {
+            Ok(listener) => {
+                info!("Started listening on {:?}", addr);
+                newly_bound.insert((*proto, *addr), listener);
+            }
+            Err(e) => {
+                if is_addr_family_not_available(&e) {
+                    warn!("Tried to bind {} but this address is not available", addr);
+                } else {
+                    error!("Error binding {}", addr);
+                    anyhow::bail!("Error binding {}", addr)
                 }
-                Err(e) => {
-                    if !bind_err_is_fatal(&e) {
-                        warn!("Tried to bind {} but this address is not available", addr);
-                    } else {
-                        error!("Error binding {}", addr);
-                        anyhow::bail!("Error binding {}", addr)
-                    }
-                }
-            },
-            Protocol::Udp => match runtime.bind(addr).await {
-                Ok(listener) => {
-                    info!("Started listening on {:?}/tcp.", addr);
-                    newly_bound.insert((*proto, *addr), Socket::Udp(Arc::new(listener)));
-                }
-                Err(e) => {
-                    if !bind_err_is_fatal(&e) {
-                        warn!("Tried to bind {} but this address is not available", addr);
-                    } else {
-                        error!("Error binding {}", addr);
-                        anyhow::bail!("Error binding {}", addr)
-                    }
-                }
-            },
+            }
         }
     }
 
