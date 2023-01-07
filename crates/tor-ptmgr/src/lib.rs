@@ -322,7 +322,7 @@ impl<R: Runtime> PtMgr<R> {
     ) -> Result<Self, PtError> {
         let state = PtSharedState {
             cmethods: Default::default(),
-            configured: Self::transform_config(transports).unwrap(),
+            configured: Self::transform_config(transports).expect("duplicate PT error"),
         };
         let state = Arc::new(RwLock::new(state));
         let (tx, rx) = mpsc::unbounded();
@@ -361,7 +361,7 @@ impl<R: Runtime> PtMgr<R> {
         }
         {
             let mut inner = self.state.write().expect("ptmgr poisoned");
-            inner.configured = configured.unwrap();
+            inner.configured = configured.expect("duplicate PT error");
         }
         // We don't have any way of propagating this sanely; the caller will find out the reactor
         // has died later on anyway.
