@@ -221,7 +221,7 @@ type SocketMap<R> = HashMap<(Protocol, SocketAddr), Socket<R>>;
 ///
 /// If this function returns an error, it is guarranteed `previously_bound` wasn't affected.
 /// If it returns successfully, all requested socket are now bound, and any socket no longer
-/// required has been closed.
+/// required has been dropped.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn bind_services<R: Runtime>(
     runtime: R,
@@ -243,66 +243,58 @@ pub(crate) async fn bind_services<R: Runtime>(
         }
     }
 
-    // verify we don't have to bind multiple time the same thing
-    let mut bound_after = HashSet::new();
-    for (service, _, address) in requested {
-        let proto = service.protocol();
-        for addr in address.addresses() {
-            if !bound_after.insert((proto, addr)) {
-                error!("Address {} is requested multiple times", addr);
-                anyhow::bail!("Address {} is requested multiple times", addr);
-            }
-        }
-    }
-
+    let mut requested_address = HashSet::new();
     let mut newly_bound = HashMap::new();
 
-    // bind newly required sockets
-    // TODO parallelize this loop
-    for (proto, addr) in &bound_after {
-        if previously_bound.contains_key(&(*proto, *addr)) {
-            continue;
-        }
-        let listener = match proto {
-            Protocol::Tcp => runtime
-                .listen(addr)
-                .await
-                .map(|listener| Socket::Tcp(Arc::new(listener))),
-            Protocol::Udp => runtime
-                .bind(addr)
-                .await
-                .map(|listener| Socket::Udp(Arc::new(listener))),
-        };
-        match listener {
-            Ok(listener) => {
-                info!("Started listening on {:?}", addr);
-                newly_bound.insert((*proto, *addr), listener);
+    for (service, _, address) in requested {
+        let proto = service.protocol();
+        let mut bound_something = false;
+        for addr in address.addresses() {
+            // verify we don't have to bind multiple time the same thing
+            if !requested_address.insert((proto, addr)) {
+                error!("Address {} was requested multiple times", addr);
+                anyhow::bail!("Address {} is requested multiple times", addr);
             }
-            Err(e) => {
-                if is_addr_family_not_available(&e) {
-                    warn!("Tried to bind {} but this address is not available", addr);
-                } else {
-                    error!("Error binding {}", addr);
-                    anyhow::bail!("Error binding {}", addr)
+
+            // verify this port isn't already bound. If it is, count that as a success
+            if previously_bound.contains_key(&(proto, addr)) {
+                bound_something = true;
+                continue;
+            }
+            let listener = match proto {
+                Protocol::Tcp => runtime
+                    .listen(&addr)
+                    .await
+                    .map(|listener| Socket::Tcp(Arc::new(listener))),
+                Protocol::Udp => runtime
+                    .bind(&addr)
+                    .await
+                    .map(|listener| Socket::Udp(Arc::new(listener))),
+            };
+            match listener {
+                Ok(listener) => {
+                    info!("Started listening on {:?}", addr);
+                    newly_bound.insert((proto, addr), listener);
+                    bound_something = true;
+                }
+                Err(e) => {
+                    if is_addr_family_not_available(&e) {
+                        warn!("Tried to bind {} but this address is not available", addr);
+                    } else {
+                        error!("Error binding {}", addr);
+                        anyhow::bail!("Error binding {}", addr)
+                    }
                 }
             }
         }
-    }
-
-    // verify we managed to bind everything that should be bound
-    for (service, _, address) in requested {
-        let proto = service.protocol();
-        if !address.addresses().into_iter().any(|addr| {
-            newly_bound.contains_key(&(proto, addr))
-                || previously_bound.contains_key(&(proto, addr))
-        }) {
-            error!("Failed to bind {}", address);
-            anyhow::bail!("Failed to bind {}", address);
+        if !bound_something {
+            error!("Failed to bind anything for {}.", address);
+            anyhow::bail!("Failed to bind anything for {}.", address)
         }
     }
 
     // drop any socket no longer needed
-    previously_bound.retain(|address, _| bound_after.contains(address));
+    previously_bound.retain(|address, _| requested_address.contains(address));
     previously_bound.extend(newly_bound);
 
     Ok(())
