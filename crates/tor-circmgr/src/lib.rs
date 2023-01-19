@@ -410,6 +410,20 @@ impl<R: Runtime> CircMgr<R> {
         self.mgr.get_or_launch(&usage, netdir).await.map(|(c, _)| c)
     }
 
+    /// Return a circuit suitable for an onion service with the purpose
+    /// `purpose`, launching it if necessary.
+    #[cfg(feature = "onion-client")]
+    pub async fn get_or_launch_onion(
+        &self,
+        netdir: DirInfo<'_>, // TODO: This has to be a NetDir.
+        usage: OnionCircuitUsage,
+        isolation: StreamIsolation,
+    ) -> Result<ClientCirc> {
+        self.expire_circuits();
+        let usage = TargetCircUsage::OnionCircuit { usage, isolation };
+        self.mgr.get_or_launch(&usage, netdir).await.map(|(c, _)| c)
+    }
+
     /// Return a circuit to a specific relay, suitable for using for directory downloads.
     ///
     /// This could be used, for example, to download a descriptor for a bridge.

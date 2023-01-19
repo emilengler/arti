@@ -302,7 +302,7 @@ impl TargetCircUsage {
                 Ok((
                     path,
                     SupportedCircUsage::OnionCircuit {
-                        usage: Some(usage.clone()),
+                        usage: Some(usage),
                         isolation: Some(isolation.clone()),
                     },
                     mon,
