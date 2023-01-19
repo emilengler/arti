@@ -33,6 +33,16 @@ impl Path {
             .map(Clone::clone)
     }
 
+    /// Return an OwnedChanTarget representing the last hop of this path.
+    pub(super) fn last_hop(&self) -> Option<OwnedChanTarget> {
+        let no_hops = self.hops.lock().expect("poisoned lock").len();
+        self.hops
+            .lock()
+            .expect("poisoned lock")
+            .get(no_hops - 1)
+            .map(Clone::clone)
+    }
+
     /// Return a copy of all the hops in this path.
     pub(super) fn all_hops(&self) -> Vec<OwnedChanTarget> {
         self.hops.lock().expect("poisoned lock").clone()
