@@ -125,6 +125,18 @@ impl ExitPolicy {
     }
 }
 
+/// For an onion service single-use circuit, the use of the circuit
+#[cfg(feature = "onion-client")]
+#[derive(Clone, Debug)]
+pub enum OnionCircuitUsage {
+    /// Use this circuit as an introduction circuit.
+    Intro,
+    /// Use this circuit as a rendezvous circuit.
+    Rend,
+    /// Use this circuit as a onion service directoty circuit.
+    HsDir,
+}
+
 /// The purpose for which a circuit is being created.
 ///
 /// This type should stay internal to the circmgr crate for now: we'll probably
@@ -164,6 +176,14 @@ pub(crate) enum TargetCircUsage {
     /// and therefore to a specific relay (which need not be in any netdir).
     #[cfg(feature = "specific-relay")]
     DirSpecificTarget(OwnedChanTarget),
+    /// Single-use circuit for an onion service.
+    #[cfg(feature = "onion-client")]
+    OnionCircuit {
+        /// The use of the circuit.
+        usage: OnionCircuitUsage,
+        /// Isolation group the circuit shall be part of.
+        isolation: StreamIsolation,
+    },
 }
 
 /// The purposes for which a circuit is usable.
@@ -188,6 +208,14 @@ pub(crate) enum SupportedCircUsage {
     /// to a particular target (which may not be in the netdir).
     #[cfg(feature = "specific-relay")]
     DirSpecificTarget(OwnedChanTarget),
+    /// Single-use circuit for an onion service.
+    #[cfg(feature = "onion-client")]
+    OnionCircuit {
+        /// The use of the circuit.
+        usage: OnionCircuitUsage,
+        /// Isolation group the circuit shall be part of.
+        isolation: StreamIsolation,
+    },
 }
 
 impl TargetCircUsage {
@@ -266,6 +294,20 @@ impl TargetCircUsage {
                 let path = TorPath::new_one_hop_owned(target);
                 let usage = SupportedCircUsage::DirSpecificTarget(target.clone());
                 Ok((path, usage, None, None))
+            }
+            #[cfg(feature = "onion-client")]
+            TargetCircUsage::OnionCircuit { usage, isolation } => {
+                let (path, mon, usable) = ExitPathBuilder::for_timeout_testing()
+                    .pick_path(rng, netdir, guards, config, now)?;
+                Ok((
+                    path,
+                    SupportedCircUsage::OnionCircuit {
+                        usage: Some(usage.clone()),
+                        isolation: Some(isolation.clone()),
+                    },
+                    mon,
+                    usable,
+                ))
             }
         }
     }
