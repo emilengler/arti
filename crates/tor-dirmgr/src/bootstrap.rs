@@ -9,6 +9,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 
+use crate::event::DirProgress;
+
 use crate::err::BootstrapAction;
 use crate::state::{DirState, PoisonedState};
 use crate::DirMgrConfig;
@@ -490,10 +492,25 @@ async fn download_attempt<R: Runtime>(
             }
         }
     }
+    let progress = state.bootstrap_progress();
+
+    if let DirProgress::FetchingCerts{n_certs, ..} = progress {
+        // Do we have less certificates than we wanted?
+        if n_certs.0 < n_certs.1 {
+            // Have we tried more than 9 times (the number of dirauths)? If so, fail.
+            if attempt_id.id.get() > 9 {
+                warn!("We have gotten fewer consensus certificates than we expect too many times, failing");
+                propagate_fatal_errors!(Err(Error::TooFewCerts));
+                n_errors += 1;
+            }
+        }
+    }
+
     if n_errors != 0 {
         dirmgr.note_errors(attempt_id, n_errors);
     }
-    dirmgr.update_progress(attempt_id, state.bootstrap_progress());
+
+    dirmgr.update_progress(attempt_id, progress);
 
     Ok(())
 }

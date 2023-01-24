@@ -114,6 +114,9 @@ pub enum Error {
     /// A problem with file permissions on our cache directory.
     #[error("Bad permissions in cache directory")]
     CachePermissions(#[from] fs_mistrust::Error),
+    /// We have gotten fewer conensus certificates too many times.
+    #[error("We have gotten fewer consensus certificates than we expect too many times, failing")]
+    TooFewCerts,
     /// Unable to spawn task
     #[error("Unable to spawn {spawning}")]
     Spawn {
@@ -233,6 +236,7 @@ impl Error {
             | Error::OfflineMode
             | Error::Spawn { .. }
             | Error::NetDirOlder
+            | Error::TooFewCerts
             | Error::Bug(_) => false,
 
             // For this one, we delegate.
@@ -298,6 +302,7 @@ impl Error {
             | Error::BadUtf8InCache(_)
             | Error::BadHexInCache(_)
             | Error::CachePermissions(_)
+            | Error::TooFewCerts
             | Error::Spawn { .. }
             | Error::ExternalDirProvider { .. } => BootstrapAction::Fatal,
 
@@ -345,6 +350,7 @@ impl HasKind for Error {
             E::BadHexInCache(_) => EK::CacheCorrupted,
             E::UnrecognizedAuthorities => EK::TorProtocolViolation,
             E::ManagerDropped => EK::ArtiShuttingDown,
+            E::TooFewCerts => EK::CacheCorrupted,
             E::CantAdvanceState => EK::TorAccessFailed,
             E::LockFile { .. } => EK::CacheAccessFailed,
             E::CacheFile { .. } => EK::CacheAccessFailed,
