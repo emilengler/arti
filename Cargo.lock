@@ -4016,6 +4016,7 @@ dependencies = [
  "tor-linkspec",
  "tor-llcrypto",
  "tor-protover",
+ "tracing",
  "visibility",
  "visible",
  "weak-table",
