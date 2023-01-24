@@ -573,6 +573,43 @@ fn test_connect_udp() {
     );
 }
 
+#[test]
+fn text_xon_xoff() {
+    let xon_cmd = RelayCmd::XON;
+    let xoff_cmd = RelayCmd::XOFF;
+
+    // All these messages are hand-generated from the spec.
+
+    assert_eq!(Into::<u8>::into(xon_cmd), 43_u8);
+    assert_eq!(Into::<u8>::into(xoff_cmd), 44_u8);
+
+    // 4.21 gigabytes!
+    msg(xon_cmd, "00 00127690", &msg::Xon::new(1_210_000).into());
+    // 1 kbps
+    msg(xon_cmd, "00 00000001", &msg::Xon::new(1).into());
+    // Treat 0 as 1.
+    msg(xon_cmd, "00 00000000", &msg::Xon::new_unlimited().into());
+
+    msg_error(xon_cmd, "00 01", BytesError::Truncated);
+    msg_error(xon_cmd, "00 01000000 ff", BytesError::ExtraneousBytes);
+    msg_error(
+        xon_cmd,
+        "ff 00000001",
+        BytesError::BadMessage("unrecognized XON version"),
+    );
+
+    // There is only one valid xoff cell.
+    msg(xoff_cmd, "00", &msg::Xoff::new().into());
+
+    msg_error(xoff_cmd, "", BytesError::Truncated);
+    msg_error(xoff_cmd, "0000", BytesError::ExtraneousBytes);
+    msg_error(
+        xoff_cmd,
+        "ff",
+        BytesError::BadMessage("unrecognized XOFF version"),
+    )
+}
+
 #[cfg(feature = "experimental-udp")]
 #[test]
 fn test_connected_udp() {
