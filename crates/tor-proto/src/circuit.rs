@@ -216,6 +216,19 @@ impl ClientCirc {
             .expect("called first_hop on an un-constructed circuit")
     }
 
+    /// Return a description of the last hop of this circuit.
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is no last hop.  (This should be impossible outside of
+    /// the tor-proto crate, but within the crate it's possible to have a
+    /// circuit with no hops.)
+    pub fn last_hop(&self) -> OwnedChanTarget {
+        self.path
+            .last_hop()
+            .expect("called first_hop on an un-constructed circuit")
+    }
+
     /// Return a description of all the hops in this circuit.
     pub fn path(&self) -> Vec<OwnedChanTarget> {
         self.path.all_hops()
