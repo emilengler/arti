@@ -3,13 +3,13 @@
 //! A resolver is launched with [`run_dns_resolver()`], which listens for new
 //! connections and then runs
 
+use crate::services::{GroupIsolation, IsolationKey, ServiceIsolation, ServiceIsolationConfig};
 use futures::lock::Mutex;
-use futures::stream::StreamExt;
 use futures::task::SpawnExt;
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, warn};
 use trust_dns_proto::op::{
     header::MessageType, op_code::OpCode, response_code::ResponseCode, Message, Query,
 };
@@ -19,35 +19,14 @@ use trust_dns_proto::serialize::binary::{BinDecodable, BinEncodable};
 use arti_client::{Error, HasKind, StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, UdpSocket};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 /// Maximum length for receiving a single datagram
 const MAX_DATAGRAM_SIZE: usize = 1536;
 
-/// A Key used to isolate dns requests.
-///
-/// Composed of an usize (representing which listener socket accepted
-/// the connection and the source IpAddr of the client)
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct DnsIsolationKey(usize, IpAddr);
-
-impl arti_client::isolation::IsolationHelper for DnsIsolationKey {
-    fn compatible_same_type(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn join_same_type(&self, other: &Self) -> Option<Self> {
-        if self == other {
-            Some(self.clone())
-        } else {
-            None
-        }
-    }
-}
-
 /// Identifier for a DNS request, composed of its source IP and transaction ID
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-struct DnsCacheKey(DnsIsolationKey, Vec<Query>);
+struct DnsCacheKey(IsolationKey, Vec<Query>);
 
 /// Target for a DNS response
 #[derive(Debug, Clone)]
@@ -64,12 +43,16 @@ struct DnsResponseTarget<U> {
 async fn do_query<R>(
     tor_client: TorClient<R>,
     queries: &[Query],
-    prefs: &StreamPrefs,
+    isolation: IsolationKey,
+    isolate_domain: bool,
 ) -> Result<Vec<Record>, ResponseCode>
 where
     R: Runtime,
 {
     let mut answers = Vec::new();
+
+    let mut prefs = StreamPrefs::new();
+    prefs.set_isolation(isolation.clone());
 
     let err_conv = |error: Error| {
         if tor_error::ErrorKind::RemoteHostNotFound == error.kind() {
@@ -92,8 +75,13 @@ where
                         let mut name = query.name().clone();
                         // name would be "torproject.org." without this
                         name.set_fqdn(false);
+                        if isolate_domain {
+                            let mut isolation_query = isolation.clone();
+                            isolation_query.dest_addr = Some(name.to_utf8());
+                            prefs.set_isolation(isolation_query);
+                        }
                         let res = tor_client
-                            .resolve_with_prefs(&name.to_utf8(), prefs)
+                            .resolve_with_prefs(&name.to_utf8(), &prefs)
                             .await
                             .map_err(err_conv)?;
                         for ip in res {
@@ -106,8 +94,13 @@ where
                             .parse_arpa_name()
                             .map_err(|_| ResponseCode::FormErr)?
                             .addr();
+                        if isolate_domain {
+                            let mut isolation_query = isolation.clone();
+                            isolation_query.dest_addr = Some(addr.to_string());
+                            prefs.set_isolation(isolation_query);
+                        }
                         let res = tor_client
-                            .resolve_ptr_with_prefs(addr, prefs)
+                            .resolve_ptr_with_prefs(addr, &prefs)
                             .await
                             .map_err(err_conv)?;
                         for domain in res {
@@ -148,10 +141,11 @@ where
 /// the Tor network and send the response back.
 async fn handle_dns_req<R, U>(
     tor_client: TorClient<R>,
-    socket_id: usize,
     packet: &[u8],
     addr: SocketAddr,
     socket: Arc<U>,
+    isolation_config: ServiceIsolation,
+    group: GroupIsolation,
     current_requests: &Mutex<HashMap<DnsCacheKey, Vec<DnsResponseTarget<U>>>>,
 ) -> Result<()>
 where
@@ -162,7 +156,13 @@ where
     let mut query = Message::from_bytes(packet)?;
     let id = query.id();
     let queries = query.queries();
-    let isolation = DnsIsolationKey(socket_id, addr.ip());
+    let mut isolation = IsolationKey::new(group);
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_CLIENT_ADDR)
+    {
+        isolation.client_addr = Some(addr.ip());
+    }
 
     let request_id = {
         let request_id = DnsCacheKey(isolation.clone(), queries.to_vec());
@@ -183,10 +183,16 @@ where
         request_id
     };
 
-    let mut prefs = StreamPrefs::new();
-    prefs.set_isolation(isolation);
-
-    let mut response = match do_query(tor_client, queries, &prefs).await {
+    let mut response = match do_query(
+        tor_client,
+        queries,
+        isolation,
+        isolation_config
+            .config
+            .contains(ServiceIsolationConfig::ISOLATE_DEST_ADDR),
+    )
+    .await
+    {
         Ok(answers) => {
             let mut response = Message::new();
             response
@@ -226,74 +232,34 @@ where
 /// Launch a DNS resolver to listen on a given local port, and run indefinitely.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn run_dns_resolver<R: Runtime>(
-    runtime: R,
     tor_client: TorClient<R>,
-    dns_port: u16,
+    isolation: ServiceIsolation,
+    dns_socket: Arc<R::UdpSocket>,
 ) -> Result<()> {
-    let mut listeners = Vec::new();
-
-    // We actually listen on two ports: one for ipv4 and one for ipv6.
-    let localhosts: [IpAddr; 2] = [Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()];
-
-    // Try to bind to the DNS ports.
-    for localhost in &localhosts {
-        let addr: SocketAddr = (*localhost, dns_port).into();
-        // NOTE: Our logs here displays the local address. We allow this, since
-        // knowing the address is basically essential for diagnostics.
-        match runtime.bind(&addr).await {
-            Ok(listener) => {
-                info!("Listening on {:?}.", addr);
-                listeners.push(listener);
-            }
-            Err(e) => warn!("Can't listen on {}: {}", addr, e),
-        }
-    }
-    // We weren't able to bind any ports: There's nothing to do.
-    if listeners.is_empty() {
-        error!("Couldn't open any DNS listeners.");
-        return Err(anyhow!("Couldn't open any DNS listeners"));
-    }
-
-    let mut incoming = futures::stream::select_all(
-        listeners
-            .into_iter()
-            .map(|socket| {
-                futures::stream::unfold(Arc::new(socket), |socket| async {
-                    let mut packet = [0; MAX_DATAGRAM_SIZE];
-                    let packet = socket
-                        .recv(&mut packet)
-                        .await
-                        .map(|(size, remote)| (packet, size, remote, socket.clone()));
-                    Some((packet, socket))
-                })
-            })
-            .enumerate()
-            .map(|(listener_id, incoming_packet)| {
-                Box::pin(incoming_packet.map(move |packet| (packet, listener_id)))
-            }),
-    );
-
     let pending_requests = Arc::new(Mutex::new(HashMap::new()));
-    while let Some((packet, id)) = incoming.next().await {
-        let (packet, size, addr, socket) = match packet {
-            Ok(packet) => packet,
+    let isolation_group = isolation.get_group_isolation();
+    loop {
+        let mut packet = [0; MAX_DATAGRAM_SIZE];
+        let (len, addr) = match dns_socket.recv(&mut packet).await {
+            Ok(res) => res,
             Err(err) => {
                 // TODO move crate::socks::accept_err_is_fatal somewhere else and use it here?
                 warn!("Incoming datagram failed: {}", err);
                 continue;
             }
         };
-
         let client_ref = tor_client.clone();
-        runtime.spawn({
+        let socket = dns_socket.clone();
+        tor_client.runtime().spawn({
             let pending_requests = pending_requests.clone();
             async move {
                 let res = handle_dns_req(
                     client_ref,
-                    id,
-                    &packet[..size],
+                    &packet[..len],
                     addr,
                     socket,
+                    isolation,
+                    isolation_group,
                     &pending_requests,
                 )
                 .await;
@@ -303,6 +269,4 @@ pub(crate) async fn run_dns_resolver<R: Runtime>(
             }
         })?;
     }
-
-    Ok(())
 }

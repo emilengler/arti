@@ -164,7 +164,7 @@ pub trait IsolationHelper: Sized {
 //
 // This type is re-exported by `arti-client`: any changes to it must be
 // reflected in `arti-client`'s version.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct IsolationToken(u64);
 
 #[allow(clippy::new_without_default)]

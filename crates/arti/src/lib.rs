@@ -54,6 +54,8 @@ pub mod process;
 #[cfg(feature = "experimental-api")]
 pub mod reload_cfg;
 #[cfg(feature = "experimental-api")]
+pub mod services;
+#[cfg(feature = "experimental-api")]
 pub mod socks;
 
 #[cfg(all(not(feature = "experimental-api"), feature = "dns-proxy"))]
@@ -65,8 +67,11 @@ mod process;
 #[cfg(not(feature = "experimental-api"))]
 mod reload_cfg;
 #[cfg(not(feature = "experimental-api"))]
+mod services;
+#[cfg(not(feature = "experimental-api"))]
 mod socks;
 
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fmt::Write;
 
@@ -75,6 +80,7 @@ pub use cfg::{
     ProxyConfig, ProxyConfigBuilder, SystemConfig, SystemConfigBuilder, ARTI_EXAMPLE_CONFIG,
 };
 pub use logging::{LoggingConfig, LoggingConfigBuilder};
+use services::{BindAddress, ServiceIsolation, ServiceKind};
 
 use arti_client::config::default_config_files;
 use arti_client::{TorClient, TorClientConfig};
@@ -148,43 +154,34 @@ async fn run<R: Runtime>(
     let client = client_builder.create_unbootstrapped()?;
     reload_cfg::watch_for_config_changes(config_sources, arti_config, client.clone())?;
 
-    let mut proxy: Vec<PinnedFuture<(Result<()>, &str)>> = Vec::new();
+    let mut requested_services = Vec::new();
     if socks_port != 0 {
-        let runtime = runtime.clone();
-        let client = client.isolated_client();
-        proxy.push(Box::pin(async move {
-            let res = socks::run_socks_proxy(runtime, client, socks_port).await;
-            (res, "SOCKS")
-        }));
+        requested_services.push((
+            ServiceKind::Socks5,
+            ServiceIsolation::default(),
+            BindAddress::Port(socks_port),
+        ));
     }
-
-    #[cfg(feature = "dns-proxy")]
     if dns_port != 0 {
-        let runtime = runtime.clone();
-        let client = client.isolated_client();
-        proxy.push(Box::pin(async move {
-            let res = dns::run_dns_resolver(runtime, client, dns_port).await;
-            (res, "DNS")
-        }));
+        requested_services.push((
+            ServiceKind::Dns,
+            ServiceIsolation::default(),
+            BindAddress::Port(dns_port),
+        ));
     }
+    let mut sockets = HashMap::new();
 
-    #[cfg(not(feature = "dns-proxy"))]
-    if dns_port != 0 {
-        warn!("Tried to specify a DNS proxy port, but Arti was built without dns-proxy support.");
-        return Ok(());
-    }
+    services::bind_services(runtime.clone(), &mut sockets, &requested_services).await?;
+    // TODO drop privileges here, see #363
 
-    if proxy.is_empty() {
-        warn!("No proxy port set; specify -p PORT (for `socks_port`) or -d PORT (for `dns_port`). Alternatively, use the `socks_port` or `dns_port` configuration option.");
-        return Ok(());
-    }
+    let services = services::link_services(&sockets, &requested_services);
+    let services = services::run_services(client.clone(), services);
 
-    let proxy = futures::future::select_all(proxy).map(|(finished, _index, _others)| finished);
     futures::select!(
         r = exit::wait_for_ctrl_c().fuse()
             => r.context("waiting for termination signal"),
-        r = proxy.fuse()
-            => r.0.context(format!("{} proxy failure", r.1)),
+        r = services.fuse()
+            => r.context("service failure"),
         r = async {
             client.bootstrap().await?;
             info!("Sufficiently bootstrapped; system SOCKS now functional.");

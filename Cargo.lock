@@ -95,6 +95,7 @@ dependencies = [
  "anyhow",
  "arti-client",
  "async-ctrlc",
+ "bitflags",
  "cfg-if",
  "clap",
  "config",

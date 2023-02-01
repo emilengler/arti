@@ -3,14 +3,15 @@
 //! A proxy is launched with [`run_socks_proxy()`], which listens for new
 //! connections and then runs
 
+use crate::services::{GroupIsolation, IsolationKey, ServiceIsolation, ServiceIsolationConfig};
 use futures::future::FutureExt;
 use futures::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Error as IoError};
-use futures::stream::StreamExt;
 use futures::task::SpawnExt;
 use safelog::sensitive;
 use std::io::Result as IoResult;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use tracing::{debug, error, info, warn};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::sync::Arc;
+use tracing::{debug, warn};
 
 use arti_client::{ErrorKind, HasKind, StreamPrefs, TorClient};
 use tor_rtcompat::{Runtime, TcpListener};
@@ -65,28 +66,6 @@ fn stream_preference(req: &SocksRequest, addr: &str) -> StreamPrefs {
     prefs
 }
 
-/// A Key used to isolate connections.
-///
-/// Composed of an usize (representing which listener socket accepted
-/// the connection, the source IpAddr of the client, and the
-/// authentication string provided by the client).
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct SocksIsolationKey(usize, IpAddr, SocksAuth);
-
-impl arti_client::isolation::IsolationHelper for SocksIsolationKey {
-    fn compatible_same_type(&self, other: &Self) -> bool {
-        self == other
-    }
-
-    fn join_same_type(&self, other: &Self) -> Option<Self> {
-        if self == other {
-            Some(self.clone())
-        } else {
-            None
-        }
-    }
-}
-
 /// Given a just-received TCP connection `S` on a SOCKS port, handle the
 /// SOCKS handshake and relay the connection over the Tor network.
 ///
@@ -94,10 +73,11 @@ impl arti_client::isolation::IsolationHelper for SocksIsolationKey {
 /// may use.  Requires that `isolation_info` is a pair listing the listener
 /// id and the source address for the socks request.
 async fn handle_socks_conn<R, S>(
-    runtime: R,
     tor_client: TorClient<R>,
     socks_stream: S,
-    isolation_info: (usize, IpAddr),
+    isolation_config: ServiceIsolation,
+    isolation_group: GroupIsolation,
+    source_ip: IpAddr,
 ) -> Result<()>
 where
     R: Runtime,
@@ -172,16 +152,41 @@ where
         port
     );
 
-    // Use the source address, SOCKS authentication, and listener ID
-    // to determine the stream's isolation properties.  (Our current
-    // rule is that two streams may only share a circuit if they have
-    // the same values for all of these properties.)
     let auth = request.auth().clone();
-    let (source_address, ip) = isolation_info;
+
+    let mut isolation = IsolationKey::new(isolation_group);
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_CLIENT_ADDR)
+    {
+        isolation.client_addr = Some(source_ip);
+    }
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_AUTH)
+    {
+        match auth {
+            SocksAuth::Socks4(auth) => isolation.auth = Some((auth, Vec::new())),
+            SocksAuth::Username(user, password) => isolation.auth = Some((user, password)),
+            _ => (),
+        }
+    }
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_DEST_PORT)
+    {
+        isolation.dest_port = std::num::NonZeroU16::new(port);
+    }
+    if isolation_config
+        .config
+        .contains(ServiceIsolationConfig::ISOLATE_DEST_ADDR)
+    {
+        isolation.dest_addr = Some(addr.clone());
+    }
 
     // Determine whether we want to ask for IPv4/IPv6 addresses.
     let mut prefs = stream_preference(&request, &addr);
-    prefs.set_isolation(SocksIsolationKey(source_address, ip, auth));
+    prefs.set_isolation(isolation);
 
     match request.command() {
         SocksCmd::CONNECT => {
@@ -208,8 +213,12 @@ where
 
             // Finally, spawn two background tasks to relay traffic between
             // the socks stream and the tor stream.
-            runtime.spawn(copy_interactive(socks_r, tor_w).map(|_| ()))?;
-            runtime.spawn(copy_interactive(tor_r, socks_w).map(|_| ()))?;
+            tor_client
+                .runtime()
+                .spawn(copy_interactive(socks_r, tor_w).map(|_| ()))?;
+            tor_client
+                .runtime()
+                .spawn(copy_interactive(tor_r, socks_w).map(|_| ()))?;
         }
         SocksCmd::RESOLVE => {
             // We've been asked to perform a regular hostname lookup.
@@ -423,50 +432,15 @@ fn accept_err_is_fatal(err: &IoError) -> bool {
 /// network.
 #[cfg_attr(feature = "experimental-api", visibility::make(pub))]
 pub(crate) async fn run_socks_proxy<R: Runtime>(
-    runtime: R,
     tor_client: TorClient<R>,
-    socks_port: u16,
+    isolation: ServiceIsolation,
+    socks_socket: Arc<R::TcpListener>,
 ) -> Result<()> {
-    let mut listeners = Vec::new();
-
-    // We actually listen on two ports: one for ipv4 and one for ipv6.
-    let localhosts: [IpAddr; 2] = [Ipv4Addr::LOCALHOST.into(), Ipv6Addr::LOCALHOST.into()];
-
-    // Try to bind to the SOCKS ports.
-    for localhost in &localhosts {
-        let addr: SocketAddr = (*localhost, socks_port).into();
-        // NOTE: Our logs here displays the local address. We allow this, since
-        // knowing the address is basically essential for diagnostics.
-        match runtime.listen(&addr).await {
-            Ok(listener) => {
-                info!("Listening on {:?}.", addr);
-                listeners.push(listener);
-            }
-            Err(e) => warn!("Can't listen on {}: {}", addr, e),
-        }
-    }
-    // We weren't able to bind any ports: There's nothing to do.
-    if listeners.is_empty() {
-        error!("Couldn't open any SOCKS listeners.");
-        return Err(anyhow!("Couldn't open SOCKS listeners"));
-    }
-
-    // Create a stream of (incoming socket, listener_id) pairs, selected
-    // across all the listeners.
-    let mut incoming = futures::stream::select_all(
-        listeners
-            .into_iter()
-            .map(TcpListener::incoming)
-            .enumerate()
-            .map(|(listener_id, incoming_conns)| {
-                incoming_conns.map(move |socket| (socket, listener_id))
-            }),
-    );
-
     // Loop over all incoming connections.  For each one, call
     // handle_socks_conn() in a new task.
-    while let Some((stream, sock_id)) = incoming.next().await {
-        let (stream, addr) = match stream {
+    let group = isolation.get_group_isolation();
+    loop {
+        let (stream, addr) = match socks_socket.accept().await {
             Ok((s, a)) => (s, a),
             Err(err) => {
                 if accept_err_is_fatal(&err) {
@@ -478,15 +452,11 @@ pub(crate) async fn run_socks_proxy<R: Runtime>(
             }
         };
         let client_ref = tor_client.clone();
-        let runtime_copy = runtime.clone();
-        runtime.spawn(async move {
-            let res =
-                handle_socks_conn(runtime_copy, client_ref, stream, (sock_id, addr.ip())).await;
+        tor_client.runtime().spawn(async move {
+            let res = handle_socks_conn(client_ref, stream, isolation, group, addr.ip()).await;
             if let Err(e) = res {
                 warn!("connection exited with error: {}", e);
             }
         })?;
     }
-
-    Ok(())
 }
