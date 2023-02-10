@@ -303,18 +303,16 @@ impl<R: Runtime> PtMgr<R> {
     /// Transform the config into a more useful representation indexed by transport name.
     fn transform_config(
         binaries: Vec<ManagedTransportConfig>,
-    ) -> HashMap<PtTransportName, ManagedTransportConfig> {
+    ) -> Result<HashMap<PtTransportName, ManagedTransportConfig>, PtError> {
         let mut ret = HashMap::new();
-        // FIXME(eta): You can currently specify overlapping protocols in your binaries, and it'll
-        //             just use the last binary specified.
-        //             I attempted to fix this, but decided I didn't want to stare into the list
-        //             builder macro void after trying it for 15 minutes.
         for thing in binaries {
             for tn in thing.protocols.iter() {
-                ret.insert(tn.clone(), thing.clone());
+                if ret.insert(tn.clone(), thing.clone()).is_some() {
+                    return Err(PtError::PtDefinedMoreThanOnce(tn.clone()));
+                }
             }
         }
-        ret
+        Ok(ret)
     }
 
     /// Create a new PtMgr.
@@ -326,7 +324,7 @@ impl<R: Runtime> PtMgr<R> {
     ) -> Result<Self, PtError> {
         let state = PtSharedState {
             cmethods: Default::default(),
-            configured: Self::transform_config(transports),
+            configured: Self::transform_config(transports)?,
         };
         let state = Arc::new(RwLock::new(state));
         let (tx, rx) = mpsc::unbounded();
@@ -365,7 +363,7 @@ impl<R: Runtime> PtMgr<R> {
         }
         {
             let mut inner = self.state.write().expect("ptmgr poisoned");
-            inner.configured = configured;
+            inner.configured = configured.unwrap();
         }
         // We don't have any way of propagating this sanely; the caller will find out the reactor
         // has died later on anyway.
