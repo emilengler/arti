@@ -78,6 +78,10 @@ pub struct Microdesc {
     /// List of IPv6 ports to which this relay will exit
     #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     ipv6_policy: Arc<PortPolicy>,
+    /// List of IPv4 UDP ports to which this relay will exit
+    ipv4_udp_policy: Arc<PortPolicy>,
+    /// List of IPv6 UDP ports to which this relay will exit
+    ipv6_udp_policy: Arc<PortPolicy>,
     /// Ed25519 identity for this relay
     #[cfg_attr(docsrs, doc(cfg(feature = "dangerous-expose-struct-fields")))]
     ed25519_id: ed25519::Ed25519Identity,
@@ -119,6 +123,14 @@ impl Microdesc {
     /// Return the ipv6 exit policy for this microdesc
     pub fn ipv6_policy(&self) -> &Arc<PortPolicy> {
         &self.ipv6_policy
+    }
+    /// Return the UDP ipv4 exit policy for this microdesc
+    pub fn ipv4_udp_policy(&self) -> &Arc<PortPolicy> {
+        &self.ipv4_udp_policy
+    }
+    /// Return the UDP ipv6 exit policy for this microdesc
+    pub fn ipv6_udp_policy(&self) -> &Arc<PortPolicy> {
+        &self.ipv6_udp_policy
     }
     /// Return the relay family for this microdesc
     pub fn family(&self) -> &RelayFamily {
@@ -173,6 +185,8 @@ decl_keyword! {
         "family" => FAMILY,
         "p" => P,
         "p6" => P6,
+        "p4u" => P4U,
+        "p6u" => P6U,
         "id" => ID,
     }
 }
@@ -199,6 +213,8 @@ static MICRODESC_RULES: Lazy<SectionRules<MicrodescKwd>> = Lazy::new(|| {
     rules.add(FAMILY.rule().args(1..));
     rules.add(P.rule().args(2..));
     rules.add(P6.rule().args(2..));
+    rules.add(P4U.rule().args(2..));
+    rules.add(P6U.rule().args(2..));
     rules.add(ID.rule().may_repeat().args(2..));
     rules.add(UNRECOGNIZED.rule().may_repeat().obj_optional());
     rules.build()
@@ -310,6 +326,16 @@ impl Microdesc {
             .parse_args_as_str::<PortPolicy>()?
             .unwrap_or_else(PortPolicy::new_reject_all);
 
+        // UDP exit policies.
+        let ipv4_udp_policy = body
+            .maybe(P4U)
+            .parse_args_as_str::<PortPolicy>()?
+            .unwrap_or_else(PortPolicy::new_reject_all);
+        let ipv6_udp_policy = body
+            .maybe(P6U)
+            .parse_args_as_str::<PortPolicy>()?
+            .unwrap_or_else(PortPolicy::new_reject_all);
+
         // ed25519 identity
         let ed25519_id = {
             let id_tok = body
@@ -346,6 +372,8 @@ impl Microdesc {
             family,
             ipv4_policy: ipv4_policy.intern(),
             ipv6_policy: ipv6_policy.intern(),
+            ipv4_udp_policy: ipv4_udp_policy.intern(),
+            ipv6_udp_policy: ipv6_udp_policy.intern(),
             ed25519_id,
         };
         Ok((md, location))

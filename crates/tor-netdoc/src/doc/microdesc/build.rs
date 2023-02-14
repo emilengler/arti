@@ -33,6 +33,10 @@ pub struct MicrodescBuilder {
     ipv4_policy: PortPolicy,
     /// See [`Microdesc::ipv6_policy`]
     ipv6_policy: PortPolicy,
+    /// See [`Microdesc::ipv4_udp_policy`]
+    ipv4_udp_policy: PortPolicy,
+    /// See [`Microdesc::ipv6_udp_policy`]
+    ipv6_udp_policy: PortPolicy,
     /// See [`Microdesc::ed25519_id`]
     ed25519_id: Option<ed25519::Ed25519Identity>,
 }
@@ -45,6 +49,8 @@ impl MicrodescBuilder {
             family: RelayFamily::new(),
             ipv4_policy: PortPolicy::new_reject_all(),
             ipv6_policy: PortPolicy::new_reject_all(),
+            ipv4_udp_policy: PortPolicy::new_reject_all(),
+            ipv6_udp_policy: PortPolicy::new_reject_all(),
             ed25519_id: None,
         }
     }
@@ -89,6 +95,22 @@ impl MicrodescBuilder {
         self
     }
 
+    /// Set the UDP ipv4 exit policy of this relay.
+    ///
+    /// By default, this policy is `reject 1-65535`.
+    pub fn ipv4_udp_policy(&mut self, policy: PortPolicy) -> &mut Self {
+        self.ipv4_udp_policy = policy;
+        self
+    }
+
+    /// Set the UDP ipv6 exit policy of this relay.
+    ///
+    /// By default, this policy is `reject 1-65535`.
+    pub fn ipv6_udp_policy(&mut self, policy: PortPolicy) -> &mut Self {
+        self.ipv6_udp_policy = policy;
+        self
+    }
+
     /// Set the family of this relay based on parsing a string.
     pub fn parse_family(&mut self, family: &str) -> Result<&mut Self> {
         Ok(self.family(family.parse()?))
@@ -108,6 +130,22 @@ impl MicrodescBuilder {
     /// By default, this policy is `reject 1-65535`.
     pub fn parse_ipv6_policy(&mut self, policy: &str) -> Result<&mut Self> {
         Ok(self.ipv6_policy(policy.parse().map_err(ParseError::from)?))
+    }
+
+    /// Set the UDP ipv4 exit policy of this relay based on parsing
+    /// a string.
+    ///
+    /// By default, this policy is `reject 1-65535`.
+    pub fn parse_ipv4_udp_policy(&mut self, policy: &str) -> Result<&mut Self> {
+        Ok(self.ipv4_udp_policy(policy.parse().map_err(ParseError::from)?))
+    }
+
+    /// Set the UDP ipv6 exit policy of this relay based on parsing
+    /// a string.
+    ///
+    /// By default, this policy is `reject 1-65535`.
+    pub fn parse_ipv6_udp_policy(&mut self, policy: &str) -> Result<&mut Self> {
+        Ok(self.ipv6_udp_policy(policy.parse().map_err(ParseError::from)?))
     }
 
     /// Try to build a microdescriptor from the settings on this builder.
@@ -140,6 +178,8 @@ impl MicrodescBuilder {
             family: self.family.clone().intern(),
             ipv4_policy: self.ipv4_policy.clone().intern(),
             ipv6_policy: self.ipv6_policy.clone().intern(),
+            ipv4_udp_policy: self.ipv4_udp_policy.clone().intern(),
+            ipv6_udp_policy: self.ipv6_udp_policy.clone().intern(),
             ed25519_id,
         })
     }
@@ -186,6 +226,8 @@ mod test {
             .ntor_key(ntor)
             .parse_ipv4_policy("accept 80,443")?
             .parse_ipv6_policy("accept 22-80")?
+            .parse_ipv4_udp_policy("accept 80,443")?
+            .parse_ipv6_udp_policy("accept 22-80")?
             .parse_family("$aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa $bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")?
             .testing_md()
             .unwrap();
@@ -200,6 +242,14 @@ mod test {
         assert!(!md.ipv6_policy().allows_port(443));
         assert!(md.ipv6_policy().allows_port(80));
         assert!(md.ipv6_policy().allows_port(55));
+
+        assert!(md.ipv4_udp_policy().allows_port(443));
+        assert!(md.ipv4_udp_policy().allows_port(80));
+        assert!(!md.ipv4_udp_policy().allows_port(55));
+
+        assert!(!md.ipv6_udp_policy().allows_port(443));
+        assert!(md.ipv6_udp_policy().allows_port(80));
+        assert!(md.ipv6_udp_policy().allows_port(55));
 
         Ok(())
     }
